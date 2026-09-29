@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -30,9 +31,14 @@ namespace Match3
         [Tooltip("The kinds of token that can appear on the board. Needs at least 3 distinct types to avoid starting matches.")]
         [SerializeField] private TokenType[] tokenTypes;
 
+        [Header("Swapping")]
+        [Tooltip("How long, in seconds, two tokens take to trade places.")]
+        [SerializeField, Min(0.01f)] private float swapDuration = 0.15f;
+
         private Transform cellContainer;
         private Transform tokenContainer;
         private bool needsRebuild;
+        private bool isSwapping;
 
         // The "model": which token is in which cell, indexed [x, y]. This array is the source of
         // truth for game logic. The Token GameObjects are the "view": they just display it.
@@ -46,6 +52,9 @@ namespace Match3
 
         /// <summary>World-space size of the whole board.</summary>
         public Vector2 WorldSize => new Vector2(width * cellSize, height * cellSize);
+
+        /// <summary>True while a swap animation is playing. Input should be ignored until it's false.</summary>
+        public bool IsSwapping => isSwapping;
 
         /// <summary>The token in cell (x, y), or null if the cell is empty or out of bounds.</summary>
         public Token GetToken(int x, int y)
@@ -82,6 +91,9 @@ namespace Match3
         private void Rebuild()
         {
             needsRebuild = false;
+            // A swap in progress would keep moving tokens we're about to destroy, so cancel it.
+            StopAllCoroutines();
+            isSwapping = false;
             BuildCells();
             FillWithRandomTokens();
         }
@@ -207,6 +219,64 @@ namespace Match3
                 }
             }
             return distinct.Count;
+        }
+
+        /// <summary>
+        /// Swaps the tokens in two orthogonally adjacent cells and animates them trading places.
+        /// Returns false (and does nothing) if the cells aren't valid neighbors or a swap is
+        /// already playing.
+        /// </summary>
+        public bool TrySwap(Vector2Int a, Vector2Int b)
+        {
+            // Manhattan distance of exactly 1 means "one step up/down/left/right", never diagonal.
+            bool areNeighbors = Mathf.Abs(a.x - b.x) + Mathf.Abs(a.y - b.y) == 1;
+            if (isSwapping || !areNeighbors || !IsInBounds(a) || !IsInBounds(b))
+            {
+                return false;
+            }
+
+            Token tokenA = tokens[a.x, a.y];
+            Token tokenB = tokens[b.x, b.y];
+            if (tokenA == null || tokenB == null)
+            {
+                return false;
+            }
+
+            // Update the model right away, so game logic always sees the new layout.
+            // The animation below just catches the view up to it.
+            tokens[a.x, a.y] = tokenB;
+            tokens[b.x, b.y] = tokenA;
+            tokenA.name = $"Token ({b.x}, {b.y})";
+            tokenB.name = $"Token ({a.x}, {a.y})";
+
+            StartCoroutine(AnimateSwap(tokenA, GridToWorld(b.x, b.y), tokenB, GridToWorld(a.x, a.y)));
+            return true;
+        }
+
+        // A coroutine is a method that can pause itself with `yield return` and resume later.
+        // `yield return null` means "wait until the next frame", so the loop below runs one
+        // step per frame, which is how we spread movement over time without blocking the game.
+        // Coroutines are started with StartCoroutine and belong to this MonoBehaviour.
+        private IEnumerator AnimateSwap(Token tokenA, Vector3 targetA, Token tokenB, Vector3 targetB)
+        {
+            isSwapping = true;
+            Vector3 startA = tokenA.transform.position;
+            Vector3 startB = tokenB.transform.position;
+
+            for (float elapsed = 0f; elapsed < swapDuration; elapsed += Time.deltaTime)
+            {
+                // t goes 0 -> 1 over the duration. SmoothStep eases it so the motion starts
+                // and ends gently instead of at constant speed.
+                float t = Mathf.SmoothStep(0f, 1f, elapsed / swapDuration);
+                tokenA.transform.position = Vector3.Lerp(startA, targetA, t);
+                tokenB.transform.position = Vector3.Lerp(startB, targetB, t);
+                yield return null;
+            }
+
+            // Snap exactly onto the targets; the loop may stop slightly short of t = 1.
+            tokenA.transform.position = targetA;
+            tokenB.transform.position = targetB;
+            isSwapping = false;
         }
 
         /// <summary>World position of the center of cell (x, y).</summary>
