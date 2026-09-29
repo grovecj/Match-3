@@ -9,7 +9,8 @@ well-explained code over polish. Explain Unity concepts when introducing them.
 - Unity must be closed before moving/renaming files outside the Editor; always move `.meta` files with their assets.
 - Editor-only tools (e.g. `Match3 > Build Settings Menu`, which regenerates the Settings UI and
   its option prefabs, and `Match3 > Build Leaderboard Menu`) live in `Assets/Editor/`, sharing
-  helpers from `UIBuilder.cs`.
+  helpers from `UIBuilder.cs`. `Match3 > Build Web` makes the browser build into `Builds/Web`
+  (see `Docs/WebBuild.md`).
 - Game scripts live in `Assets/Scripts/` (the `Match3` assembly). Edit Mode tests live in
   `Assets/Tests/EditMode/` (`Match3.Tests.EditMode`). Run them from **Window → General → Test
   Runner → EditMode**, or headless (Unity must not already have the project open):
