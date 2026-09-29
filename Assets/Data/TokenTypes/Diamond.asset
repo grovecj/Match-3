@@ -14,5 +14,3 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Match3.TokenType
   id: diamond
   displayName: Diamond
-  sprite: {fileID: 21300000, guid: cb3b9dfb14685684088ad391b5409761, type: 3}
-  color: {r: 1, g: 1, b: 1, a: 1}

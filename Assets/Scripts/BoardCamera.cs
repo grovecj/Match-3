@@ -4,7 +4,8 @@ namespace Match3
 {
     /// <summary>
     /// Keeps an orthographic camera centered on the board and zoomed so the whole board
-    /// fits on screen with some padding, at any window size or aspect ratio.
+    /// fits on screen with some padding, at any window size or aspect ratio. Also paints the
+    /// background behind the board in the current board theme's color.
     /// </summary>
     // RequireComponent makes Unity add a Camera automatically if one is missing.
     [RequireComponent(typeof(Camera))]
@@ -16,6 +17,8 @@ namespace Match3
         [Tooltip("Optional UI panel docked to the right edge of the screen. The board is fitted " +
                  "into the space to its left so the two never overlap.")]
         [SerializeField] private RectTransform rightPanel;
+        [Tooltip("Supplies the background color. Optional: without one the camera keeps its own color.")]
+        [SerializeField] private ThemeManager themeManager;
 
         private Camera cam;
         // Reused buffer for RectTransform.GetWorldCorners, so we don't allocate every frame.
@@ -25,6 +28,43 @@ namespace Match3
         {
             cam = GetComponent<Camera>();
             cam.orthographic = true;
+        }
+
+        // Subscribe while enabled so theme changes recolor the background (see Board for more
+        // on the OnEnable/OnDisable pairing).
+        private void OnEnable()
+        {
+            if (themeManager != null)
+            {
+                themeManager.ThemeChanged += ApplyBackgroundColor;
+            }
+        }
+
+        private void OnDisable()
+        {
+            if (themeManager != null)
+            {
+                themeManager.ThemeChanged -= ApplyBackgroundColor;
+            }
+        }
+
+        // Start rather than Awake: the ThemeManager picks its default theme in its own Awake,
+        // and Start is guaranteed to run after every Awake.
+        private void Start()
+        {
+            ApplyBackgroundColor();
+        }
+
+        /// <summary>
+        /// Sets the color the camera clears the screen to before drawing anything, which is
+        /// what shows around the board.
+        /// </summary>
+        private void ApplyBackgroundColor()
+        {
+            if (themeManager != null && themeManager.BoardTheme != null)
+            {
+                cam.backgroundColor = themeManager.BoardTheme.BackgroundColor;
+            }
         }
 
         // LateUpdate runs after every Update, so the camera reacts to anything that changed

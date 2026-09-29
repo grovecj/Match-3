@@ -3,7 +3,9 @@ using UnityEngine;
 namespace Match3
 {
     /// <summary>
-    /// Data describing one kind of token (gem): its identity and how it looks.
+    /// Identity of one kind of token (gem), e.g. "circle". It deliberately says nothing about
+    /// how the token looks: that's a <see cref="TokenStyle"/>'s job, so the same game can be
+    /// drawn with different art without touching any game rules.
     ///
     /// A ScriptableObject is a data container that lives as an asset file in the project
     /// rather than on a GameObject in a scene. Each .asset file is one shared instance, so
@@ -20,15 +22,9 @@ namespace Match3
         [SerializeField] private string id;
         [Tooltip("Human-readable name for UI.")]
         [SerializeField] private string displayName;
-        [Tooltip("Sprite drawn for this token. The gem sprites (Art/Gems) are already colored, so leave Color white.")]
-        [SerializeField] private Sprite sprite;
-        [Tooltip("Tint multiplied onto the sprite. White leaves the sprite's own colors unchanged.")]
-        [SerializeField] private Color color = Color.white;
 
         // Read-only properties: other code can read the data but only the Inspector edits it.
         public string Id => id;
         public string DisplayName => displayName;
-        public Sprite Sprite => sprite;
-        public Color Color => color;
     }
 }

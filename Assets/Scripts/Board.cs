@@ -23,8 +23,10 @@ namespace Match3
         [Header("Cell Visuals")]
         [Tooltip("Prefab with a SpriteRenderer, spawned once per cell as the background tile.")]
         [SerializeField] private SpriteRenderer cellPrefab;
-        [SerializeField] private Color lightCellColor = new Color(0.28f, 0.28f, 0.36f);
-        [SerializeField] private Color darkCellColor = new Color(0.20f, 0.20f, 0.27f);
+
+        [Header("Theme")]
+        [Tooltip("Supplies the cell colors and token style. The board redraws itself when the theme changes.")]
+        [SerializeField] private ThemeManager themeManager;
 
         [Header("Tokens")]
         [Tooltip("Token prefab spawned into each cell. The Board assigns its type at runtime.")]
@@ -60,6 +62,9 @@ namespace Match3
         private enum BoardState { Idle, Resolving }
 
         private Transform cellContainer;
+        // The cell background tiles, indexed [x, y], kept so a theme change can recolor them
+        // in place instead of rebuilding the board.
+        private SpriteRenderer[,] cells;
         private Transform tokenContainer;
         private bool needsRebuild;
         private BoardState state = BoardState.Idle;
@@ -96,7 +101,31 @@ namespace Match3
         // Start runs once, before the first frame, after every object's Awake has run.
         private void Start()
         {
+            if (themeManager == null)
+            {
+                Debug.LogError("Board: no Theme Manager assigned, so cells and tokens have no colors or sprites.", this);
+            }
+            ValidateTokenStyle();
             Rebuild();
+        }
+
+        // OnEnable/OnDisable run when the component is switched on/off (including when the
+        // object is created and destroyed). Subscribing in one and unsubscribing in the other
+        // means the ThemeManager never calls back into a Board that no longer exists.
+        private void OnEnable()
+        {
+            if (themeManager != null)
+            {
+                themeManager.ThemeChanged += HandleThemeChanged;
+            }
+        }
+
+        private void OnDisable()
+        {
+            if (themeManager != null)
+            {
+                themeManager.ThemeChanged -= HandleThemeChanged;
+            }
         }
 
         // OnValidate runs in the Editor whenever a value changes in the Inspector.
@@ -151,6 +180,7 @@ namespace Match3
             }
             cellContainer = new GameObject("Cells").transform;
             cellContainer.SetParent(transform, false);
+            cells = new SpriteRenderer[width, height];
 
             for (int x = 0; x < width; x++)
             {
@@ -159,9 +189,87 @@ namespace Match3
                     SpriteRenderer cell = Instantiate(cellPrefab, GridToWorld(x, y), Quaternion.identity, cellContainer);
                     cell.name = $"Cell ({x}, {y})";
                     cell.transform.localScale = Vector3.one * cellSize;
-                    // Checkerboard: alternate colors like a chess board.
-                    cell.color = (x + y) % 2 == 0 ? darkCellColor : lightCellColor;
+                    cells[x, y] = cell;
                 }
+            }
+            ApplyCellColors();
+        }
+
+        /// <summary>
+        /// Called by the ThemeManager when the style or theme changes. Only the visuals are
+        /// updated: every token keeps its type and cell, so the game state is untouched.
+        /// </summary>
+        private void HandleThemeChanged()
+        {
+            ValidateTokenStyle();
+            ApplyCellColors();
+
+            if (tokens == null)
+            {
+                return;
+            }
+            TokenStyle style = CurrentTokenStyle;
+            foreach (Token token in tokens)
+            {
+                // Cells are briefly empty between a clear and the refill.
+                if (token != null)
+                {
+                    token.SetStyle(style);
+                }
+            }
+        }
+
+        /// <summary>Colors the cell tiles in a checkerboard using the current board theme.</summary>
+        private void ApplyCellColors()
+        {
+            if (cells == null)
+            {
+                return;
+            }
+
+            BoardTheme theme = themeManager != null ? themeManager.BoardTheme : null;
+            // GetLength(0) is the array's size in x, GetLength(1) its size in y.
+            for (int x = 0; x < cells.GetLength(0); x++)
+            {
+                for (int y = 0; y < cells.GetLength(1); y++)
+                {
+                    if (cells[x, y] == null)
+                    {
+                        continue;
+                    }
+                    if (theme == null)
+                    {
+                        cells[x, y].color = Color.white;
+                        continue;
+                    }
+                    // Checkerboard: alternate colors like a chess board.
+                    cells[x, y].color = (x + y) % 2 == 0 ? theme.DarkCellColor : theme.LightCellColor;
+                }
+            }
+        }
+
+        /// <summary>The token style currently selected, or null if there's no ThemeManager.</summary>
+        private TokenStyle CurrentTokenStyle => themeManager != null ? themeManager.TokenStyle : null;
+
+        /// <summary>
+        /// Logs an error if the current token style is missing a sprite for any type this board
+        /// can spawn, since those tokens would be invisible.
+        /// </summary>
+        private void ValidateTokenStyle()
+        {
+            TokenStyle style = CurrentTokenStyle;
+            if (style == null || tokenTypes == null)
+            {
+                return;
+            }
+
+            List<TokenType> missing = style.FindMissingTypes(tokenTypes);
+            if (missing.Count > 0)
+            {
+                // ConvertAll builds a list of names; string.Join glues them together with commas.
+                string names = string.Join(", ", missing.ConvertAll(type => type.name));
+                Debug.LogError($"Board: token style '{style.name}' has no sprite for: {names}. " +
+                               "Add an entry for each to the style asset.", style);
             }
         }
 
@@ -213,6 +321,7 @@ namespace Match3
             // instead of a GameObject returns the clone's matching component directly.
             Token token = Instantiate(tokenPrefab, position, Quaternion.identity, tokenContainer);
             token.transform.localScale = Vector3.one * cellSize;
+            token.SetStyle(CurrentTokenStyle);
             token.SetType(type);
             PlaceToken(token, x, y);
         }

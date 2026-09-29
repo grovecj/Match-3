@@ -602,8 +602,7 @@ MonoBehaviour:
   height: 8
   cellSize: 1
   cellPrefab: {fileID: 8554679896580018014, guid: 076d115916db35b42aa28c201d219384, type: 3}
-  lightCellColor: {r: 0.28, g: 0.28, b: 0.36, a: 1}
-  darkCellColor: {r: 0.2, g: 0.2, b: 0.27, a: 1}
+  themeManager: {fileID: 1200000003}
   tokenPrefab: {fileID: 6171428459375093021, guid: 03215ac7525945c299be23967a91bc11, type: 3}
   tokenTypes:
   - {fileID: 11400000, guid: f1cd57746d0749538309dca42ea575c7, type: 2}
@@ -935,6 +934,7 @@ MonoBehaviour:
   board: {fileID: 709381719}
   padding: 1
   rightPanel: {fileID: 428883635}
+  themeManager: {fileID: 1200000003}
 --- !u!1 &2066332374
 GameObject:
   m_ObjectHideFlags: 0
@@ -1707,6 +1707,59 @@ MonoBehaviour:
   messageText: {fileID: 1100000023}
   roundButton: {fileID: 1100000036}
   roundButtonLabel: {fileID: 1100000043}
+--- !u!1 &1200000001
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1200000002}
+  - component: {fileID: 1200000003}
+  m_Layer: 0
+  m_Name: ThemeManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1200000002
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1200000001}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1200000003
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1200000001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ec859bb1fe5d4e63bf9e0d26cd1b611c, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Match3::Match3.ThemeManager
+  tokenStyles:
+  - {fileID: 11400000, guid: adf66810d5254b24ac601e0addcfc2b2, type: 2}
+  boardThemes:
+  - {fileID: 11400000, guid: f570db05e7124db08318270926e8289b, type: 2}
+  - {fileID: 11400000, guid: 100bb45717b247628f238e62e434129a, type: 2}
+  - {fileID: 11400000, guid: 6e6d2c40fc454226a2f1e3a099561cc4, type: 2}
+  - {fileID: 11400000, guid: b5fdb0a99d78431a80976d0b16e2ef58, type: 2}
+  tokenStyle: {fileID: 11400000, guid: adf66810d5254b24ac601e0addcfc2b2, type: 2}
+  boardTheme: {fileID: 11400000, guid: f570db05e7124db08318270926e8289b, type: 2}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -1717,3 +1770,4 @@ SceneRoots:
   - {fileID: 696669142}
   - {fileID: 2066332376}
   - {fileID: 1100000052}
+  - {fileID: 1200000002}
