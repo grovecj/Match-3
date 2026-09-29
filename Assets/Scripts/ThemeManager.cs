@@ -18,8 +18,8 @@ namespace Match3
     {
         // PlayerPrefs is a tiny key/value store Unity keeps for you between runs (on Windows
         // it lives in the registry). These are the keys we save the chosen ids under.
-        private const string TokenStyleKey = "Settings.TokenStyle";
-        private const string BoardThemeKey = "Settings.BoardTheme";
+        public const string TokenStyleKey = "Settings.TokenStyle";
+        public const string BoardThemeKey = "Settings.BoardTheme";
 
         [Header("Available")]
         [Tooltip("Token styles the player can choose from. The first is used if none is selected.")]
