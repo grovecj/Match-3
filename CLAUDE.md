@@ -8,7 +8,8 @@ well-explained code over polish. Explain Unity concepts when introducing them.
 - Tasks are tracked in GitHub Issues (`gh issue list -R grovecj/Match-3`).
 - Unity must be closed before moving/renaming files outside the Editor; always move `.meta` files with their assets.
 - Editor-only tools (e.g. `Match3 > Build Settings Menu`, which regenerates the Settings UI and
-  its option prefabs) live in `Assets/Editor/`.
+  its option prefabs, and `Match3 > Build Leaderboard Menu`) live in `Assets/Editor/`, sharing
+  helpers from `UIBuilder.cs`.
 - Game scripts live in `Assets/Scripts/` (the `Match3` assembly). Edit Mode tests live in
   `Assets/Tests/EditMode/` (`Match3.Tests.EditMode`). Run them from **Window → General → Test
   Runner → EditMode**, or headless (Unity must not already have the project open):
