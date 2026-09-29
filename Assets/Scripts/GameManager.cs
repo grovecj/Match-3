@@ -19,6 +19,7 @@ namespace Match3
     ///               "Paused" overlay is shown. Esc or the Resume button goes back to Playing.
     ///   RoundOver - time ran out. The final score and a "Play Again" button are shown.
     /// Clicking the button in Ready or RoundOver starts a new round (-> Playing).
+    /// The Settings menu (gear button) is only available in Ready and RoundOver.
     /// </summary>
     public class GameManager : MonoBehaviour
     {
@@ -46,6 +47,10 @@ namespace Match3
         [SerializeField] private Button resumeButton;
         [SerializeField] private BoardBlur boardBlur;
 
+        [Header("Settings")]
+        [Tooltip("Shown between rounds only, so the look of the board can't change mid-round.")]
+        [SerializeField] private SettingsMenu settingsMenu;
+
         private enum GameState { Ready, Playing, Paused, RoundOver }
 
         private GameState state;
@@ -56,7 +61,7 @@ namespace Match3
         {
             if (board == null || boardInput == null || scoreKeeper == null ||
                 timerText == null || messageText == null || roundButton == null || roundButtonLabel == null ||
-                pauseOverlay == null || resumeButton == null || boardBlur == null)
+                pauseOverlay == null || resumeButton == null || boardBlur == null || settingsMenu == null)
             {
                 Debug.LogError("GameManager: assign every field in the Inspector.", this);
                 enabled = false;
@@ -174,6 +179,7 @@ namespace Match3
             // the button also hides its label).
             roundButton.gameObject.SetActive(false);
             messageText.gameObject.SetActive(false);
+            settingsMenu.SetAvailable(false);
             SetInputEnabled(true);
 
             state = GameState.Playing;
@@ -221,6 +227,7 @@ namespace Match3
             ShowTime();
             messageText.gameObject.SetActive(false);
             ShowButton("Start Round");
+            settingsMenu.SetAvailable(true);
         }
 
         private void EnterRoundOver()
@@ -231,6 +238,7 @@ namespace Match3
             messageText.text = $"Time's up!\nFinal score: {finalScore}";
             messageText.gameObject.SetActive(true);
             ShowButton("Play Again");
+            settingsMenu.SetAvailable(true);
         }
 
         private void ShowButton(string label)

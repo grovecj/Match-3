@@ -75,6 +75,9 @@ namespace Match3
         // asking the scene where things are.
         private Token[,] tokens;
 
+        /// <summary>The kinds of token that can appear on the board (e.g. for previews in menus).</summary>
+        public IReadOnlyList<TokenType> TokenTypes => tokenTypes;
+
         public int Width => width;
         public int Height => height;
         public float CellSize => cellSize;
