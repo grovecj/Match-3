@@ -1,6 +1,7 @@
 using System.Globalization;
 using TMPro;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
 namespace Match3
@@ -10,10 +11,12 @@ namespace Match3
     /// the player may swap, resets the board and score between rounds, and drives the timer,
     /// message, and Start/Play Again button in the side panel.
     ///
-    /// This is a state machine with three states:
+    /// This is a state machine with four states:
     ///   Ready     - the game just launched. The board is shown, input is off, and the
     ///               "Start Round" button waits for a click.
     ///   Playing   - the timer is counting down and the player can swap.
+    ///   Paused    - Esc was pressed mid-round. Time is frozen, the board is blurred, and a
+    ///               "Paused" overlay is shown. Esc or the Resume button goes back to Playing.
     ///   RoundOver - time ran out. The final score and a "Play Again" button are shown.
     /// Clicking the button in Ready or RoundOver starts a new round (-> Playing).
     /// </summary>
@@ -37,15 +40,23 @@ namespace Match3
         [SerializeField] private Button roundButton;
         [SerializeField] private TMP_Text roundButtonLabel;
 
-        private enum GameState { Ready, Playing, RoundOver }
+        [Header("Pause")]
+        [Tooltip("The gray \"Paused\" panel over the board. Hidden unless paused.")]
+        [SerializeField] private GameObject pauseOverlay;
+        [SerializeField] private Button resumeButton;
+        [SerializeField] private BoardBlur boardBlur;
+
+        private enum GameState { Ready, Playing, Paused, RoundOver }
 
         private GameState state;
         private float timeRemaining;
+        private InputAction pauseAction;
 
         private void Start()
         {
             if (board == null || boardInput == null || scoreKeeper == null ||
-                timerText == null || messageText == null || roundButton == null || roundButtonLabel == null)
+                timerText == null || messageText == null || roundButton == null || roundButtonLabel == null ||
+                pauseOverlay == null || resumeButton == null || boardBlur == null)
             {
                 Debug.LogError("GameManager: assign every field in the Inspector.", this);
                 enabled = false;
@@ -56,7 +67,14 @@ namespace Match3
             // clicked. Listeners can be added in the Inspector (the "On Click ()" list) or, as
             // here, from code, which keeps the wiring visible next to the method it calls.
             roundButton.onClick.AddListener(StartRound);
+            resumeButton.onClick.AddListener(Resume);
 
+            // InputSystem.actions is the project-wide actions asset (Assets/Settings/
+            // InputSystem_Actions, set under Project Settings > Input System Package). Unity
+            // enables it automatically, so we only need to find our action by "Map/Action" name.
+            pauseAction = InputSystem.actions.FindAction("Player/Pause", throwIfNotFound: true);
+
+            pauseOverlay.SetActive(false);
             EnterReady();
         }
 
@@ -66,21 +84,56 @@ namespace Match3
             {
                 roundButton.onClick.RemoveListener(StartRound);
             }
+            if (resumeButton != null)
+            {
+                resumeButton.onClick.RemoveListener(Resume);
+            }
+
+            // Time.timeScale is global and outlives this scene, so never leave the game frozen.
+            Time.timeScale = 1f;
+        }
+
+        // Unity calls this when the game window gains or loses focus. Pausing when the player
+        // clicks away means the clock doesn't run down while they're in another window.
+        private void OnApplicationFocus(bool hasFocus)
+        {
+            if (!hasFocus && state == GameState.Playing)
+            {
+                Pause();
+            }
         }
 
         private void Update()
         {
+            // Update keeps running while paused: Time.timeScale = 0 only makes Time.deltaTime
+            // 0, it doesn't stop Update. That's what lets us notice Esc again to resume.
+            bool pausePressed = pauseAction.WasPressedThisFrame();
+
             // Each state gets its own case, so it's easy to see what happens every frame
-            // in each one. Only Playing has per-frame work: running the clock.
+            // in each one.
             switch (state)
             {
                 case GameState.Ready:
                 case GameState.RoundOver:
-                    // Nothing to do; we're waiting for a button click.
+                    // Nothing to do; we're waiting for a button click. Esc is ignored.
                     break;
 
                 case GameState.Playing:
-                    UpdatePlaying();
+                    if (pausePressed)
+                    {
+                        Pause();
+                    }
+                    else
+                    {
+                        UpdatePlaying();
+                    }
+                    break;
+
+                case GameState.Paused:
+                    if (pausePressed)
+                    {
+                        Resume();
+                    }
                     break;
             }
         }
@@ -124,6 +177,40 @@ namespace Match3
             SetInputEnabled(true);
 
             state = GameState.Playing;
+        }
+
+        /// <summary>Freezes the round: stops time, blocks input, and blurs the board.</summary>
+        private void Pause()
+        {
+            state = GameState.Paused;
+
+            // Time.timeScale is how fast game time passes: 1 is normal speed, 0 is stopped.
+            // At 0, Time.deltaTime is 0, so everything that moves by deltaTime freezes: our
+            // timer, the swap and fall animations, and WaitForSeconds in the board's coroutines.
+            // (UI buttons still work because the UI uses Time.unscaledDeltaTime, real time.)
+            Time.timeScale = 0f;
+
+            SetInputEnabled(false);
+            boardBlur.Show();
+            pauseOverlay.SetActive(true);
+        }
+
+        /// <summary>Picks the round back up exactly where it stopped. Also the Resume button.</summary>
+        private void Resume()
+        {
+            if (state != GameState.Paused)
+            {
+                return;
+            }
+
+            state = GameState.Playing;
+            Time.timeScale = 1f;
+            pauseOverlay.SetActive(false);
+            boardBlur.Hide();
+
+            // If the clock had already hit 0 (we were only waiting for a cascade to finish),
+            // swapping stays off.
+            SetInputEnabled(timeRemaining > 0f);
         }
 
         private void EnterReady()
