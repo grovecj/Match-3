@@ -115,6 +115,15 @@ namespace Match3
             }
         }
 
+        /// <summary>
+        /// Throws away the current board and deals a fresh one with no starting matches
+        /// (e.g. when a new round starts).
+        /// </summary>
+        public void Regenerate()
+        {
+            Rebuild();
+        }
+
         private void Rebuild()
         {
             needsRebuild = false;
