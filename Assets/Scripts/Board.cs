@@ -27,7 +27,7 @@ namespace Match3
         [Header("Tokens")]
         [Tooltip("Token prefab spawned into each cell. The Board assigns its type at runtime.")]
         [SerializeField] private Token tokenPrefab;
-        [Tooltip("The kinds of token that can appear on the board. Needs at least 3 to avoid starting matches.")]
+        [Tooltip("The kinds of token that can appear on the board. Needs at least 3 distinct types to avoid starting matches.")]
         [SerializeField] private TokenType[] tokenTypes;
 
         private Transform cellContainer;
@@ -123,21 +123,24 @@ namespace Match3
         /// </summary>
         private void FillWithRandomTokens()
         {
-            if (tokenPrefab == null || tokenTypes == null || tokenTypes.Length == 0)
-            {
-                Debug.LogError("Board: assign a Token Prefab and at least one Token Type.", this);
-                return;
-            }
-
             // Same "container" trick as the cells: one child object to hold (and clear) all tokens.
+            // Clear the old container and rebuild the `tokens` array before validating the
+            // replacement configuration below, so a bad config still leaves `tokens` correctly
+            // sized for the current dimensions (all null) instead of a stale, wrongly-sized array
+            // from before a dimension change.
             if (tokenContainer != null)
             {
                 Destroy(tokenContainer.gameObject);
             }
             tokenContainer = new GameObject("Tokens").transform;
             tokenContainer.SetParent(transform, false);
-
             tokens = new Token[width, height];
+
+            if (tokenPrefab == null || CountDistinctTypes(tokenTypes) < 3)
+            {
+                Debug.LogError("Board: assign a Token Prefab and at least 3 distinct Token Types.", this);
+                return;
+            }
 
             // Fill column by column, bottom to top. That order matters: by the time we reach
             // (x, y), the two cells to its left and the two cells below it are already filled,
@@ -172,7 +175,8 @@ namespace Match3
                 : null;
 
             // Collect the types that are still allowed, then pick one of them at random.
-            // At most two types are forbidden, so with 3+ types there's always a choice.
+            // At most two types are forbidden, and FillWithRandomTokens guarantees at least
+            // 3 distinct types, so there's always at least one candidate left.
             var candidates = new List<TokenType>();
             foreach (TokenType type in tokenTypes)
             {
@@ -182,14 +186,27 @@ namespace Match3
                 }
             }
 
-            if (candidates.Count == 0)
-            {
-                // Only happens with fewer than 3 types; fall back to any type rather than failing.
-                candidates.AddRange(tokenTypes);
-            }
-
             // Random.Range with ints excludes the max, so this returns 0..Count-1: a valid index.
             return candidates[Random.Range(0, candidates.Count)];
+        }
+
+        /// <summary>Number of distinct, non-null entries in <paramref name="types"/>.</summary>
+        private static int CountDistinctTypes(TokenType[] types)
+        {
+            if (types == null)
+            {
+                return 0;
+            }
+
+            var distinct = new HashSet<TokenType>();
+            foreach (TokenType type in types)
+            {
+                if (type != null)
+                {
+                    distinct.Add(type);
+                }
+            }
+            return distinct.Count;
         }
 
         /// <summary>World position of the center of cell (x, y).</summary>
