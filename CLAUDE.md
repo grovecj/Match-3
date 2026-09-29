@@ -7,4 +7,8 @@ well-explained code over polish. Explain Unity concepts when introducing them.
 - Repo root is the Unity project root. Source art goes in `Art/`, game assets in `Assets/`.
 - Tasks are tracked in GitHub Issues (`gh issue list -R grovecj/Match-3`).
 - Unity must be closed before moving/renaming files outside the Editor; always move `.meta` files with their assets.
+- Game scripts live in `Assets/Scripts/` (the `Match3` assembly). Edit Mode tests live in
+  `Assets/Tests/EditMode/` (`Match3.Tests.EditMode`). Run them from **Window → General → Test
+  Runner → EditMode**, or headless (Unity must not already have the project open):
+  `Unity.exe -batchmode -projectPath . -runTests -testPlatform EditMode -testResults results.xml`
 - Don't commit `Library/`, `Temp/`, `Logs/`, `UserSettings/`, or generated `.csproj`/`.sln*` files.
