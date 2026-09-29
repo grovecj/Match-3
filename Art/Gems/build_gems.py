@@ -186,7 +186,8 @@ GLASS_BACKLIGHT_DEPTH = 0.6     # how far below the tiles the glowing backlight 
 GLASS_BACKLIGHT_STRENGTH = 1.6  # how bright it glows at its center
 GLASS_GLOW_RADIUS = 1.3         # how far from the center the backlight's glow fades out
 GLASS_GLARE_WIDTH = 0.12        # width of the glare streak's light
-GLASS_GLARE_OFFSET = 0.15       # how far toward the upper left of the tile the streak sits
+GLASS_GLARE_LENGTH = 0.9        # length of the glare streak
+GLASS_GLARE_OFFSET = 0.3        # how far toward the upper left of the tile the streak sits
 GLASS_GLARE_ENERGY = 150
 
 
@@ -228,8 +229,8 @@ def make_glass_materials(name, color):
     """Clear, tinted glass.
 
     A fully transmissive (see-through) surface: light passing through the tile is tinted by
-    the Base Color, and the smooth rounded edges catch bright reflections. The world behind
-    the glass is what shows through it, so configure_glass_render brightens the world.
+    the Base Color, and the smooth rounded edges catch bright reflections. Whatever is behind
+    the glass shows through it, so configure_glass_scene puts a glowing plate back there.
     """
     mat = bpy.data.materials.new(name)
     mat.use_nodes = True
@@ -268,7 +269,7 @@ def configure_glass_scene(scene, rig):
     # shows up as a diagonal glare streak: the classic "this is glass" cue.
     glare_data = bpy.data.lights.new("Glare", type="AREA")
     glare_data.shape = "RECTANGLE"
-    glare_data.size, glare_data.size_y = GLASS_GLARE_WIDTH, 4.0
+    glare_data.size, glare_data.size_y = GLASS_GLARE_WIDTH, GLASS_GLARE_LENGTH
     glare_data.energy = GLASS_GLARE_ENERGY
     glare = bpy.data.objects.new("Glare", glare_data)
     glare.location = (-GLASS_GLARE_OFFSET, GLASS_GLARE_OFFSET, 5.0)  # up and to the left
@@ -487,7 +488,7 @@ def build_style(style):
     tokens = []
     for index, (shape_id, outline, color) in enumerate(SHAPES):
         if shape_id == "circle":
-            outline = regular_polygon(style.circle_sides)
+            outline = regular_polygon(style.circle_sides)  # see the note above SHAPES
         name = f"{style.file_prefix}_{shape_id}"
         obj = style.build_object(name, outline)
         for material in style.make_materials(name, color):

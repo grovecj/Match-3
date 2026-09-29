@@ -2475,6 +2475,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Match3::Match3.ThemeManager
   tokenStyles:
   - {fileID: 11400000, guid: adf66810d5254b24ac601e0addcfc2b2, type: 2}
+  - {fileID: 11400000, guid: 09cf0f124d4945d5a5c28ff706414c9b, type: 2}
+  - {fileID: 11400000, guid: 4bcb7dec25b341a597a99fb9a9d27162, type: 2}
   boardThemes:
   - {fileID: 11400000, guid: f570db05e7124db08318270926e8289b, type: 2}
   - {fileID: 11400000, guid: 100bb45717b247628f238e62e434129a, type: 2}
