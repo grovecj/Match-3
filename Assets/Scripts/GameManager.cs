@@ -169,7 +169,9 @@ namespace Match3
             int seconds = totalSeconds % 60;
             // ":00" pads the seconds to two digits, so 5 seconds shows as "0:05", not "0:5".
             timerText.text = $"{minutes}:{seconds:00}";
-            timerText.color = totalSeconds <= warningTime ? timerWarningColor : timerColor;
+            // Compare the real time left (not the rounded display) so fractional warning times
+            // work too. For whole seconds it's the same: 0:10 appears exactly when it turns red.
+            timerText.color = timeRemaining <= warningTime ? timerWarningColor : timerColor;
         }
     }
 }
