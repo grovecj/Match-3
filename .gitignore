@@ -112,3 +112,7 @@ InitTestScene*.unity*
 
 # One-shot Unity Hub bootstrap script (self-deletes after first open)
 /[Aa]ssets/[Ee]ditor/HubForceResolve.cs*
+
+# TextMesh Pro optional examples (only the TMP Essentials are needed)
+/[Aa]ssets/TextMesh Pro/Examples & Extras/
+/[Aa]ssets/TextMesh Pro/Examples & Extras.meta
