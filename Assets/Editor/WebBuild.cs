@@ -15,6 +15,8 @@ using UnityEngine;
 ///   Unity.exe -batchmode -quit -projectPath . -buildTarget WebGL -executeMethod WebBuild.BuildFromCommandLine
 /// (-buildTarget makes Unity open the project already on the Web platform, so it doesn't import
 /// every texture for PC first and then again for Web.)
+/// CI (.github/workflows/build.yml) runs this same method, passing -customBuildPath to choose
+/// where the build goes.
 ///
 /// A Web build always compiles C# with IL2CPP: C# -> C++ -> WebAssembly (via Emscripten).
 /// Browsers can't run the Mono runtime the Editor uses, so there's no Mono option for Web, and
@@ -22,12 +24,12 @@ using UnityEngine;
 /// </summary>
 public static class WebBuild
 {
-    private const string OutputFolder = "Builds/Web";
+    private const string DefaultOutputFolder = "Builds/Web";
 
     [MenuItem("Match3/Build Web")]
     public static void Build()
     {
-        RunBuild(BuildOptions.None);
+        RunBuild(DefaultOutputFolder, BuildOptions.None);
     }
 
     // AutoRunPlayer makes Unity start a small local web server for the build and open it in
@@ -35,18 +37,36 @@ public static class WebBuild
     [MenuItem("Match3/Build Web and Run")]
     public static void BuildAndRun()
     {
-        RunBuild(BuildOptions.AutoRunPlayer);
+        RunBuild(DefaultOutputFolder, BuildOptions.AutoRunPlayer);
     }
 
-    /// <summary>For -executeMethod: builds, then quits Unity with exit code 0 on success, 1 on failure.</summary>
+    /// <summary>
+    /// For -executeMethod: builds, then quits Unity with exit code 0 on success, 1 on failure.
+    /// Builds into the folder after "-customBuildPath" if that argument is given (GameCI's
+    /// unity-builder always passes it), otherwise into Builds/Web.
+    /// </summary>
     public static void BuildFromCommandLine()
     {
-        bool succeeded = RunBuild(BuildOptions.None);
+        string outputFolder = GetCommandLineValue("-customBuildPath") ?? DefaultOutputFolder;
+        bool succeeded = RunBuild(outputFolder, BuildOptions.None);
         EditorApplication.Exit(succeeded ? 0 : 1);
     }
 
+    /// <summary>Returns the argument after <paramref name="name"/> on Unity's command line, or null.</summary>
+    private static string GetCommandLineValue(string name)
+    {
+        // The whole command line, e.g. { "Unity", "-batchmode", "-customBuildPath", "build/WebGL/Match3", ... }.
+        string[] args = System.Environment.GetCommandLineArgs();
+        for (int i = 0; i < args.Length - 1; i++)
+        {
+            if (args[i] == name && !string.IsNullOrEmpty(args[i + 1]))
+                return args[i + 1];
+        }
+        return null;
+    }
+
     /// <summary>Applies the Web player settings and builds every scene in the build list.</summary>
-    private static bool RunBuild(BuildOptions options)
+    private static bool RunBuild(string outputFolder, BuildOptions options)
     {
         // The Editor has an "active" platform (shown in File > Build Profiles). It decides how
         // assets like textures are imported and which platform #defines (UNITY_WEBGL, ...)
@@ -66,7 +86,7 @@ public static class WebBuild
         {
             // The scenes ticked in the build profile's Scene List, in order.
             scenes = EditorBuildSettings.scenes.Where(s => s.enabled).Select(s => s.path).ToArray(),
-            locationPathName = OutputFolder,
+            locationPathName = outputFolder,
             target = BuildTarget.WebGL,
             targetGroup = BuildTargetGroup.WebGL,
             options = options,
@@ -84,10 +104,10 @@ public static class WebBuild
         // summary.totalSize counts everything Unity wrote, including the uncompressed index.html
         // and template files. What a player actually downloads is the Build folder, so we
         // measure that too; those are the numbers worth writing down in Docs/WebBuild.md.
-        long downloadBytes = new DirectoryInfo(Path.Combine(OutputFolder, "Build"))
+        long downloadBytes = new DirectoryInfo(Path.Combine(outputFolder, "Build"))
             .GetFiles().Sum(f => f.Length);
         Debug.Log($"Web build succeeded in {summary.totalTime:m\\:ss}. " +
-                  $"Download size (Build folder): {downloadBytes / 1024f / 1024f:0.0} MB. Output: {Path.GetFullPath(OutputFolder)}");
+                  $"Download size (Build folder): {downloadBytes / 1024f / 1024f:0.0} MB. Output: {Path.GetFullPath(outputFolder)}");
         return true;
     }
 
