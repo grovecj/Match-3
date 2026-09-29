@@ -129,6 +129,7 @@ GameObject:
   m_Component:
   - component: {fileID: 709381720}
   - component: {fileID: 709381719}
+  - component: {fileID: 709381721}
   m_Layer: 0
   m_Name: Board
   m_TagString: Untagged
@@ -161,6 +162,7 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 04061a2df2164a508e33cfba4d2c28d4, type: 2}
   - {fileID: 11400000, guid: 04df1804484341038921ca2ed7494784, type: 2}
   - {fileID: 11400000, guid: 549100796bda41b0a3bd74dfa7b258b5, type: 2}
+  swapDuration: 0.15
 --- !u!4 &709381720
 Transform:
   m_ObjectHideFlags: 0
@@ -176,6 +178,56 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &709381721
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 709381715}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: be379b1675b4ea2428cd4cee7b8db6fe, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Match3.BoardInput
+  pressAction:
+    m_Name: Press
+    m_Type: 1
+    m_ExpectedControlType: 
+    m_Id: 219e269f-d5d0-4b46-b76c-85d359c10728
+    m_Processors: 
+    m_Interactions: 
+    m_SingletonActionBindings:
+    - m_Name: 
+      m_Id: a6e3c064-15f4-4dca-9518-71be72c7a9fa
+      m_Path: <Pointer>/press
+      m_Interactions: 
+      m_Processors: 
+      m_Groups: 
+      m_Action: Press
+      m_Flags: 0
+    m_Flags: 0
+    m_Priority: 0
+  pointAction:
+    m_Name: Point
+    m_Type: 0
+    m_ExpectedControlType: 
+    m_Id: f53eaa4a-563f-496a-96bf-6d07aa958eb6
+    m_Processors: 
+    m_Interactions: 
+    m_SingletonActionBindings:
+    - m_Name: 
+      m_Id: d366d7e6-2598-413c-8c21-1b7d201dda92
+      m_Path: <Pointer>/position
+      m_Interactions: 
+      m_Processors: 
+      m_Groups: 
+      m_Action: Point
+      m_Flags: 0
+    m_Flags: 0
+    m_Priority: 0
+  dragThreshold: 0.5
+  diagonalTolerance: 0.75
 --- !u!1 &1686509895
 GameObject:
   m_ObjectHideFlags: 0
