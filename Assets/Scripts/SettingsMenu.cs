@@ -138,17 +138,34 @@ namespace Match3
             // right now anyway, because the GameManager only turns board input on mid-round.
             modal.SetActive(true);
 
-            // Forget which button had keyboard focus (the gear), so pressing Enter/Space while
-            // the menu is open can't "click" something that's now covered by the panel.
-            if (EventSystem.current != null)
-            {
-                EventSystem.current.SetSelectedGameObject(null);
-            }
+            // Move keyboard/gamepad focus into the panel. Otherwise it stays on the gear, now
+            // hidden behind the backdrop, and Enter/Space or the arrow keys would act on
+            // controls the player can't see.
+            Select(closeButton);
         }
 
         private void Close()
         {
+            if (!IsOpen)
+            {
+                return;
+            }
             modal.SetActive(false);
+
+            // Hand focus back to the gear, unless it's hidden because a round is starting.
+            Select(openButton.gameObject.activeInHierarchy ? openButton : null);
+        }
+
+        /// <summary>
+        /// Gives keyboard/gamepad focus to <paramref name="button"/> (null = nothing). The
+        /// EventSystem tracks one "selected" UI object: arrow keys move from it, Enter clicks it.
+        /// </summary>
+        private static void Select(Button button)
+        {
+            if (EventSystem.current != null)
+            {
+                EventSystem.current.SetSelectedGameObject(button != null ? button.gameObject : null);
+            }
         }
 
         /// <summary>Creates one option per available style and theme.</summary>
