@@ -154,6 +154,13 @@ MonoBehaviour:
   cellPrefab: {fileID: 8554679896580018014, guid: 076d115916db35b42aa28c201d219384, type: 3}
   lightCellColor: {r: 0.28, g: 0.28, b: 0.36, a: 1}
   darkCellColor: {r: 0.2, g: 0.2, b: 0.27, a: 1}
+  tokenPrefab: {fileID: 6171428459375093021, guid: 03215ac7525945c299be23967a91bc11, type: 3}
+  tokenTypes:
+  - {fileID: 11400000, guid: f1cd57746d0749538309dca42ea575c7, type: 2}
+  - {fileID: 11400000, guid: 991fc535d3cb4b89af53e7a4b7710d63, type: 2}
+  - {fileID: 11400000, guid: 04061a2df2164a508e33cfba4d2c28d4, type: 2}
+  - {fileID: 11400000, guid: 04df1804484341038921ca2ed7494784, type: 2}
+  - {fileID: 11400000, guid: 549100796bda41b0a3bd74dfa7b258b5, type: 2}
 --- !u!4 &709381720
 Transform:
   m_ObjectHideFlags: 0
