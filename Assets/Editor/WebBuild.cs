@@ -12,7 +12,9 @@ using UnityEngine;
 /// You could set all of this by hand in File > Build Profiles and Project Settings > Player >
 /// Web. Doing it in code means the settings are written down, reviewable in a PR, and the same
 /// every time, and a CI server can make the exact same build later:
-///   Unity.exe -batchmode -quit -projectPath . -executeMethod WebBuild.BuildFromCommandLine
+///   Unity.exe -batchmode -quit -projectPath . -buildTarget WebGL -executeMethod WebBuild.BuildFromCommandLine
+/// (-buildTarget makes Unity open the project already on the Web platform, so it doesn't import
+/// every texture for PC first and then again for Web.)
 ///
 /// A Web build always compiles C# with IL2CPP: C# -> C++ -> WebAssembly (via Emscripten).
 /// Browsers can't run the Mono runtime the Editor uses, so there's no Mono option for Web, and
@@ -46,6 +48,18 @@ public static class WebBuild
     /// <summary>Applies the Web player settings and builds every scene in the build list.</summary>
     private static bool RunBuild(BuildOptions options)
     {
+        // The Editor has an "active" platform (shown in File > Build Profiles). It decides how
+        // assets like textures are imported and which platform #defines (UNITY_WEBGL, ...)
+        // editor code sees. Switch it to Web explicitly rather than relying on BuildPlayer to do
+        // it. The first switch re-imports textures for the new platform, which takes a while;
+        // after that the Editor stays on Web until you switch back.
+        if (EditorUserBuildSettings.activeBuildTarget != BuildTarget.WebGL &&
+            !EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.WebGL, BuildTarget.WebGL))
+        {
+            Debug.LogError("Web build: couldn't switch to the Web platform. Is the Web module installed (Unity Hub > Installs > Add modules)?");
+            return false;
+        }
+
         ApplyWebSettings();
 
         var buildOptions = new BuildPlayerOptions
@@ -54,11 +68,10 @@ public static class WebBuild
             scenes = EditorBuildSettings.scenes.Where(s => s.enabled).Select(s => s.path).ToArray(),
             locationPathName = OutputFolder,
             target = BuildTarget.WebGL,
+            targetGroup = BuildTargetGroup.WebGL,
             options = options,
         };
 
-        // BuildPlayer switches the Editor to the Web platform first if it isn't already on it.
-        // The first switch re-imports textures for the new platform, which takes a while.
         BuildReport report = BuildPipeline.BuildPlayer(buildOptions);
         BuildSummary summary = report.summary;
 

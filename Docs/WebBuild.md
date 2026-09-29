@@ -21,7 +21,7 @@ The build script is [`Assets/Editor/WebBuild.cs`](../Assets/Editor/WebBuild.cs).
 Settings below in code, so every build uses the same settings. CI can run it headless:
 
 ```bash
-Unity.exe -batchmode -quit -projectPath . -executeMethod WebBuild.BuildFromCommandLine
+Unity.exe -batchmode -quit -projectPath . -buildTarget WebGL -executeMethod WebBuild.BuildFromCommandLine
 ```
 
 ## Settings chosen
@@ -94,7 +94,7 @@ server sends no `Content-Encoding` header, so Decompression Fallback was exercis
 | Pause blur renders (no black-image fallback needed) | ✅ | _TBD_ |
 | Canvas fills the window and follows resizes | ✅ | _TBD_ |
 | Settings (token style, board colors) survive a reload | ✅ | _TBD_ |
-| Leaderboard survives a reload | Waiting on #21 | Waiting on #21 |
+| Leaderboard survives a reload | _TBD_ (#21 is merged; needs a rebuild) | _TBD_ |
 | No console errors | ✅ | _TBD_ |
 
 ## Known issues
