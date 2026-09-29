@@ -124,6 +124,17 @@ namespace Match3.Tests
             Assert.That(entries.Count, Is.EqualTo(Leaderboard.Capacity));
         }
 
+        [Test]
+        public void Insert_ZeroScore_ReturnsMinusOne_EvenWithRoom()
+        {
+            var entries = new List<LeaderboardEntry> { Entry("AAA", 9000) };
+
+            int rank = Leaderboard.Insert(entries, Entry("ZER", 0, 1));
+
+            Assert.That(rank, Is.EqualTo(-1));
+            Assert.That(entries.Count, Is.EqualTo(1));
+        }
+
         [TestCase('a', 'A')]
         [TestCase('Z', 'Z')]
         [TestCase('5', '\0')]

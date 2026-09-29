@@ -107,6 +107,24 @@ namespace Match3.Tests
         }
 
         [Test]
+        public void Load_SkipsEntriesWithImpossibleTimestamps()
+        {
+            // Valid JSON, but one tick count is far beyond DateTime.MaxValue (as if hand-edited).
+            // Two equal scores force the sort to compare timestamps.
+            Directory.CreateDirectory(folder);
+            File.WriteAllText(path,
+                "{\"entries\":[" +
+                "{\"initials\":\"BAD\",\"score\":5000,\"utcTicks\":9223372036854775807}," +
+                "{\"initials\":\"OK\",\"score\":5000,\"utcTicks\":" + Start.Ticks + "}]}");
+            var store = new JsonFileLeaderboardStore(path);
+
+            var loaded = store.Load();
+
+            Assert.That(loaded.Count, Is.EqualTo(1));
+            Assert.That(loaded[0].Initials, Is.EqualTo("OK"));
+        }
+
+        [Test]
         public void Load_CorruptFile_ReturnsEmptyList_AndWarns()
         {
             Directory.CreateDirectory(folder);

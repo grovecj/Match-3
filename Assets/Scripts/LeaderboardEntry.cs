@@ -36,5 +36,11 @@ namespace Match3
 
         /// <summary>When the score was set, in UTC. Used to break ties: earlier wins.</summary>
         public DateTime TimestampUtc => new DateTime(utcTicks, DateTimeKind.Utc);
+
+        /// <summary>
+        /// False if the saved tick count is outside what a DateTime can hold (only possible if
+        /// the file was edited by hand). Reading <see cref="TimestampUtc"/> would then throw.
+        /// </summary>
+        public bool HasValidTimestamp => utcTicks >= DateTime.MinValue.Ticks && utcTicks <= DateTime.MaxValue.Ticks;
     }
 }

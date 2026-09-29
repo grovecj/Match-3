@@ -60,7 +60,8 @@ namespace Match3
             {
                 foreach (LeaderboardEntry entry in data.entries)
                 {
-                    if (entry != null)
+                    // Skip entries that would break sorting (a timestamp DateTime can't hold).
+                    if (entry != null && entry.HasValidTimestamp)
                     {
                         entries.Add(entry);
                     }

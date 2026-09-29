@@ -61,10 +61,15 @@ namespace Match3
         /// <summary>
         /// Adds <paramref name="entry"/> to <paramref name="entries"/>, sorts the list, and cuts
         /// it back to <see cref="Capacity"/>. Returns the new entry's 0-based rank, or -1 if it
-        /// didn't make the cut (in which case it's no longer in the list).
+        /// doesn't <see cref="Qualifies"/> (in which case the list is left unchanged).
         /// </summary>
         public static int Insert(List<LeaderboardEntry> entries, LeaderboardEntry entry)
         {
+            if (!Qualifies(entries, entry.Score))
+            {
+                return -1;
+            }
+
             entries.Add(entry);
             Sort(entries);
 
