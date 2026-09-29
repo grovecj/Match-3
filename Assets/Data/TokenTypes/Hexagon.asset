@@ -14,5 +14,5 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Match3.TokenType
   id: hexagon
   displayName: Hexagon
-  sprite: {fileID: 21300000, guid: e415a3a6e74448c9b874005b29a8533f, type: 3}
-  color: {r: 0.7, g: 0.36, b: 0.92, a: 1}
+  sprite: {fileID: 21300000, guid: cbf6e4e23dbcb7e47b3185ca0b690570, type: 3}
+  color: {r: 1, g: 1, b: 1, a: 1}

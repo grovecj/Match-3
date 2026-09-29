@@ -20,9 +20,9 @@ namespace Match3
         [SerializeField] private string id;
         [Tooltip("Human-readable name for UI.")]
         [SerializeField] private string displayName;
-        [Tooltip("Shape drawn for this token. Placeholder sprites are white so the Color below can tint them.")]
+        [Tooltip("Sprite drawn for this token. The gem sprites (Art/Gems) are already colored, so leave Color white.")]
         [SerializeField] private Sprite sprite;
-        [Tooltip("Tint applied to the sprite. White leaves the sprite's own colors unchanged.")]
+        [Tooltip("Tint multiplied onto the sprite. White leaves the sprite's own colors unchanged.")]
         [SerializeField] private Color color = Color.white;
 
         // Read-only properties: other code can read the data but only the Inspector edits it.

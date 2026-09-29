@@ -14,5 +14,5 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Match3.TokenType
   id: triangle
   displayName: Triangle
-  sprite: {fileID: 21300000, guid: d3ee1152d4c04129be9676757f0ca25c, type: 3}
-  color: {r: 0.98, g: 0.82, b: 0.2, a: 1}
+  sprite: {fileID: 21300000, guid: b58e62a31b7c1b7419cd46d27d354d13, type: 3}
+  color: {r: 1, g: 1, b: 1, a: 1}
