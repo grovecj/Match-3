@@ -15,8 +15,9 @@ namespace Match3
     ///   Ready     - the game just launched. The board is shown, input is off, and the
     ///               "Start Round" button waits for a click.
     ///   Playing   - the timer is counting down and the player can swap.
-    ///   Paused    - Esc was pressed mid-round. Time is frozen, the board is blurred, and a
-    ///               "Paused" overlay is shown. Esc or the Resume button goes back to Playing.
+    ///   Paused    - Esc or P was pressed mid-round, or the game lost focus. Time is frozen, the
+    ///               board is blurred, and a "Paused" overlay is shown. Esc, P, or the Resume
+    ///               button goes back to Playing.
     ///   RoundOver - time ran out. The final score and a "Play Again" button are shown.
     /// Clicking the button in Ready or RoundOver starts a new round (-> Playing).
     /// The Settings menu (gear button) is only available in Ready and RoundOver.
@@ -99,7 +100,9 @@ namespace Match3
         }
 
         // Unity calls this when the game window gains or loses focus. Pausing when the player
-        // clicks away means the clock doesn't run down while they're in another window.
+        // clicks away means the clock doesn't run down while they're in another window. In a
+        // browser (Web build) it fires when the page loses focus: clicking the address bar,
+        // switching tabs, or switching to another app.
         private void OnApplicationFocus(bool hasFocus)
         {
             if (!hasFocus && state == GameState.Playing)
@@ -108,10 +111,24 @@ namespace Match3
             }
         }
 
+        // Unity calls this with true when the app is suspended: minimized on some platforms,
+        // sent to the background on mobile, or (in a browser) the tab being hidden. Focus loss
+        // usually comes first, but not on every platform, so we handle both. Pause() is only
+        // called from Playing, so getting both events can't pause twice.
+        private void OnApplicationPause(bool pauseStatus)
+        {
+            if (pauseStatus && state == GameState.Playing)
+            {
+                Pause();
+            }
+        }
+
         private void Update()
         {
             // Update keeps running while paused: Time.timeScale = 0 only makes Time.deltaTime
-            // 0, it doesn't stop Update. That's what lets us notice Esc again to resume.
+            // 0, it doesn't stop Update. That's what lets us notice Esc/P again to resume.
+            // (The Pause action is bound to both keys in the actions asset. P exists because in
+            // a browser, Esc is taken: it exits fullscreen before the game ever sees it.)
             bool pausePressed = pauseAction.WasPressedThisFrame();
 
             // Each state gets its own case, so it's easy to see what happens every frame
@@ -120,7 +137,7 @@ namespace Match3
             {
                 case GameState.Ready:
                 case GameState.RoundOver:
-                    // Nothing to do; we're waiting for a button click. Esc is ignored.
+                    // Nothing to do; we're waiting for a button click. Esc/P is ignored.
                     break;
 
                 case GameState.Playing:
