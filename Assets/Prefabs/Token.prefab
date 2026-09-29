@@ -106,3 +106,4 @@ MonoBehaviour:
   m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::Match3.Token
   type: {fileID: 11400000, guid: f1cd57746d0749538309dca42ea575c7, type: 2}
+  style: {fileID: 11400000, guid: adf66810d5254b24ac601e0addcfc2b2, type: 2}

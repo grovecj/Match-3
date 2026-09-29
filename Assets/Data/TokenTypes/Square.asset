@@ -14,5 +14,3 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Match3.TokenType
   id: square
   displayName: Square
-  sprite: {fileID: 21300000, guid: fa52d3ed997a2b14383781d079b7fa30, type: 3}
-  color: {r: 1, g: 1, b: 1, a: 1}
