@@ -38,6 +38,8 @@ namespace Match3
             {
                 themeManager.ThemeChanged += ApplyBackgroundColor;
             }
+            // Catch up on any change made while we were disabled and not listening.
+            ApplyBackgroundColor();
         }
 
         private void OnDisable()

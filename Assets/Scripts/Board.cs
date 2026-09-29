@@ -118,6 +118,14 @@ namespace Match3
             {
                 themeManager.ThemeChanged += HandleThemeChanged;
             }
+
+            // While disabled we weren't listening, so the theme may have changed in the
+            // meantime. If the board is already built, catch its visuals up now. (The very
+            // first time, Start builds the board with the current theme instead.)
+            if (cells != null)
+            {
+                HandleThemeChanged();
+            }
         }
 
         private void OnDisable()

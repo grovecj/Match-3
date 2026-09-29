@@ -38,6 +38,12 @@ namespace Match3
         // always a selection to read.
         private void Awake()
         {
+            SelectDefaultsIfEmpty();
+        }
+
+        /// <summary>Falls back to the first available style/theme for any empty selection.</summary>
+        private void SelectDefaultsIfEmpty()
+        {
             if (tokenStyle == null && tokenStyles != null && tokenStyles.Length > 0)
             {
                 tokenStyle = tokenStyles[0];
@@ -61,6 +67,9 @@ namespace Match3
             if (changedInInspector)
             {
                 changedInInspector = false;
+                // Clearing a field in the Inspector would otherwise leave nothing selected and
+                // blank out the board, so put a default back first.
+                SelectDefaultsIfEmpty();
                 ThemeChanged?.Invoke();
             }
         }
