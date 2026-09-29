@@ -116,3 +116,6 @@ InitTestScene*.unity*
 # TextMesh Pro optional examples (only the TMP Essentials are needed)
 /[Aa]ssets/TextMesh Pro/Examples & Extras/
 /[Aa]ssets/TextMesh Pro/Examples & Extras.meta
+
+# Claude Code worktrees
+/.claude/worktrees/
