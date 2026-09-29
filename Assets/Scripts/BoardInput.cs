@@ -90,8 +90,8 @@ namespace Match3
 
         private void TryBeginDrag()
         {
-            // Block new input while the previous swap is still animating.
-            if (board.IsSwapping)
+            // Block new input while the board is still resolving the previous swap.
+            if (board.IsResolving)
             {
                 return;
             }
