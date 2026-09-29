@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Match3
@@ -9,9 +10,17 @@ namespace Match3
     ///
     /// This is the observer pattern: the ThemeManager doesn't know who is displaying the theme,
     /// it just announces changes, so new themed things can be added without editing this class.
+    ///
+    /// The player's choice is saved with PlayerPrefs (by each asset's <c>Id</c>) and restored
+    /// the next time the game starts.
     /// </summary>
     public class ThemeManager : MonoBehaviour
     {
+        // PlayerPrefs is a tiny key/value store Unity keeps for you between runs (on Windows
+        // it lives in the registry). These are the keys we save the chosen ids under.
+        public const string TokenStyleKey = "Settings.TokenStyle";
+        public const string BoardThemeKey = "Settings.BoardTheme";
+
         [Header("Available")]
         [Tooltip("Token styles the player can choose from. The first is used if none is selected.")]
         [SerializeField] private TokenStyle[] tokenStyles;
@@ -19,9 +28,9 @@ namespace Match3
         [SerializeField] private BoardTheme[] boardThemes;
 
         [Header("Current")]
-        [Tooltip("Style in use. Change it during Play mode to re-skin the tokens instantly.")]
+        [Tooltip("Style in use (and the default when nothing is saved). Change it during Play mode to re-skin the tokens instantly.")]
         [SerializeField] private TokenStyle tokenStyle;
-        [Tooltip("Theme in use. Change it during Play mode to recolor the board instantly.")]
+        [Tooltip("Theme in use (and the default when nothing is saved). Change it during Play mode to recolor the board instantly.")]
         [SerializeField] private BoardTheme boardTheme;
 
         /// <summary>Fired whenever the token style or board theme changes.</summary>
@@ -38,7 +47,56 @@ namespace Match3
         // always a selection to read.
         private void Awake()
         {
+            LoadSavedSelection();
             SelectDefaultsIfEmpty();
+        }
+
+        /// <summary>
+        /// Replaces the Inspector's selection with the one saved last time, if there is one.
+        /// A saved id that no longer matches any asset (say, the asset was deleted) is ignored,
+        /// which leaves the Inspector's selection in place as the default.
+        /// </summary>
+        private void LoadSavedSelection()
+        {
+            // GetString returns the second argument when the key has never been saved.
+            string savedStyleId = PlayerPrefs.GetString(TokenStyleKey, "");
+            string savedThemeId = PlayerPrefs.GetString(BoardThemeKey, "");
+
+            TokenStyle savedStyle = FindById(tokenStyles, savedStyleId, style => style.Id);
+            if (savedStyle != null)
+            {
+                tokenStyle = savedStyle;
+            }
+
+            BoardTheme savedTheme = FindById(boardThemes, savedThemeId, theme => theme.Id);
+            if (savedTheme != null)
+            {
+                boardTheme = savedTheme;
+            }
+        }
+
+        /// <summary>
+        /// Returns the first item in <paramref name="items"/> whose id (read with
+        /// <paramref name="getId"/>) equals <paramref name="id"/>, or null if none does.
+        /// Null items, and an empty or null <paramref name="id"/>, never match.
+        /// </summary>
+        // Generic (<T>) so the same lookup works for both TokenStyle and BoardTheme. The caller
+        // passes a small function (a lambda, like `style => style.Id`) that says where the id is.
+        public static T FindById<T>(IEnumerable<T> items, string id, System.Func<T, string> getId)
+            where T : class
+        {
+            if (items == null || string.IsNullOrEmpty(id))
+            {
+                return null;
+            }
+            foreach (T item in items)
+            {
+                if (item != null && getId(item) == id)
+                {
+                    return item;
+                }
+            }
+            return null;
         }
 
         /// <summary>Falls back to the first available style/theme for any empty selection.</summary>
@@ -74,7 +132,7 @@ namespace Match3
             }
         }
 
-        /// <summary>Switches every token to <paramref name="style"/>.</summary>
+        /// <summary>Switches every token to <paramref name="style"/> and remembers the choice.</summary>
         public void SetTokenStyle(TokenStyle style)
         {
             if (style == null || style == tokenStyle)
@@ -82,10 +140,11 @@ namespace Match3
                 return;
             }
             tokenStyle = style;
-            ThemeChanged?.Invoke();
+            PlayerPrefs.SetString(TokenStyleKey, style.Id);
+            SaveAndNotify();
         }
 
-        /// <summary>Switches the board and background colors to <paramref name="theme"/>.</summary>
+        /// <summary>Switches the board and background colors to <paramref name="theme"/> and remembers the choice.</summary>
         public void SetBoardTheme(BoardTheme theme)
         {
             if (theme == null || theme == boardTheme)
@@ -93,6 +152,15 @@ namespace Match3
                 return;
             }
             boardTheme = theme;
+            PlayerPrefs.SetString(BoardThemeKey, theme.Id);
+            SaveAndNotify();
+        }
+
+        private void SaveAndNotify()
+        {
+            // Unity writes PlayerPrefs to disk when the game quits normally. Saving now as well
+            // means a crash (or stopping Play mode at a bad moment) can't lose the choice.
+            PlayerPrefs.Save();
             ThemeChanged?.Invoke();
         }
     }
