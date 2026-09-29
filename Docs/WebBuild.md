@@ -43,8 +43,8 @@ Unity 6000.5.7f1, Windows 11. The build numbers come from the Console line that 
 | | |
 |---|---|
 | Build time, first build | ~8 min for the IL2CPP/Emscripten compile (476 of 506 build steps), plus the platform switch |
-| Build time, rebuild (no C# changes) | 6:30 total, as logged by Match3 → Build Web |
-| Download size (`Build/` folder, gzipped) | **18.9 MB**: `.wasm` 11.9 MB, `.data` 6.9 MB, framework 83 KB, loader 47 KB |
+| Build time, later builds | 3:58–6:30 total, as logged by Match3 → Build Web (the IL2CPP cache makes these faster) |
+| Download size (`Build/` folder, gzipped) | **19.0 MB** with the leaderboard: `.wasm` 12.0 MB, `.data` 6.9 MB, framework 83 KB, loader 47 KB |
 | Load time, Chromium, localhost (build cache cleared / cached) | ~1.8 s / ~1.3 s to playable |
 | Load time, Firefox | _TBD_ |
 
@@ -94,7 +94,7 @@ server sends no `Content-Encoding` header, so Decompression Fallback was exercis
 | Pause blur renders (no black-image fallback needed) | ✅ | _TBD_ |
 | Canvas fills the window and follows resizes | ✅ | _TBD_ |
 | Settings (token style, board colors) survive a reload | ✅ | _TBD_ |
-| Leaderboard survives a reload | _TBD_ (#21 is merged; needs a rebuild) | _TBD_ |
+| Leaderboard survives a reload (`leaderboard.json` in IndexedDB) | ✅ | _TBD_ |
 | No console errors | ✅ | _TBD_ |
 
 ## Known issues
