@@ -13,8 +13,11 @@ well-explained code over polish. Explain Unity concepts when introducing them.
   (see `Docs/WebBuild.md`).
 - CI (`.github/workflows/build.yml`, GameCI) builds Windows on PRs that touch `Assets/`,
   `Packages/`, `ProjectSettings/` or the workflow; Windows + Web builds are manual
-  (Actions → Build → Run workflow). See `Docs/CI.md`. Needs the
-  `UNITY_LICENSE`/`UNITY_EMAIL`/`UNITY_PASSWORD` repo secrets.
+  (Actions → Build → Run workflow). A Run workflow on `main` with **Deploy** ticked also
+  releases: Web via the `web-build` branch (App Platform), Windows zip to Spaces. See
+  `Docs/CI.md`. Needs the `UNITY_LICENSE`/`UNITY_EMAIL`/`UNITY_PASSWORD` repo secrets, plus
+  `SPACES_ACCESS_KEY_ID`/`SPACES_SECRET_ACCESS_KEY`/`DIGITALOCEAN_ACCESS_TOKEN` to deploy.
+  DigitalOcean resources are Terraform in grovecj/cartergrove-me-infra, not here.
 - Game scripts live in `Assets/Scripts/` (the `Match3` assembly). Edit Mode tests live in
   `Assets/Tests/EditMode/` (`Match3.Tests.EditMode`). Run them from **Window → General → Test
   Runner → EditMode**, or headless (Unity must not already have the project open):
