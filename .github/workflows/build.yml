@@ -48,16 +48,16 @@ jobs:
       # Don't cancel the Web build just because the Windows build failed (or vice versa):
       # seeing both results is more useful.
       fail-fast: false
+      # Both use GameCI's default build method, which builds the scenes in the build profile's
+      # Scene List with the Player Settings saved in ProjectSettings/ProjectSettings.asset.
+      # Windows compiles C# with Mono (the Standalone default). Web gets its settings (Gzip,
+      # FullWindow template, ...) from that same file: Match3 > Build Web writes them there
+      # (Assets/Editor/WebBuild.cs), so after changing WebBuild's settings, run it once and
+      # commit ProjectSettings.asset so CI picks them up.
       matrix:
-        include:
-          # Windows, compiled with Mono (the Standalone default). Uses GameCI's default build
-          # method, which builds the scenes in the build profile's Scene List.
-          - targetPlatform: StandaloneWindows64
-            buildMethod: ''
-          # Web. Uses our own build method so CI makes exactly the same build as
-          # Match3 > Build Web in the Editor (see Assets/Editor/WebBuild.cs).
-          - targetPlatform: WebGL
-            buildMethod: WebBuild.BuildFromCommandLine
+        targetPlatform:
+          - StandaloneWindows64
+          - WebGL
 
     steps:
       # The Unity Docker images are large (the Web one especially) and the runner starts with
@@ -108,15 +108,20 @@ jobs:
       # (unityci/editor:ubuntu-6000.5.7f1-<platform>-3), picking the version from
       # ProjectSettings/ProjectVersion.txt. It activates the license, builds, and returns the
       # license. A compile error makes Unity exit non-zero, which fails this step and the check.
+      #
+      # This step gets the Unity credentials, so it's pinned to exact versions: the action to a
+      # commit SHA (a tag like @v6 can be moved to different code later) and the game-ci/cli
+      # binary it downloads to a release (it would otherwise fetch "latest" on every run).
+      # To upgrade, read the release notes and bump both on purpose.
       - name: Build with Unity
-        uses: game-ci/unity-builder@v6
+        uses: game-ci/unity-builder@eb1b9fba120c6e62c9fb7a7a81d6c107ce004c45 # v6.0.0
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
         with:
+          cliVersion: v0.1.69
           targetPlatform: ${{ matrix.targetPlatform }}
-          buildMethod: ${{ matrix.buildMethod }}
           buildName: Match3
           # Output goes to build/<targetPlatform>/, e.g. build/StandaloneWindows64/Match3.exe
           # or build/WebGL/Match3/index.html.

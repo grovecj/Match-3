@@ -10,9 +10,10 @@ with GitHub Actions and [GameCI](https://game.ci) (issue #23). The workflow is
 |---|---|
 | **Triggers** | `pull_request` and `push` to `main`, only when `Assets/`, `Packages/`, `ProjectSettings/` or the workflow file changes. Also **Actions → Build → Run workflow** by hand. |
 | **Runner** | `ubuntu-latest`. Unity runs headless inside GameCI's Docker image `unityci/editor:ubuntu-6000.5.7f1-<platform>-3`. |
-| **Matrix** | `StandaloneWindows64` (Mono, GameCI's default build method) and `WebGL` (our `WebBuild.BuildFromCommandLine`, the same code as **Match3 → Build Web**). The two jobs run in parallel. |
+| **Matrix** | `StandaloneWindows64` (Mono) and `WebGL`, in parallel. Both use GameCI's default build method with the Player Settings committed in `ProjectSettings/ProjectSettings.asset`. |
 | **Caches** | Git LFS objects (`.git/lfs`), keyed on the list of LFS files. Unity's `Library/`, per platform, keyed on `Assets/`, `Packages/` and `ProjectSettings/`. |
 | **Artifacts** | `Match3-StandaloneWindows64` and `Match3-WebGL`, kept for 7 days. Download them from the bottom of a run's summary page. |
+| **Pinned versions** | `game-ci/unity-builder` is pinned to the v6.0.0 commit SHA and its `game-ci/cli` to `v0.1.69`, because that step receives the Unity credentials. Upgrade both on purpose after reading the release notes. |
 | **Fails when** | Unity exits non-zero: a C# compile error, a failed build, or a license problem. |
 
 Unity version check: GameCI publishes images for **6000.5.7f1** (`ubuntu-6000.5.7f1-windows-mono-3`
@@ -69,12 +70,15 @@ Fill in from the run summaries (Actions → a run → each job's duration).
 | Cold (no caches) | _TBD_ | _TBD_ |
 | Cached (Library + LFS hit) | _TBD_ | _TBD_ |
 
-## Running the same build locally
+## Web settings live in ProjectSettings.asset
 
-The Web job runs the same method as the Editor menu:
+CI doesn't run `WebBuild.cs`. GameCI's build method uses whatever Player Settings are saved in
+`ProjectSettings/ProjectSettings.asset`, and **Match3 → Build Web** writes the Web settings
+(Gzip, Decompression Fallback, the FullWindow template, ...) there. So if you change the settings
+in `WebBuild.ApplyWebSettings`, run **Match3 → Build Web** once and commit
+`ProjectSettings.asset`, or CI keeps building with the old ones.
 
-```bash
-Unity.exe -batchmode -quit -projectPath . -buildTarget WebGL -executeMethod WebBuild.BuildFromCommandLine -customBuildPath build/WebGL/Match3
-```
-
-Leave out `-customBuildPath` to build into `Builds/Web`, like the menu does.
+Why not have CI call `WebBuild.BuildFromCommandLine`? GameCI doesn't take Unity's exit code
+alone as proof of success. It also looks in the log for the report its own build method prints
+(`Build succeeded!` or a `# Build results #` section). A custom build method that doesn't print
+that report is marked as failed even when the build worked. That happened on this PR's first run.
