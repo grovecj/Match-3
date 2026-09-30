@@ -17,13 +17,116 @@ namespace Match3
         [Tooltip("Style used to draw the type. At runtime the Board assigns this via SetStyle.")]
         [SerializeField] private TokenStyle style;
 
+        [Header("Pick-up")]
+        [Tooltip("How big the token gets while held or selected, relative to its normal size.")]
+        [SerializeField, Min(1f)] private float liftScale = 1.1f;
+        [Tooltip("How long, in seconds, the token takes to grow when picked up (and shrink when put down).")]
+        [SerializeField, Min(0.01f)] private float liftDuration = 0.08f;
+        [Tooltip("How much a selected token pulses, as a fraction of its size.")]
+        [SerializeField, Range(0f, 0.2f)] private float pulseAmount = 0.05f;
+        [Tooltip("How many times per second a selected token pulses.")]
+        [SerializeField, Min(0.1f)] private float pulseRate = 1.5f;
+
+        /// <summary>How a token is being singled out by the player.</summary>
+        public enum Highlight
+        {
+            /// <summary>Resting on the board at its normal size.</summary>
+            None,
+            /// <summary>Picked up: the pointer is pressed on it (and maybe dragging it).</summary>
+            Held,
+            /// <summary>Clicked, waiting for a click on a neighbor: picked up and gently pulsing.</summary>
+            Selected,
+        }
+
         private SpriteRenderer spriteRenderer;
+        private Highlight highlight = Highlight.None;
+        // 0 = resting, 1 = fully picked up. Eased toward the highlight's target every frame.
+        private float lift;
+        // How long this token has been selected, which drives the pulse.
+        private float pulseTime;
+        // The token's size when resting, remembered at pick-up so it can go back to it exactly.
+        private Vector3 restScale;
+        private int restSortingOrder;
+        // Set when the highlight changes, so Update redraws at least once even if lift is
+        // already at its target (e.g. selected -> held has to drop the pulse).
+        private bool highlightChanged;
 
         public TokenType Type => type;
+
+        public Highlight CurrentHighlight => highlight;
 
         private void Awake()
         {
             ApplyVisuals();
+            restSortingOrder = spriteRenderer.sortingOrder;
+        }
+
+        /// <summary>
+        /// Picks the token up (<see cref="Highlight.Held"/> or <see cref="Highlight.Selected"/>) or
+        /// puts it back down (<see cref="Highlight.None"/>). The size change animates over
+        /// <see cref="liftDuration"/> rather than jumping.
+        /// </summary>
+        public void SetHighlight(Highlight newHighlight)
+        {
+            if (newHighlight == highlight)
+            {
+                return;
+            }
+
+            // Only remember the resting size when starting from rest. A token picked up again
+            // while it's still shrinking back is part-way lifted, so its scale isn't the rest scale.
+            if (highlight == Highlight.None && lift == 0f)
+            {
+                restScale = transform.localScale;
+            }
+            if (newHighlight == Highlight.Selected)
+            {
+                pulseTime = 0f;
+            }
+            if (newHighlight != Highlight.None)
+            {
+                // Draw above the neighbors, so a dragged token slides over the one it's swapping
+                // with instead of under it. Higher sorting orders are drawn on top.
+                spriteRenderer.sortingOrder = restSortingOrder + 1;
+            }
+            highlight = newHighlight;
+            highlightChanged = true;
+        }
+
+        private void Update()
+        {
+            float target = highlight == Highlight.None ? 0f : 1f;
+            // Nothing to animate: fully at rest, or fully lifted and not pulsing. Returning early
+            // matters because other code (the Board's pop) sets the scale of resting tokens, and
+            // we mustn't overwrite it.
+            if (lift == target && highlight != Highlight.Selected && !highlightChanged)
+            {
+                return;
+            }
+            highlightChanged = false;
+
+            // Time.deltaTime is scaled time, so the lift and pulse freeze while the game is paused.
+            // MoveTowards changes lift by at most the given step, and never past the target.
+            lift = Mathf.MoveTowards(lift, target, Time.deltaTime / liftDuration);
+            float size = Mathf.Lerp(1f, liftScale, Easing.OutCubic(lift));
+
+            if (highlight == Highlight.Selected)
+            {
+                pulseTime += Time.deltaTime;
+                // (1 - cos) / 2 swings smoothly between 0 and 1, starting at 0, so the pulse
+                // begins without a jump. 2 * PI radians is one full swing.
+                float wave = (1f - Mathf.Cos(pulseTime * pulseRate * 2f * Mathf.PI)) / 2f;
+                size += pulseAmount * wave;
+            }
+
+            transform.localScale = restScale * size;
+
+            // Back down: stop drawing on top only now, so the token doesn't dip under its
+            // neighbor while it's still bigger than them.
+            if (lift == 0f)
+            {
+                spriteRenderer.sortingOrder = restSortingOrder;
+            }
         }
 
         // Runs in the Editor when a value changes in the Inspector, so the token updates
