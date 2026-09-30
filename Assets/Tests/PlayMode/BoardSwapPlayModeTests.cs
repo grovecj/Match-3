@@ -46,6 +46,21 @@ namespace Match3.Tests
         private static readonly Vector2Int NoMatchA = new Vector2Int(0, 4);
         private static readonly Vector2Int NoMatchB = new Vector2Int(1, 4);
 
+        // A second starting board (also match-free) for a T shape: swapping (2,1) with (3,1)
+        // moves an A left into (2,1), which completes both AAA along row 1 and AAAA up column 2.
+        // The two runs share the cell (2,1).
+        private static readonly string[] TShapeLayout =
+        {
+            "EBDCD", // y = 4
+            "BCADE",
+            "DEACD",
+            "AABAC",
+            "CDAEB", // y = 0
+        };
+
+        private static readonly Vector2Int TShapeA = new Vector2Int(2, 1);
+        private static readonly Vector2Int TShapeB = new Vector2Int(3, 1);
+
         private readonly Dictionary<char, TokenType> types = new Dictionary<char, TokenType>();
         private GameObject themeObject;
         private GameObject cellTemplate;
@@ -55,6 +70,9 @@ namespace Match3.Tests
 
         // Every run length reported through Board.MatchCleared, in order.
         private List<int> clearedRuns;
+
+        // Every (longest run, cascade index) reported through Board.ClearStepResolved, in order.
+        private List<(int longestRun, int cascadeIndex)> clearSteps;
 
         // [UnitySetUp] is [SetUp] that can span frames: it's a coroutine, so it can
         // `yield return null` ("wait one frame") to let Unity run Start before the test begins.
@@ -98,10 +116,14 @@ namespace Match3.Tests
             // Start runs just before the object's first frame; wait for it to deal its
             // (random) board, then swap in the known layout.
             yield return null;
-            board.LoadLayoutForTests(BuildLayout());
+            board.LoadLayoutForTests(BuildLayout(Layout));
 
             clearedRuns = new List<int>();
             board.MatchCleared += clearedRuns.Add;
+            clearSteps = new List<(int, int)>();
+            // A lambda (an unnamed method written inline) turns the event's two ints into one
+            // tuple for the list.
+            board.ClearStepResolved += (longestRun, cascadeIndex) => clearSteps.Add((longestRun, cascadeIndex));
         }
 
         // Runs after every test, even a failing one. In Play Mode, Destroy is the normal way to
@@ -152,6 +174,35 @@ namespace Match3.Tests
             Assert.That(clearedRuns, Is.Not.Empty, "MatchCleared never fired.");
             Assert.AreEqual(3, clearedRuns[0], "The first run cleared should be the swap's run of 3.");
             Assert.That(clearedRuns, Has.All.GreaterThanOrEqualTo(BoardModel.MinMatchLength));
+
+            // One step per pass of the cascade loop: the swap's own step first (index 0), then
+            // each cascade numbered 1, 2, 3... in order.
+            Assert.That(clearSteps, Is.Not.Empty, "ClearStepResolved never fired.");
+            Assert.AreEqual((3, 0), clearSteps[0], "The first step should be the swap's run of 3, at index 0.");
+            for (int i = 0; i < clearSteps.Count; i++)
+            {
+                Assert.AreEqual(i, clearSteps[i].cascadeIndex, $"Step {i} has the wrong cascade index.");
+            }
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator TShapedMatch_IsOneClearStepWithTheLongestRun()
+        {
+            board.LoadLayoutForTests(BuildLayout(TShapeLayout));
+
+            Assert.IsTrue(board.TrySwap(TShapeA, TShapeB));
+            yield return WaitUntilIdle();
+
+            // Scoring still sees both runs (rows are reported before columns)...
+            Assert.That(clearedRuns.Count, Is.GreaterThanOrEqualTo(2));
+            Assert.AreEqual(3, clearedRuns[0], "The first run should be the row of 3.");
+            Assert.AreEqual(4, clearedRuns[1], "The second run should be the column of 4.");
+
+            // ...but they were cleared together, so they make a single step, sized by the longer run.
+            Assert.That(clearSteps, Is.Not.Empty, "ClearStepResolved never fired.");
+            Assert.AreEqual((4, 0), clearSteps[0], "The T should be one step with a longest run of 4.");
+            Assert.That(clearSteps.Count, Is.LessThan(clearedRuns.Count),
+                "Two runs cleared together should make fewer steps than runs.");
         }
 
         [UnityTest, Timeout(TestTimeoutMs)]
@@ -191,19 +242,19 @@ namespace Match3.Tests
 
         // ---------------------------------------------------------------- Helpers
 
-        /// <summary>Turns <see cref="Layout"/> into a [x, y] array of token types.</summary>
-        private TokenType[,] BuildLayout()
+        /// <summary>Turns <paramref name="rows"/> (top row first) into a [x, y] array of token types.</summary>
+        private TokenType[,] BuildLayout(string[] rows)
         {
-            int height = Layout.Length;
-            int width = Layout[0].Length;
+            int height = rows.Length;
+            int width = rows[0].Length;
             var layout = new TokenType[width, height];
             for (int i = 0; i < height; i++)
             {
-                // Layout[0] is the top of the board, so string index i is grid row height-1-i.
+                // rows[0] is the top of the board, so string index i is grid row height-1-i.
                 int y = height - 1 - i;
                 for (int x = 0; x < width; x++)
                 {
-                    layout[x, y] = types[Layout[i][x]];
+                    layout[x, y] = types[rows[i][x]];
                 }
             }
             return layout;
