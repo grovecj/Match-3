@@ -7,9 +7,9 @@ using UnityEngine.UI;
 using static UIBuilder;
 
 /// <summary>
-/// Editor-only helper that builds the Settings menu UI (issue #17): the two option prefabs,
-/// the gear button in the side panel, and the modal Settings panel, with every Inspector
-/// reference wired up. Run it from the menu bar: Match3 > Build Settings Menu, then save the
+/// Editor-only helper that builds the Settings menu UI (issues #17 and #49): the two option
+/// prefabs, the gear button in the side panel, and the modal Settings panel (including the
+/// sound volume slider), with every Inspector reference wired up. Run it from the menu bar: Match3 > Build Settings Menu, then save the
 /// scene.
 ///
 /// Scripts in a folder named "Editor" are compiled only for the Unity Editor and never ship in
@@ -34,10 +34,12 @@ public static class SettingsMenuBuilder
         var gameManager = Object.FindAnyObjectByType<GameManager>();
         var themeManager = Object.FindAnyObjectByType<ThemeManager>();
         var board = Object.FindAnyObjectByType<Board>();
+        var audioManager = Object.FindAnyObjectByType<AudioManager>();
         Transform sidePanel = canvas != null ? canvas.transform.Find("ScorePanel") : null;
-        if (canvas == null || gameManager == null || themeManager == null || board == null || sidePanel == null)
+        if (canvas == null || gameManager == null || themeManager == null || board == null ||
+            audioManager == null || sidePanel == null)
         {
-            Debug.LogError("Build Settings Menu: open the Game scene first (needs Canvas/ScorePanel, GameManager, ThemeManager and Board).");
+            Debug.LogError("Build Settings Menu: open the Game scene first (needs Canvas/ScorePanel, GameManager, ThemeManager, Board and AudioManager).");
             return;
         }
 
@@ -50,7 +52,7 @@ public static class SettingsMenuBuilder
         DestroyChild(sidePanel, "SettingsButton");
 
         Button gearButton = BuildGearButton(sidePanel, gearSprite);
-        BuildSettingsPanel(canvas.transform, themeManager, board, gearButton,
+        BuildSettingsPanel(canvas.transform, themeManager, board, audioManager, gearButton,
             tokenStyleOptionPrefab, boardThemeOptionPrefab, out SettingsMenu settingsMenu);
 
         SetReference(gameManager, "settingsMenu", settingsMenu);
@@ -203,7 +205,8 @@ public static class SettingsMenuBuilder
         return button;
     }
 
-    private static void BuildSettingsPanel(Transform canvas, ThemeManager themeManager, Board board, Button gearButton,
+    private static void BuildSettingsPanel(Transform canvas, ThemeManager themeManager, Board board,
+        AudioManager audioManager, Button gearButton,
         TokenStyleOption tokenStyleOptionPrefab, BoardThemeOption boardThemeOptionPrefab, out SettingsMenu menu)
     {
         // Root: always active, holds the SettingsMenu script. Last child of the Canvas, so it
@@ -240,6 +243,7 @@ public static class SettingsMenuBuilder
 
         RectTransform tokenStyleList = AddSection(window, "TokenStyle", "Token Style", new Vector2(400, 130));
         RectTransform boardThemeList = AddSection(window, "BoardColors", "Board Colors", new Vector2(190, 200));
+        AddSoundSection(window, out Slider volumeSlider, out TMP_Text volumeValueText, out Button testSoundButton);
 
         // Close button, centered in its own row.
         GameObject closeRow = AddCenteredRow(window, "CloseRow", 90, 0);
@@ -254,10 +258,80 @@ public static class SettingsMenuBuilder
         SetReference(menu, "tokenStyleOptionPrefab", tokenStyleOptionPrefab);
         SetReference(menu, "boardThemeList", boardThemeList);
         SetReference(menu, "boardThemeOptionPrefab", boardThemeOptionPrefab);
+        SetReference(menu, "audioManager", audioManager);
+        SetReference(menu, "volumeSlider", volumeSlider);
+        SetReference(menu, "volumeValueText", volumeValueText);
+        SetReference(menu, "testSoundButton", testSoundButton);
 
         // Hidden until the gear is clicked.
         modal.SetActive(false);
         Undo.RegisterCreatedObjectUndo(root, "Build Settings Menu");
+    }
+
+    /// <summary>
+    /// Adds the "Sound Volume" heading and a row below it: the volume slider, its value as a
+    /// percentage, and a Test button that plays a sample sound.
+    /// </summary>
+    private static void AddSoundSection(GameObject window, out Slider slider, out TMP_Text valueText, out Button testButton)
+    {
+        TMP_Text header = AddText(window, "SoundHeader", "Sound Volume", 34);
+        header.alignment = TextAlignmentOptions.Left;
+        PreferredHeight(header.gameObject, 48);
+
+        GameObject row = NewUI("SoundRow", window.transform);
+        var layout = row.AddComponent<HorizontalLayoutGroup>();
+        layout.spacing = 24;
+        layout.childAlignment = TextAnchor.MiddleLeft;
+        layout.childControlWidth = true;
+        layout.childControlHeight = true;
+        layout.childForceExpandWidth = false;
+        layout.childForceExpandHeight = false;
+        PreferredHeight(row, 80);
+
+        slider = AddSlider(row.transform, "VolumeSlider");
+        // 0-100 in whole numbers means each arrow-key press moves the volume by 1%.
+        slider.minValue = 0;
+        slider.maxValue = 100;
+        slider.wholeNumbers = true;
+        slider.value = AudioManager.DefaultVolume * 100;
+        // flexibleWidth makes the slider take whatever width the label and button leave over.
+        var sliderLayout = slider.gameObject.AddComponent<LayoutElement>();
+        sliderLayout.flexibleWidth = 1;
+        sliderLayout.preferredHeight = 40;
+
+        valueText = AddText(row, "VolumeValue", "80%", 34);
+        valueText.alignment = TextAlignmentOptions.Right;
+        valueText.gameObject.AddComponent<LayoutElement>().preferredWidth = 110;
+
+        testButton = AddButton(row.transform, "TestSoundButton", "Test", 180, 70);
+    }
+
+    /// <summary>
+    /// Adds a standard Unity Slider: the same object GameObject > UI > Slider makes, built by
+    /// the same code (<see cref="DefaultControls"/>), with Unity's built-in sprites. A Slider is
+    /// a Background bar, a Fill that grows from the left to the value, and a Handle to drag.
+    /// </summary>
+    private static Slider AddSlider(Transform parent, string name)
+    {
+        var resources = new DefaultControls.Resources
+        {
+            standard = UISprite(),
+            background = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/Background.psd"),
+            knob = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/Knob.psd"),
+        };
+        GameObject go = DefaultControls.CreateSlider(resources);
+        go.name = name;
+        go.transform.SetParent(parent, false);
+        foreach (Transform part in go.GetComponentsInChildren<Transform>(true))
+        {
+            part.gameObject.layer = LayerMask.NameToLayer("UI");
+        }
+
+        // Match the rest of the menu: a dark track, a gold fill, a white handle.
+        var slider = go.GetComponent<Slider>();
+        go.transform.Find("Background").GetComponent<Image>().color = ButtonColor;
+        slider.fillRect.GetComponent<Image>().color = HighlightColor;
+        return slider;
     }
 
     /// <summary>

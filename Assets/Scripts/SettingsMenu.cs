@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
@@ -8,8 +9,8 @@ namespace Match3
 {
     /// <summary>
     /// The Settings menu: a gear button that opens a modal panel where the player picks a token
-    /// style and a board theme. Choices apply immediately (the board behind the panel updates
-    /// as you click) and the ThemeManager saves them, so there's no Apply/Cancel.
+    /// style and a board theme and sets the sound volume. Choices apply immediately (the board
+    /// behind the panel updates as you click) and are saved, so there's no Apply/Cancel.
     ///
     /// The options aren't laid out by hand. At startup this reads the ThemeManager's lists and
     /// instantiates one option prefab per style/theme into a layout group, so adding a new
@@ -41,6 +42,15 @@ namespace Match3
         [SerializeField] private RectTransform boardThemeList;
         [SerializeField] private BoardThemeOption boardThemeOptionPrefab;
 
+        [Header("Sound section")]
+        [SerializeField] private AudioManager audioManager;
+        [Tooltip("Goes from 0 (muted) to 100 (full volume), in whole percent.")]
+        [SerializeField] private Slider volumeSlider;
+        [Tooltip("Shows the slider's value, e.g. \"80%\".")]
+        [SerializeField] private TMP_Text volumeValueText;
+        [Tooltip("Plays a sample sound at the current volume.")]
+        [SerializeField] private Button testSoundButton;
+
         private readonly List<TokenStyleOption> tokenStyleOptions = new List<TokenStyleOption>();
         private readonly List<BoardThemeOption> boardThemeOptions = new List<BoardThemeOption>();
         private InputAction cancelAction;
@@ -51,7 +61,8 @@ namespace Match3
         {
             if (themeManager == null || board == null || openButton == null || modal == null ||
                 closeButton == null || tokenStyleList == null || tokenStyleOptionPrefab == null ||
-                boardThemeList == null || boardThemeOptionPrefab == null)
+                boardThemeList == null || boardThemeOptionPrefab == null || audioManager == null ||
+                volumeSlider == null || volumeValueText == null || testSoundButton == null)
             {
                 Debug.LogError("SettingsMenu: assign every field in the Inspector.", this);
                 enabled = false;
@@ -60,6 +71,10 @@ namespace Match3
 
             openButton.onClick.AddListener(Open);
             closeButton.onClick.AddListener(Close);
+            // A Slider's onValueChanged passes the new value along, so it can call a method that
+            // takes a float directly.
+            volumeSlider.onValueChanged.AddListener(OnVolumeSliderChanged);
+            testSoundButton.onClick.AddListener(PlayTestSound);
 
             // "UI/Cancel" is the Esc (and gamepad B/East) action from the project-wide input
             // actions: the standard "back out of this menu" input.
@@ -72,6 +87,12 @@ namespace Match3
         {
             BuildOptions();
             RefreshSelection();
+
+            // Start (not Awake) so the AudioManager's Awake has already loaded the saved volume.
+            // SetValueWithoutNotify moves the handle without firing onValueChanged: we're showing
+            // the current volume, not changing it.
+            volumeSlider.SetValueWithoutNotify(Mathf.Round(audioManager.Volume * 100f));
+            ShowVolume();
         }
 
         private void OnEnable()
@@ -102,6 +123,14 @@ namespace Match3
             if (closeButton != null)
             {
                 closeButton.onClick.RemoveListener(Close);
+            }
+            if (volumeSlider != null)
+            {
+                volumeSlider.onValueChanged.RemoveListener(OnVolumeSliderChanged);
+            }
+            if (testSoundButton != null)
+            {
+                testSoundButton.onClick.RemoveListener(PlayTestSound);
             }
         }
 
@@ -152,6 +181,10 @@ namespace Match3
             }
             modal.SetActive(false);
 
+            // The volume can change many times while dragging, so it's written to disk once
+            // here rather than on every step.
+            audioManager.SaveVolume();
+
             // Hand focus back to the gear, unless it's hidden because a round is starting.
             Select(openButton.gameObject.activeInHierarchy ? openButton : null);
         }
@@ -166,6 +199,22 @@ namespace Match3
             {
                 EventSystem.current.SetSelectedGameObject(button != null ? button.gameObject : null);
             }
+        }
+
+        private void OnVolumeSliderChanged(float percent)
+        {
+            audioManager.SetVolume(percent / 100f);
+            ShowVolume();
+        }
+
+        private void ShowVolume()
+        {
+            volumeValueText.text = $"{Mathf.RoundToInt(volumeSlider.value)}%";
+        }
+
+        private void PlayTestSound()
+        {
+            audioManager.Play(SoundId.Match3);
         }
 
         /// <summary>Creates one option per available style and theme.</summary>
