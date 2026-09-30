@@ -18,6 +18,41 @@ namespace Match3.Tests
             return new LeaderboardEntry(initials, score, Start.AddMinutes(minutesAfterStart));
         }
 
+        [Test]
+        public void DefaultEntries_AreAFullListFrom150kDownTo50k()
+        {
+            List<LeaderboardEntry> defaults = Leaderboard.DefaultEntries();
+
+            Assert.That(defaults.Count, Is.EqualTo(Leaderboard.Capacity));
+            Assert.That(defaults[0].Score, Is.EqualTo(150000));
+            Assert.That(defaults[defaults.Count - 1].Score, Is.EqualTo(50000));
+            for (int i = 1; i < defaults.Count; i++)
+            {
+                Assert.That(defaults[i].Score, Is.LessThan(defaults[i - 1].Score), "Defaults should be best first.");
+            }
+            foreach (LeaderboardEntry entry in defaults)
+            {
+                Assert.That(Leaderboard.CleanInitials(entry.Initials), Is.EqualTo(entry.Initials));
+            }
+        }
+
+        [Test]
+        public void DefaultEntries_ReturnsANewListEachTime()
+        {
+            Leaderboard.DefaultEntries().Clear();
+
+            Assert.That(Leaderboard.DefaultEntries().Count, Is.EqualTo(Leaderboard.Capacity));
+        }
+
+        [Test]
+        public void DefaultEntries_WinTiesAgainstRealScores()
+        {
+            List<LeaderboardEntry> defaults = Leaderboard.DefaultEntries();
+
+            Assert.That(Leaderboard.Qualifies(defaults, 50000), Is.False);
+            Assert.That(Leaderboard.Qualifies(defaults, 50001), Is.True);
+        }
+
         /// <summary>A full list: scores 10,000 down to 1,000.</summary>
         private static List<LeaderboardEntry> FullList()
         {

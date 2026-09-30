@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace Match3
@@ -17,6 +18,46 @@ namespace Match3
 
         /// <summary>The most letters a player's initials can have.</summary>
         public const int MaxInitials = 3;
+
+        /// <summary>
+        /// The scores a brand-new leaderboard starts with, best first: 150,000 in 1st place down
+        /// to 50,000 in 10th. They give a new player something to aim for instead of an empty
+        /// list, and they're the same in every build (Windows and web) because they come from
+        /// code rather than from a save file.
+        /// </summary>
+        private static readonly (string initials, int score)[] Defaults =
+        {
+            ("GEM", 150000),
+            ("ACE", 135000),
+            ("MAX", 120000),
+            ("ZAP", 110000),
+            ("JOY", 100000),
+            ("SKY", 90000),
+            ("BOP", 80000),
+            ("FIZ", 70000),
+            ("DOT", 60000),
+            ("ELF", 50000),
+        };
+
+        /// <summary>
+        /// All default entries share this timestamp. It's earlier than any real game, so a
+        /// player who exactly ties a default score loses the tie (see <see cref="Compare"/>).
+        /// </summary>
+        private static readonly DateTime DefaultsTimestampUtc = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        /// <summary>
+        /// A new list of the default entries (see <see cref="Defaults"/>). It's a fresh list
+        /// every call, so whoever gets it can add to it without changing the defaults.
+        /// </summary>
+        public static List<LeaderboardEntry> DefaultEntries()
+        {
+            var entries = new List<LeaderboardEntry>(Defaults.Length);
+            foreach ((string initials, int score) in Defaults)
+            {
+                entries.Add(new LeaderboardEntry(initials, score, DefaultsTimestampUtc));
+            }
+            return entries;
+        }
 
         /// <summary>
         /// Orders two entries for sorting: higher score first, and for equal scores the earlier
