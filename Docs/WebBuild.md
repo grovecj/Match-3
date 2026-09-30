@@ -1,7 +1,8 @@
 # Web build
 
-Notes from getting Match-3 running in the browser (issue #22). Automatic deploys are covered
-by the CI/CD issues; this page covers making the build and what to watch out for.
+Notes from getting Match-3 running in the browser (issue #22). Releasing to
+<https://games.cartergrove.me/match3/> is covered in [CI.md](CI.md#deploying); this page covers
+making the build and what to watch out for.
 
 ## Making a build
 
