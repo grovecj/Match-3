@@ -16,12 +16,14 @@ name: Build
 on:
   pull_request:
     # Only build when something Unity cares about changes. A README edit doesn't need a
-    # 15-minute build. The workflow file is listed too, so editing it tests the change.
+    # 15-minute build. Any workflow change counts too, so a CI change (this file or test.yml)
+    # gets a build and a test run on its PR. Note the filter looks at the PR's whole diff
+    # against main, not just the latest push.
     paths:
       - 'Assets/**'
       - 'Packages/**'
       - 'ProjectSettings/**'
-      - '.github/workflows/build.yml'
+      - '.github/workflows/**'
   # Building every merge to main is switched off: with lots of small PRs, a Windows + Web build
   # (and ~65 MB of artifacts) per merge isn't worth the minutes. Uncomment to turn it back on.
   # push:

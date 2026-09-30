@@ -12,12 +12,14 @@ well-explained code over polish. Explain Unity concepts when introducing them.
   helpers from `UIBuilder.cs`. `Match3 > Build Web` makes the browser build into `Builds/Web`
   (see `Docs/WebBuild.md`).
 - CI (`.github/workflows/build.yml`, GameCI) builds Windows on PRs that touch `Assets/`,
-  `Packages/`, `ProjectSettings/` or the workflow; Windows + Web builds are manual
+  `Packages/`, `ProjectSettings/` or a workflow; Windows + Web builds are manual
   (Actions → Build → Run workflow). A Run workflow on `main` with **Deploy** ticked also
   releases: Web via the `web-build` branch (App Platform), Windows zip to Spaces. See
   `Docs/CI.md`. Needs the `UNITY_LICENSE`/`UNITY_EMAIL`/`UNITY_PASSWORD` repo secrets, plus
   `SPACES_ACCESS_KEY_ID`/`SPACES_SECRET_ACCESS_KEY`/`DIGITALOCEAN_ACCESS_TOKEN` to deploy.
   DigitalOcean resources are Terraform in grovecj/cartergrove-me-infra, not here.
+  `.github/workflows/test.yml` runs the Edit Mode + Play Mode tests on the same PRs (and via
+  Actions → Test → Run workflow); failures show in the PR's **Test Results** check.
 - Game scripts live in `Assets/Scripts/` (the `Match3` assembly). Edit Mode tests live in
   `Assets/Tests/EditMode/` (`Match3.Tests.EditMode`); Play Mode tests live in
   `Assets/Tests/PlayMode/` (`Match3.Tests.PlayMode`, which can see `Match3`'s `internal` test
