@@ -40,6 +40,8 @@ namespace Match3
         [Header("Swapping")]
         [Tooltip("How long, in seconds, two tokens take to trade places.")]
         [SerializeField, Min(0.01f)] private float swapDuration = 0.15f;
+        [Tooltip("How long, in seconds, a dragged token takes to spring back when let go without swapping.")]
+        [SerializeField, Min(0.01f)] private float springBackDuration = 0.2f;
 
         [Header("Resolving")]
         [Tooltip("Pause, in seconds, between matched tokens being cleared and the rest falling. The pop plays during it.")]
@@ -118,6 +120,14 @@ namespace Match3
         // only so tests can swap in a seeded one (see ConfigureForTests).
         private System.Random random = new System.Random();
 
+        // The token the player has picked up, if any. `Vector2Int?` is a "nullable" Vector2Int:
+        // it can hold a cell or null, and HasValue says which. A plain struct can't be null.
+        private Vector2Int? heldCell;
+        // Where the held token has been dragged: one of the four directions (or zero), and how
+        // far, in cells. The neighbor in that direction slides the other way to make room.
+        private Vector2Int heldDirection;
+        private float heldDistance;
+
         /// <summary>The kinds of token that can appear on the board (e.g. for previews in menus).</summary>
         public IReadOnlyList<TokenType> TokenTypes => tokenTypes;
 
@@ -133,6 +143,9 @@ namespace Match3
         /// Input should be ignored until it's false.
         /// </summary>
         public bool IsResolving => state == BoardState.Resolving;
+
+        /// <summary>True while the player has a token picked up (held or selected).</summary>
+        public bool IsHolding => heldCell.HasValue;
 
         /// <summary>The token in cell (x, y), or null if the cell is empty or out of bounds.</summary>
         public Token GetToken(int x, int y)
@@ -213,6 +226,7 @@ namespace Match3
             // A swap in progress would keep moving tokens we're about to destroy, so cancel it.
             StopAllCoroutines();
             state = BoardState.Idle;
+            heldCell = null;
             BuildCells();
             FillWithRandomTokens();
         }
@@ -411,11 +425,158 @@ namespace Match3
             token.name = $"Token ({x}, {y})";
         }
 
+        // ---------------------------------------------------------------- Holding and dragging
+        //
+        // The player picks a token up (TryPickUp), may drag it toward a neighbor (DragHeld), and
+        // then either swaps it (TrySwap) or lets go (DropHeld). BoardInput decides which; the
+        // Board just moves the tokens and keeps track of which one is held.
+
+        /// <summary>
+        /// Picks up the token in <paramref name="cell"/>: it grows a little and draws above its
+        /// neighbors. Any token already held is put down first. Returns false (and does nothing)
+        /// while the board is resolving, or if there's no token there.
+        /// </summary>
+        public bool TryPickUp(Vector2Int cell)
+        {
+            if (state != BoardState.Idle || GetToken(cell.x, cell.y) == null)
+            {
+                return false;
+            }
+
+            DropHeld();
+            // DropHeld may have started a spring-back, which locks the board.
+            if (state != BoardState.Idle)
+            {
+                return false;
+            }
+
+            heldCell = cell;
+            heldDirection = Vector2Int.zero;
+            heldDistance = 0f;
+            tokens[cell.x, cell.y].SetHighlight(Token.Highlight.Held);
+            return true;
+        }
+
+        /// <summary>
+        /// Marks the held token as selected (it pulses, waiting for a click on a neighbor), or
+        /// back to just held. Does nothing if no token is held.
+        /// </summary>
+        public void SetHeldSelected(bool selected)
+        {
+            if (heldCell is Vector2Int cell)
+            {
+                tokens[cell.x, cell.y].SetHighlight(selected ? Token.Highlight.Selected : Token.Highlight.Held);
+            }
+        }
+
+        /// <summary>
+        /// Moves the held token <paramref name="distance"/> cells in <paramref name="direction"/>
+        /// (one of up/down/left/right, or zero to put it back on its cell). The neighbor it moves
+        /// toward slides the opposite way by the same amount, up to a whole cell. With no
+        /// neighbor there (the edge of the board) only the held token moves.
+        /// </summary>
+        public void DragHeld(Vector2Int direction, float distance)
+        {
+            if (!(heldCell is Vector2Int cell))
+            {
+                return;
+            }
+
+            // Changing direction (say, from right to up) leaves the old neighbor out of place,
+            // so put it back before moving the new one.
+            if (direction != heldDirection)
+            {
+                PutNeighborBack();
+            }
+            heldDirection = direction;
+            heldDistance = direction == Vector2Int.zero ? 0f : Mathf.Max(0f, distance);
+
+            // Vector3 * float scales a vector; (Vector3)(Vector2) turns a direction into a 3D offset.
+            Vector3 offset = (Vector3)(Vector2)heldDirection * (heldDistance * cellSize);
+            tokens[cell.x, cell.y].transform.position = GridToWorld(cell.x, cell.y) + offset;
+
+            Vector2Int neighbor = cell + heldDirection;
+            Token neighborToken = heldDirection == Vector2Int.zero ? null : GetToken(neighbor.x, neighbor.y);
+            if (neighborToken != null)
+            {
+                // The neighbor never goes past the held token's cell.
+                Vector3 neighborOffset = (Vector3)(Vector2)heldDirection * (Mathf.Min(heldDistance, 1f) * cellSize);
+                neighborToken.transform.position = GridToWorld(neighbor.x, neighbor.y) - neighborOffset;
+            }
+        }
+
+        /// <summary>
+        /// Puts the held token down. If it was dragged, it (and the neighbor it pushed) spring
+        /// back onto their cells, and the board is locked until they're home. Does nothing if
+        /// no token is held.
+        /// </summary>
+        public void DropHeld()
+        {
+            if (!(heldCell is Vector2Int cell))
+            {
+                return;
+            }
+
+            heldCell = null;
+            Token token = tokens[cell.x, cell.y];
+            token.SetHighlight(Token.Highlight.None);
+
+            if (heldDistance == 0f)
+            {
+                // Never moved off its cell, so there's nothing to animate.
+                return;
+            }
+
+            var cells = new List<Vector2Int> { cell };
+            Vector2Int neighbor = cell + heldDirection;
+            if (GetToken(neighbor.x, neighbor.y) != null)
+            {
+                cells.Add(neighbor);
+            }
+            state = BoardState.Resolving;
+            StartCoroutine(SpringBack(cells));
+        }
+
+        /// <summary>Lets go of the held token without moving it, e.g. because it's about to swap.</summary>
+        private void ReleaseHeld()
+        {
+            if (heldCell is Vector2Int cell)
+            {
+                tokens[cell.x, cell.y].SetHighlight(Token.Highlight.None);
+                heldCell = null;
+            }
+        }
+
+        /// <summary>Snaps the neighbor the held token was pushing back onto its own cell.</summary>
+        private void PutNeighborBack()
+        {
+            if (!(heldCell is Vector2Int cell) || heldDirection == Vector2Int.zero)
+            {
+                return;
+            }
+            Vector2Int neighbor = cell + heldDirection;
+            Token neighborToken = GetToken(neighbor.x, neighbor.y);
+            if (neighborToken != null)
+            {
+                neighborToken.transform.position = GridToWorld(neighbor.x, neighbor.y);
+            }
+        }
+
+        private IEnumerator SpringBack(List<Vector2Int> cells)
+        {
+            // OutBack overshoots a little and settles, so the tokens bounce into place.
+            yield return StartCoroutine(SlideHome(cells, springBackDuration, Easing.OutBack));
+            state = BoardState.Idle;
+        }
+
         /// <summary>
         /// Swaps the tokens in two orthogonally adjacent cells and resolves the result: if the
         /// swap makes a match, matches are cleared and the board refills (with cascades);
         /// otherwise the tokens swap back. Returns false (and does nothing) if the cells aren't
         /// valid neighbors or the board is still resolving a previous swap.
+        ///
+        /// The tokens slide from wherever they are, so a swap can pick up where a drag left off.
+        /// A held token is put down as the swap starts.
         /// </summary>
         public bool TrySwap(Vector2Int a, Vector2Int b)
         {
@@ -430,6 +591,24 @@ namespace Match3
             {
                 return false;
             }
+
+            // BoardInput only ever swaps a held token with the neighbor it was dragged toward,
+            // and those two slide on from where the drag left them. Anything else the drag moved
+            // would be left off its cell, so snap it back first.
+            if (heldCell is Vector2Int held)
+            {
+                Vector2Int pushed = held + heldDirection;
+                bool swapIsTheDrag = (held == a && pushed == b) || (held == b && pushed == a);
+                if (!swapIsTheDrag)
+                {
+                    PutNeighborBack();
+                }
+                if (held != a && held != b)
+                {
+                    tokens[held.x, held.y].transform.position = GridToWorld(held.x, held.y);
+                }
+            }
+            ReleaseHeld();
 
             // Lock the board here, not inside the coroutine, so there's no gap in which a
             // second swap could sneak in.
@@ -498,34 +677,56 @@ namespace Match3
             PlaceToken(tokenA, b.x, b.y);
         }
 
-        // `yield return null` means "wait until the next frame", so the loop below runs one
-        // step per frame, which is how we spread movement over time without blocking the game.
         /// <summary>
         /// Slides the tokens the model says are in cells a and b from wherever they are onto
         /// those cells' centers.
         /// </summary>
         private IEnumerator AnimateSwap(Vector2Int a, Vector2Int b)
         {
-            Transform tokenA = tokens[a.x, a.y].transform;
-            Transform tokenB = tokens[b.x, b.y].transform;
-            Vector3 startA = tokenA.position;
-            Vector3 startB = tokenB.position;
-            Vector3 targetA = GridToWorld(a.x, a.y);
-            Vector3 targetB = GridToWorld(b.x, b.y);
+            // Ease-out (fast, then slowing) rather than easing in too: after a drag the tokens are
+            // already moving, and a slow start would feel like they stalled when let go.
+            return SlideHome(new List<Vector2Int> { a, b }, swapDuration, Easing.OutCubic);
+        }
 
-            for (float elapsed = 0f; elapsed < swapDuration; elapsed += Time.deltaTime)
+        // `yield return null` means "wait until the next frame", so the loop below runs one
+        // step per frame, which is how we spread movement over time without blocking the game.
+        /// <summary>
+        /// Slides the tokens in <paramref name="cells"/> from wherever they are onto their cells'
+        /// centers over <paramref name="duration"/> seconds, shaping the motion with
+        /// <paramref name="ease"/>.
+        /// </summary>
+        // System.Func<float, float> is a delegate type: "a method that takes a float and returns
+        // a float". Passing Easing.OutCubic (without calling it) hands over the method itself,
+        // so one slide loop can be reused with any easing curve.
+        private IEnumerator SlideHome(List<Vector2Int> cells, float duration, System.Func<float, float> ease)
+        {
+            var movers = new List<Transform>();
+            var starts = new List<Vector3>();
+            var targets = new List<Vector3>();
+            foreach (Vector2Int cell in cells)
             {
-                // t goes 0 -> 1 over the duration. SmoothStep eases it so the motion starts
-                // and ends gently instead of at constant speed.
-                float t = Mathf.SmoothStep(0f, 1f, elapsed / swapDuration);
-                tokenA.position = Vector3.Lerp(startA, targetA, t);
-                tokenB.position = Vector3.Lerp(startB, targetB, t);
+                movers.Add(tokens[cell.x, cell.y].transform);
+                starts.Add(tokens[cell.x, cell.y].transform.position);
+                targets.Add(GridToWorld(cell.x, cell.y));
+            }
+
+            for (float elapsed = 0f; elapsed < duration; elapsed += Time.deltaTime)
+            {
+                // t goes 0 -> 1 over the duration; the easing curve reshapes it. LerpUnclamped
+                // (unlike Lerp) follows t past 1, which is what lets OutBack overshoot.
+                float t = ease(elapsed / duration);
+                for (int i = 0; i < movers.Count; i++)
+                {
+                    movers[i].position = Vector3.LerpUnclamped(starts[i], targets[i], t);
+                }
                 yield return null;
             }
 
             // Snap exactly onto the targets; the loop may stop slightly short of t = 1.
-            tokenA.position = targetA;
-            tokenB.position = targetB;
+            for (int i = 0; i < movers.Count; i++)
+            {
+                movers[i].position = targets[i];
+            }
         }
 
         /// <summary>
@@ -548,6 +749,9 @@ namespace Match3
             {
                 Token token = tokens[cell.x, cell.y];
                 SpawnExplosion(cell, token.Type, runLengths[cell]);
+                // The pop sets the token's scale from here on. Disabling the Token component
+                // stops its Update, so a token still shrinking back from being held can't fight it.
+                token.enabled = false;
                 cleared.Add(token);
                 // Null the view entry right away so it agrees with the model immediately; only
                 // the visuals linger for the pop.
@@ -730,7 +934,7 @@ namespace Match3
         internal void ConfigureForTests(int width, int height, SpriteRenderer cellPrefab, Token tokenPrefab,
             ThemeManager themeManager, TokenType[] tokenTypes, int seed,
             float swapDuration, float clearDelay, float fallSpeed,
-            float popDuration = 0f, Explosion explosionPrefab = null)
+            float popDuration = 0f, Explosion explosionPrefab = null, float springBackDuration = 0.01f)
         {
             this.width = width;
             this.height = height;
@@ -745,6 +949,7 @@ namespace Match3
             this.fallSpeed = fallSpeed;
             this.popDuration = popDuration;
             this.explosionPrefab = explosionPrefab;
+            this.springBackDuration = springBackDuration;
         }
 
         /// <summary>
@@ -761,6 +966,7 @@ namespace Match3
 
             StopAllCoroutines();
             state = BoardState.Idle;
+            heldCell = null;
             if (!ResetTokens())
             {
                 return;

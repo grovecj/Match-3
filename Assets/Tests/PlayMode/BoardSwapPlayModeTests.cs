@@ -123,7 +123,9 @@ namespace Match3.Tests
                 fallSpeed: 1000f,
                 // Long enough to outlast a slow frame, so the pause test can catch tokens mid-pop.
                 popDuration: 0.25f,
-                explosionPrefab: explosionTemplate);
+                explosionPrefab: explosionTemplate,
+                // Long enough to outlast a slow frame, so the pause test can catch it mid-spring.
+                springBackDuration: 0.25f);
             boardObject.SetActive(true);
 
             // Start runs just before the object's first frame; wait for it to deal its
@@ -343,7 +345,185 @@ namespace Match3.Tests
             yield return WaitUntilIdle();
         }
 
+        // ---------------------------------------------------------------- Holding and dragging
+        //
+        // These drive the Board's hold/drag API directly, the way BoardInput does. The decisions
+        // BoardInput makes (which axis, how far, swap or spring back) are pure math, covered by
+        // the Edit Mode BoardInputDragTests.
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator PickingUp_GrowsTheToken_AndPuttingItDown_ShrinksItBack()
+        {
+            Token token = board.GetToken(NoMatchA.x, NoMatchA.y);
+            Vector3 restScale = token.transform.localScale;
+
+            Assert.IsTrue(board.TryPickUp(NoMatchA));
+            Assert.IsTrue(board.IsHolding);
+            Assert.AreEqual(Token.Highlight.Held, token.CurrentHighlight);
+            yield return new WaitForSeconds(LiftSettleSeconds);
+            Assert.That(token.transform.localScale.x, Is.GreaterThan(restScale.x), "A held token should be bigger.");
+
+            board.DropHeld();
+            Assert.IsFalse(board.IsHolding);
+            Assert.IsFalse(board.IsResolving, "A token that was never dragged has nothing to spring back.");
+            yield return new WaitForSeconds(LiftSettleSeconds);
+            Assert.That(token.transform.localScale, Is.EqualTo(restScale).Using(Vector3Comparer),
+                "A token put down should go back to exactly its old size.");
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator DraggedSwap_PushesTheNeighbor_ThenSwapsFromThere()
+        {
+            // Drag the A at (2,1) halfway down toward (2,0).
+            Assert.IsTrue(board.TryPickUp(MatchB));
+            board.DragHeld(Vector2Int.down, 0.5f);
+
+            Token held = board.GetToken(MatchB.x, MatchB.y);
+            Token neighbor = board.GetToken(MatchA.x, MatchA.y);
+            Vector3 halfCellDown = Vector3.down * (0.5f * board.CellSize);
+            Assert.That(held.transform.position, Is.EqualTo(board.GridToWorld(MatchB.x, MatchB.y) + halfCellDown).Using(Vector3Comparer),
+                "The held token should follow the drag.");
+            Assert.That(neighbor.transform.position, Is.EqualTo(board.GridToWorld(MatchA.x, MatchA.y) - halfCellDown).Using(Vector3Comparer),
+                "The neighbor should slide the other way to make room.");
+            Assert.That(swapEvents, Is.Empty, "Dragging alone isn't a swap.");
+
+            Assert.IsTrue(board.TrySwap(MatchB, MatchA));
+            Assert.IsFalse(board.IsHolding, "Swapping should put the held token down.");
+            // One frame in, the tokens should carry on from the drag, not jump back to their cells.
+            yield return null;
+            Assert.That(held.transform.position.y, Is.LessThan(board.GridToWorld(MatchB.x, MatchB.y).y - 0.25f),
+                "The swap should pick up where the drag left off.");
+
+            yield return WaitUntilIdle();
+            AssertBoardIsFullAndSettled();
+            Assert.That(clearedRuns, Is.Not.Empty);
+            Assert.AreEqual(3, clearedRuns[0], "The dragged swap should make the same run of 3 as a plain swap.");
+            Assert.AreEqual(new[] { "started" }, swapEvents);
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator DroppedDrag_SpringsBack_WithoutSwapping()
+        {
+            Token tokenA = board.GetToken(NoMatchA.x, NoMatchA.y);
+            Token tokenB = board.GetToken(NoMatchB.x, NoMatchB.y);
+
+            Assert.IsTrue(board.TryPickUp(NoMatchA));
+            board.DragHeld(Vector2Int.right, 0.25f);
+            board.DropHeld();
+            Assert.IsTrue(board.IsResolving, "The board should stay locked while the tokens spring back.");
+            Assert.IsFalse(board.TryPickUp(NoMatchB), "Nothing can be picked up mid-spring.");
+
+            yield return WaitUntilIdle();
+            Assert.AreSame(tokenA, board.GetToken(NoMatchA.x, NoMatchA.y), "Token A should still be in its own cell.");
+            Assert.AreSame(tokenB, board.GetToken(NoMatchB.x, NoMatchB.y), "Token B should still be in its own cell.");
+            AssertBoardIsFullAndSettled();
+            Assert.That(swapEvents, Is.Empty, "Springing back isn't a swap, so no swap sounds.");
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator DragTowardTheEdge_MovesOnlyTheHeldToken()
+        {
+            // (0,4) is the top-left corner: nothing above it.
+            Assert.IsTrue(board.TryPickUp(NoMatchA));
+            board.DragHeld(Vector2Int.up, 0.125f);
+
+            Token held = board.GetToken(NoMatchA.x, NoMatchA.y);
+            Assert.That(held.transform.position,
+                Is.EqualTo(board.GridToWorld(NoMatchA.x, NoMatchA.y) + Vector3.up * (0.125f * board.CellSize)).Using(Vector3Comparer));
+            for (int x = 0; x < board.Width; x++)
+            {
+                for (int y = 0; y < board.Height; y++)
+                {
+                    if (new Vector2Int(x, y) != NoMatchA)
+                    {
+                        Assert.That(board.GetToken(x, y).transform.position, Is.EqualTo(board.GridToWorld(x, y)).Using(Vector3Comparer),
+                            $"The token at ({x}, {y}) shouldn't move.");
+                    }
+                }
+            }
+
+            board.DropHeld();
+            yield return WaitUntilIdle();
+            AssertBoardIsFullAndSettled();
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator ChangingDirection_PutsTheOldNeighborBack()
+        {
+            // (2,1): drag right toward (3,1), then switch to up toward (2,2).
+            Assert.IsTrue(board.TryPickUp(MatchB));
+            board.DragHeld(Vector2Int.right, 0.5f);
+            board.DragHeld(Vector2Int.up, 0.5f);
+
+            Assert.That(board.GetToken(3, 1).transform.position, Is.EqualTo(board.GridToWorld(3, 1)).Using(Vector3Comparer),
+                "The token the drag stopped pushing should be back on its cell.");
+            Assert.That(board.GetToken(2, 2).transform.position.y, Is.LessThan(board.GridToWorld(2, 2).y),
+                "The new neighbor should be pushed down.");
+
+            board.DropHeld();
+            yield return WaitUntilIdle();
+            AssertBoardIsFullAndSettled();
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator SelectingAnotherToken_PutsTheFirstDown()
+        {
+            Token first = board.GetToken(NoMatchA.x, NoMatchA.y);
+            Token second = board.GetToken(MatchA.x, MatchA.y);
+
+            Assert.IsTrue(board.TryPickUp(NoMatchA));
+            board.SetHeldSelected(true);
+            Assert.AreEqual(Token.Highlight.Selected, first.CurrentHighlight);
+
+            Assert.IsTrue(board.TryPickUp(MatchA), "Picking up a different token should be allowed.");
+            Assert.AreEqual(Token.Highlight.None, first.CurrentHighlight, "The first token should be put down.");
+            Assert.AreEqual(Token.Highlight.Held, second.CurrentHighlight);
+
+            board.DropHeld();
+            yield return new WaitForSeconds(LiftSettleSeconds);
+            Assert.AreEqual(Token.Highlight.None, second.CurrentHighlight);
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator PickingUp_IsRefusedWhileResolving()
+        {
+            Assert.IsTrue(board.TrySwap(MatchA, MatchB));
+            Assert.IsFalse(board.TryPickUp(NoMatchA), "Nothing can be picked up while a swap resolves.");
+            Assert.IsFalse(board.IsHolding);
+            yield return WaitUntilIdle();
+            Assert.IsTrue(board.TryPickUp(NoMatchA), "Picking up works again once the board is idle.");
+            board.DropHeld();
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator Pausing_FreezesTheSpringBack()
+        {
+            Token held = board.GetToken(NoMatchA.x, NoMatchA.y);
+            Assert.IsTrue(board.TryPickUp(NoMatchA));
+            board.DragHeld(Vector2Int.right, 0.5f);
+            board.DropHeld();
+
+            // As in the pop test: the new timeScale takes effect from the next frame.
+            Time.timeScale = 0f;
+            yield return null;
+            Vector3 frozenAt = held.transform.position;
+            Assert.That(frozenAt, Is.Not.EqualTo(board.GridToWorld(NoMatchA.x, NoMatchA.y)).Using(Vector3Comparer),
+                "The token should still be on its way back when the pause lands.");
+
+            yield return new WaitForSecondsRealtime(0.3f);
+            Assert.That(held.transform.position, Is.EqualTo(frozenAt).Using(Vector3Comparer), "The spring-back moved while paused.");
+            Assert.IsTrue(board.IsResolving, "The board should stay locked while paused mid-spring.");
+
+            Time.timeScale = 1f;
+            yield return WaitUntilIdle();
+            AssertBoardIsFullAndSettled();
+        }
+
         // ---------------------------------------------------------------- Helpers
+
+        // Comfortably longer than a token's default lift duration (0.08 s), so it has finished
+        // growing or shrinking.
+        private const float LiftSettleSeconds = 0.25f;
 
         /// <summary>
         /// A stand-in for the Explosion prefab: a bare ParticleSystem with a short life that
