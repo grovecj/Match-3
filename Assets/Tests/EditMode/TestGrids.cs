@@ -80,6 +80,43 @@ namespace Match3.Tests
             return board;
         }
 
+        /// <summary>
+        /// The reverse of <see cref="Build"/>: draws <paramref name="board"/> as strings, top row
+        /// first, so a test can compare a whole board in one assert and get a readable diff when
+        /// it fails. Types this builder didn't create are drawn as '?'.
+        /// </summary>
+        public string[] Rows(BoardModel board)
+        {
+            var rows = new string[board.Height];
+            for (int i = 0; i < board.Height; i++)
+            {
+                int y = board.Height - 1 - i;
+                var row = new System.Text.StringBuilder();
+                for (int x = 0; x < board.Width; x++)
+                {
+                    row.Append(LetterFor(board.TypeAt(x, y)));
+                }
+                rows[i] = row.ToString();
+            }
+            return rows;
+        }
+
+        private char LetterFor(TokenType type)
+        {
+            if (type == null)
+            {
+                return Empty;
+            }
+            foreach (KeyValuePair<char, TokenType> pair in types)
+            {
+                if (pair.Value == type)
+                {
+                    return pair.Key;
+                }
+            }
+            return '?';
+        }
+
         /// <summary>Destroys every token type this builder created.</summary>
         public void DestroyAll()
         {
