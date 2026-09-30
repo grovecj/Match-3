@@ -121,7 +121,8 @@ namespace Match3.Tests
                 swapDuration: 0.01f,
                 clearDelay: 0f,
                 fallSpeed: 1000f,
-                popDuration: 0.02f,
+                // Long enough to outlast a slow frame, so the pause test can catch tokens mid-pop.
+                popDuration: 0.25f,
                 explosionPrefab: explosionTemplate);
             boardObject.SetActive(true);
 
@@ -259,6 +260,8 @@ namespace Match3.Tests
         [UnityTest, Timeout(TestTimeoutMs)]
         public IEnumerator Pausing_FreezesThePopAndTheBursts()
         {
+            // One of the tokens this swap matches, to watch it pop.
+            Token popping = board.GetToken(0, 0);
             Assert.IsTrue(board.TrySwap(MatchA, MatchB));
             // Let the swap finish and the clear begin: the bursts appear as the tokens start popping.
             yield return new WaitUntil(() => Bursts().Length > 0);
@@ -275,11 +278,16 @@ namespace Match3.Tests
                 // ParticleSystem.time: how far into its playback the system is, in (scaled) seconds.
                 burstTimes.Add(burst.GetComponent<ParticleSystem>().time);
             }
-            bool wasResolving = board.IsResolving;
+            Assert.IsTrue(board.IsResolving, "The turn should still be resolving when the pause lands.");
+            Assert.IsTrue(popping != null, "The matched token should still be mid-pop when the pause lands.");
+            Vector3 popScale = popping.transform.localScale;
 
             // Real (unscaled) seconds keep passing while paused: plenty of time for things to
             // move on, if they weren't frozen.
             yield return new WaitForSecondsRealtime(0.3f);
+
+            Assert.IsTrue(popping != null, "The popping token was destroyed while paused.");
+            Assert.AreEqual(popScale, popping.transform.localScale, "The pop moved on while paused.");
 
             Assert.AreEqual(bursts.Length, Bursts().Length, "Bursts shouldn't finish (and destroy themselves) while paused.");
             for (int i = 0; i < bursts.Length; i++)
@@ -287,7 +295,7 @@ namespace Match3.Tests
                 Assert.AreEqual(burstTimes[i], bursts[i].GetComponent<ParticleSystem>().time,
                     "A burst's particles moved on while paused.");
             }
-            Assert.AreEqual(wasResolving, board.IsResolving, "The turn shouldn't move on while paused.");
+            Assert.IsTrue(board.IsResolving, "The turn shouldn't move on while paused.");
 
             Time.timeScale = 1f;
             yield return WaitUntilIdle();
