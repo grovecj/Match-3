@@ -1,18 +1,25 @@
 # CI builds
 
-Every pull request and every merge to `main` builds the game for **Windows** and the **Web**
-with GitHub Actions and [GameCI](https://game.ci) (issue #23). The workflow is
+GitHub Actions and [GameCI](https://game.ci) build the game in the cloud (issue #23):
+
+- **Pull requests** build **Windows only**, as a check that the player build still compiles.
+  No artifacts are uploaded.
+- **Release builds are manual.** **Actions → Build → Run workflow**, pick a branch (usually
+  `main`), builds **Windows and Web** and uploads both. Merges to `main` don't build on their
+  own: with lots of small PRs, one release per merge isn't needed. The `push` trigger is
+  commented out in the workflow if you want it back.
+ The workflow is
 [`.github/workflows/build.yml`](../.github/workflows/build.yml). Its comments explain each step.
 
 ## What it does
 
 | | |
 |---|---|
-| **Triggers** | `pull_request` and `push` to `main`, only when `Assets/`, `Packages/`, `ProjectSettings/` or the workflow file changes. Also **Actions → Build → Run workflow** by hand. |
+| **Triggers** | `pull_request`, only when `Assets/`, `Packages/`, `ProjectSettings/` or the workflow file changes. `workflow_dispatch` (**Run workflow**) on any branch. `push` to `main` is commented out. |
 | **Runner** | `ubuntu-latest`. Unity runs headless inside GameCI's Docker image `unityci/editor:ubuntu-6000.5.7f1-<platform>-3`. |
-| **Matrix** | `StandaloneWindows64` (Mono) and `WebGL`, in parallel. Both use GameCI's default build method with the Player Settings committed in `ProjectSettings/ProjectSettings.asset`. |
+| **Matrix** | PRs: `StandaloneWindows64` (Mono). Run workflow: `StandaloneWindows64` and `WebGL`, in parallel. All use GameCI's default build method with the Player Settings committed in `ProjectSettings/ProjectSettings.asset`. |
 | **Caches** | Git LFS objects (`.git/lfs`), keyed on the list of LFS files. Unity's `Library/`, per platform, keyed on `Assets/`, `Packages/` and `ProjectSettings/`. |
-| **Artifacts** | `Match3-StandaloneWindows64` and `Match3-WebGL`, kept for 7 days. Download them from the bottom of a run's summary page. |
+| **Artifacts** | Manual runs only: `Match3-StandaloneWindows64` and `Match3-WebGL`, kept for 7 days. Download them from the bottom of a run's summary page. |
 | **Pinned versions** | `game-ci/unity-builder` is pinned to the v6.0.0 commit SHA and its `game-ci/cli` to `v0.1.69`, because that step receives the Unity credentials. Upgrade both on purpose after reading the release notes. |
 | **Fails when** | Unity exits non-zero: a C# compile error, a failed build, or a license problem. |
 
@@ -50,16 +57,21 @@ expected: only branches in this repo can be built.
 - **LFS cache.** The PNGs and fonts are in Git LFS. The free plan allows 1 GB of LFS
   downloads a month, and each fresh runner would download all of them. The cache means they
   are downloaded again only when the set of LFS files changes.
-- **Cache scope.** GitHub lets a PR read caches made on `main` but not the other way round.
-  So the first build of a new PR starts from `main`'s cache, and merging to `main` refreshes it.
-  Caches unused for 7 days are evicted, and the repo gets 10 GB in total.
+- **Cache scope.** GitHub lets a PR read its own caches and `main`'s, but not another PR's,
+  and `main` can't read PR caches. Since merges no longer build, **`main` only gets a cache
+  when you Run workflow on `main`**. Without one, each new PR's first build is cold (~33 min
+  instead of ~7-11). So run a build on `main` now and then, for example after merging a batch
+  of PRs. That also refreshes the cache PRs start from.
+- **Eviction.** Caches unused for 7 days are deleted, and the repo gets 10 GB in total (each
+  `Library/` cache is ~1.2-1.4 GB). Deleting a merged PR's caches (**Actions → Caches**) frees
+  room so `main`'s aren't pushed out.
 
 ## Budget (private repo)
 
 The repo is private, so Actions minutes and artifact storage count against the free quota
-(2,000 Linux minutes a month on GitHub Free). Each run uses two jobs' worth of minutes. The path
-filters and PR cancellation keep that down. If minutes get tight, drop the `push` trigger or
-build Windows only on PRs.
+(2,000 Linux minutes a month on GitHub Free). A PR push costs ~7-11 min cached (~33 cold), so
+roughly 200 pushes a month. A manual Windows + Web build costs ~25 min cached (~97 cold). The
+path filters and PR cancellation keep it down further.
 
 ## Timings
 
@@ -77,8 +89,8 @@ Measured on PR #45 (2026-09-29/30), `ubuntu-latest`. "Unity" is the *Build with 
 - **The cache matters most for Web** (about 4× faster), because the IL2CPP output is kept in
   `Library/Bee`.
 - **A failed or cancelled job doesn't save its cache,** so the run after a failure is cold again.
-- **`main` starts cold.** Caches made on a PR can't be read by `main`, so the first build after
-  merging is a cold one (~64 min for Web). After that, PRs start from `main`'s cache.
+- **The first manual build on `main` is cold** (~64 min for Web), because `main` can't read PR
+  caches. Later ones start from its own cache.
 - **Cache sizes:** each `Library/` cache is about 1.2–1.4 GB, well within the repo's 10 GB.
 - **Artifacts:** Windows is about 49 MB and Web about 17 MB, zipped.
 
