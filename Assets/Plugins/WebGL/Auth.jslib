@@ -54,4 +54,38 @@ mergeInto(LibraryManager.library, {
       console.warn("Match3Auth: sessionStorage unavailable", e);
     }
   },
+
+  // localStorage: like sessionStorage, but kept after the tab closes. TokenStore keeps the
+  // signed-in account here (see TokenStore.cs for why not PlayerPrefs).
+  Match3Auth_LocalSet: function (key, value) {
+    try {
+      window.localStorage.setItem(UTF8ToString(key), UTF8ToString(value));
+    } catch (e) {
+      console.warn("Match3Auth: localStorage unavailable", e);
+    }
+  },
+
+  Match3Auth_LocalGet: function (key) {
+    var value = null;
+    try {
+      value = window.localStorage.getItem(UTF8ToString(key));
+    } catch (e) {
+      console.warn("Match3Auth: localStorage unavailable", e);
+    }
+    if (value === null) {
+      return 0;
+    }
+    var size = lengthBytesUTF8(value) + 1;
+    var buffer = _malloc(size);
+    stringToUTF8(value, buffer, size);
+    return buffer;
+  },
+
+  Match3Auth_LocalRemove: function (key) {
+    try {
+      window.localStorage.removeItem(UTF8ToString(key));
+    } catch (e) {
+      console.warn("Match3Auth: localStorage unavailable", e);
+    }
+  },
 });

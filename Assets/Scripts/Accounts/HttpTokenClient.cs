@@ -104,12 +104,13 @@ namespace Match3.Accounts
                     return TokenResult.Success(tokens.access_token, tokens.refresh_token, tokens.expires_in);
 
                 case UnityWebRequest.Result.ProtocolError:
-                    // The server answered with an HTTP error. A 400/401 with an OAuth "error"
-                    // (like invalid_grant) is a firm no; a 5xx means the server is having
-                    // trouble, which is worth retrying later.
+                    // The server answered with an HTTP error. Only "invalid_grant" means the
+                    // code or refresh token itself is no good (expired, revoked, already used),
+                    // so trying again can't help. Anything else (a 5xx, a rate limit, or
+                    // "invalid_client" from a server misconfiguration) may well go away, so it
+                    // mustn't cost the player their sign-in.
                     TokenResponse error = ParseJson(body);
-                    bool rejected = request.responseCode >= 400 && request.responseCode < 500 &&
-                        error != null && !string.IsNullOrEmpty(error.error);
+                    bool rejected = error != null && error.error == "invalid_grant";
                     string reason = error != null && !string.IsNullOrEmpty(error.error)
                         ? error.error
                         : "HTTP " + request.responseCode;

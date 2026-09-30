@@ -40,9 +40,9 @@ namespace Match3.Accounts
         public int ExpiresInSeconds { get; private set; }
 
         /// <summary>
-        /// True if the server answered and said no (e.g. "invalid_grant": the refresh token has
-        /// expired or been revoked), so trying again won't help. False for network problems
-        /// and server errors, which may go away.
+        /// True only if the server said "invalid_grant": the code or refresh token has expired,
+        /// been revoked or already been used, so trying again won't help. False for network
+        /// problems, server errors and other OAuth errors, which may go away.
         /// </summary>
         public bool Rejected { get; private set; }
 

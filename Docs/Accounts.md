@@ -26,7 +26,7 @@ Everything lives in `Assets/Scripts/Accounts/` (namespace `Match3.Accounts`):
 | `WebRedirectAuthFlow` + `Assets/Plugins/WebGL/Auth.jslib` | The browser's flow (only compiled into Web builds). |
 | `ITokenClient` / `HttpTokenClient` | POSTs to `/oauth2/token` (code exchange, refresh) and `/oauth2/revoke`, with `UnityWebRequest`. |
 | `JwtClaims` | Reads the player's id and name out of the access token (a JWT). |
-| `TokenStore` | The refresh token and profile, in PlayerPrefs under `Account.*`. |
+| `TokenStore` | The refresh token and profile under `Account.*`: localStorage in a browser, PlayerPrefs elsewhere. |
 | `AccountManager` | The SignedOut / SigningIn / SignedIn state machine, refreshing, sign-out. Raises `Changed`. |
 | `AccountMenu` | The Account button and window. Built by **Match3 > Build Account Menu** (`Assets/Editor/AccountMenuBuilder.cs`). |
 
@@ -75,7 +75,10 @@ Game (tab)                                   auth.cartergrove.me                
 
 ### Staying signed in
 
-Only the **refresh token** (and the player's id and name) is saved, in PlayerPrefs. On the next
+Only the **refresh token** (and the player's id and name) is saved: in the page's
+`localStorage` in a browser, PlayerPrefs elsewhere. (Not PlayerPrefs in the browser, for the
+same reason as above: a reload just after a refresh could lose the rotated token and bring back
+the retired one, which the server would treat as theft.) On the next
 visit the game is signed in straight away with the saved name, and refreshes in the background
 for a new access token. The access token is kept in memory only.
 
@@ -86,8 +89,8 @@ saved every time, and `AccountManager` never lets two refreshes overlap.
 | Refresh result | What happens |
 |----------------|--------------|
 | Success | New access token; the rotated refresh token and name are saved. |
-| Rejected (`invalid_grant`: expired, revoked) | Signed out, with "Your sign-in has expired". |
-| Network or server error | Still signed in; a message says the server can't be reached. |
+| `invalid_grant` (expired, revoked, already used) | Signed out, with "Your sign-in has expired". |
+| Anything else (network, 5xx, rate limit, other OAuth errors) | Still signed in; a message says the server can't be reached. |
 
 **Sign out** forgets everything locally and asks `/oauth2/revoke` to revoke the refresh token.
 If that request fails, the token is already gone from the game and expires on its own.
