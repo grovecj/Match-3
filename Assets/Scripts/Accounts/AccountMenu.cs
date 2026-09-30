@@ -149,7 +149,7 @@ namespace Match3.Accounts
         {
             AccountManager.AccountState state = accountManager.State;
             bool signedIn = state == AccountManager.AccountState.SignedIn;
-            string name = accountManager.DisplayName;
+            string playerName = accountManager.DisplayName;
 
             switch (state)
             {
@@ -166,7 +166,7 @@ namespace Match3.Accounts
                     break;
             }
 
-            nameText.text = signedIn ? (string.IsNullOrEmpty(name) ? "(no name)" : name) : "";
+            nameText.text = signedIn ? (string.IsNullOrEmpty(playerName) ? "(no name)" : playerName) : "";
             nameText.gameObject.SetActive(signedIn);
 
             string message = accountManager.Message;
@@ -176,7 +176,7 @@ namespace Match3.Accounts
             signInButton.gameObject.SetActive(state == AccountManager.AccountState.SignedOut && accountManager.CanSignIn);
             signOutButton.gameObject.SetActive(signedIn);
 
-            openButtonLabel.text = signedIn && !string.IsNullOrEmpty(name) ? name : ButtonLabel;
+            openButtonLabel.text = signedIn && !string.IsNullOrEmpty(playerName) ? playerName : ButtonLabel;
         }
 
         private void Open()
