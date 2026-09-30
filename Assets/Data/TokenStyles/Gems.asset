@@ -18,15 +18,20 @@ MonoBehaviour:
   - tokenType: {fileID: 11400000, guid: f1cd57746d0749538309dca42ea575c7, type: 2}
     sprite: {fileID: 21300000, guid: 2d17d7c0cec64e042bd659309b482e07, type: 3}
     tint: {r: 1, g: 1, b: 1, a: 1}
+    burstColor: {r: 0.95, g: 0.25, b: 0.3, a: 1}
   - tokenType: {fileID: 11400000, guid: 991fc535d3cb4b89af53e7a4b7710d63, type: 2}
     sprite: {fileID: 21300000, guid: cb3b9dfb14685684088ad391b5409761, type: 3}
     tint: {r: 1, g: 1, b: 1, a: 1}
+    burstColor: {r: 0.28, g: 0.88, b: 0.42, a: 1}
   - tokenType: {fileID: 11400000, guid: 04061a2df2164a508e33cfba4d2c28d4, type: 2}
     sprite: {fileID: 21300000, guid: cbf6e4e23dbcb7e47b3185ca0b690570, type: 3}
     tint: {r: 1, g: 1, b: 1, a: 1}
+    burstColor: {r: 0.74, g: 0.34, b: 0.96, a: 1}
   - tokenType: {fileID: 11400000, guid: 04df1804484341038921ca2ed7494784, type: 2}
     sprite: {fileID: 21300000, guid: fa52d3ed997a2b14383781d079b7fa30, type: 3}
     tint: {r: 1, g: 1, b: 1, a: 1}
+    burstColor: {r: 0.28, g: 0.55, b: 1, a: 1}
   - tokenType: {fileID: 11400000, guid: 549100796bda41b0a3bd74dfa7b258b5, type: 2}
     sprite: {fileID: 21300000, guid: b58e62a31b7c1b7419cd46d27d354d13, type: 3}
     tint: {r: 1, g: 1, b: 1, a: 1}
+    burstColor: {r: 1, g: 0.85, b: 0.25, a: 1}

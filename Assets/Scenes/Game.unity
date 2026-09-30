@@ -4527,8 +4527,10 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 04df1804484341038921ca2ed7494784, type: 2}
   - {fileID: 11400000, guid: 549100796bda41b0a3bd74dfa7b258b5, type: 2}
   swapDuration: 0.15
-  clearDelay: 0.1
+  clearDelay: 0.25
   fallSpeed: 10
+  popDuration: 0.12
+  explosionPrefab: {fileID: 958930834559788183, guid: 02b32b8a00064234e9361524bd622118, type: 3}
 --- !u!4 &709381720
 Transform:
   m_ObjectHideFlags: 0
@@ -10577,36 +10579,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Match3::Match3.AudioManager
   soundSet: {fileID: 11400000, guid: d596c04053854b038c66fbc83fd223c7, type: 2}
---- !u!114 &1481894171
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1481894167}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: e15ce7e850374b5781452a0574c0a108, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Match3::Match3.MatchSounds
-  board: {fileID: 709381719}
-  audioManager: {fileID: 1481894168}
---- !u!114 &1481894172
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1481894167}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: cdfb8e6ffba2451582f33438c6b60218, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Match3::Match3.SwapSounds
-  board: {fileID: 709381719}
-  audioManager: {fileID: 1481894168}
-  swapVolume: 0.5
-  invalidSwapVolume: 0.8
 --- !u!82 &1481894169
 AudioSource:
   m_ObjectHideFlags: 0
@@ -10719,6 +10691,36 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1481894171
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1481894167}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e15ce7e850374b5781452a0574c0a108, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Match3::Match3.MatchSounds
+  board: {fileID: 709381719}
+  audioManager: {fileID: 1481894168}
+--- !u!114 &1481894172
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1481894167}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cdfb8e6ffba2451582f33438c6b60218, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Match3::Match3.SwapSounds
+  board: {fileID: 709381719}
+  audioManager: {fileID: 1481894168}
+  swapVolume: 0.5
+  invalidSwapVolume: 0.8
 --- !u!1 &1505185509
 GameObject:
   m_ObjectHideFlags: 0

@@ -48,5 +48,21 @@ namespace Match3.Tests
             Assert.That(ids, Is.Unique);
             Assert.That(ids, Has.None.Null.And.None.Empty);
         }
+
+        [Test]
+        public void EveryTokenStyle_HasAColoredBurstForEveryTokenType()
+        {
+            // White is the default for a new entry, so a white burst almost certainly means the
+            // color was never set: every token would explode in the same plain white.
+            List<TokenType> types = LoadAll<TokenType>();
+            foreach (TokenStyle style in LoadAll<TokenStyle>())
+            {
+                foreach (TokenType type in types)
+                {
+                    Assert.AreNotEqual(UnityEngine.Color.white, style.BurstColorFor(type),
+                        $"Token style '{style.name}' has no burst color set for {type.name}.");
+                }
+            }
+        }
     }
 }

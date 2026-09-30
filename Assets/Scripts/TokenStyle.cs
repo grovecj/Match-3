@@ -23,6 +23,10 @@ namespace Match3
             public Sprite sprite;
             [Tooltip("Multiplied onto the sprite. White leaves the sprite's own colors unchanged.")]
             public Color tint = Color.white;
+            // The tint can't double as the particle color: most art is drawn in full color
+            // with a white tint, so every burst would come out white.
+            [Tooltip("Color of the particle burst when a token of this type is cleared. Pick the sprite's main color.")]
+            public Color burstColor = Color.white;
         }
 
         [Tooltip("Stable identifier for code and save data, e.g. \"gems\". Should not change once set.")]
@@ -54,6 +58,22 @@ namespace Match3
             sprite = null;
             tint = Color.white;
             return false;
+        }
+
+        /// <summary>
+        /// The particle color for clearing a token of <paramref name="type"/>, or white if this
+        /// style has no entry for it.
+        /// </summary>
+        public Color BurstColorFor(TokenType type)
+        {
+            foreach (Entry entry in entries)
+            {
+                if (type != null && entry != null && entry.tokenType == type)
+                {
+                    return entry.burstColor;
+                }
+            }
+            return Color.white;
         }
 
         /// <summary>

@@ -106,6 +106,27 @@ namespace Match3.Tests
         }
 
         [Test]
+        public void BurstColorFor_TypeWithEntry_ReturnsItsBurstColor()
+        {
+            SetEntries((circle, circleSprite, Color.white), (square, squareSprite, Color.white));
+            var serialized = new SerializedObject(style);
+            serialized.FindProperty("entries").GetArrayElementAtIndex(1)
+                .FindPropertyRelative("burstColor").colorValue = Color.blue;
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+
+            // The square's burst is blue even though its tint is white: the two are separate.
+            Assert.AreEqual(Color.blue, style.BurstColorFor(square));
+        }
+
+        [Test]
+        public void BurstColorFor_TypeWithoutEntry_ReturnsWhite()
+        {
+            SetEntries((circle, circleSprite, Color.white));
+
+            Assert.AreEqual(Color.white, style.BurstColorFor(triangle));
+        }
+
+        [Test]
         public void FindMissingTypes_StyleCoversEveryType_ReturnsEmpty()
         {
             SetEntries((circle, circleSprite, Color.white), (square, squareSprite, Color.white));
