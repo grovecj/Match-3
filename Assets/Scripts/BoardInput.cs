@@ -9,7 +9,8 @@ namespace Match3
     ///   Drag  - press on a token and drag it toward a neighbor. The token follows the pointer
     ///           along one axis, and the neighbor slides the other way. Let go far enough (or
     ///           with a quick flick) and they swap; otherwise they spring back.
-    ///   Click - click a token to select it, then click one of its neighbors.
+    ///   Click - click a token to select it, then click one of its neighbors. (Dragging from
+    ///           that neighbor instead drags it, and the selection is dropped.)
     ///
     /// This is a small state machine:
     ///   Idle     - nothing picked up; waiting for a press on a token.
@@ -61,6 +62,9 @@ namespace Match3
         private Vector2 pressStartWorld;
         // Whether the pressed token was already selected, so letting go deselects it.
         private bool pressWasSelected;
+        // When the press is on a neighbor of the selected token: that token's cell, so a click
+        // (not a drag) swaps the two. Null otherwise.
+        private Vector2Int? pressClickSwapsWith;
 
         // The drag so far, worked out every frame by UpdateDrag.
         private DragAxis axis;
@@ -165,18 +169,14 @@ namespace Match3
                 return;
             }
 
-            // A neighbor: swap with it. Manhattan distance 1 means up/down/left/right.
-            if (Mathf.Abs(cell.x - selected.x) + Mathf.Abs(cell.y - selected.y) == 1)
-            {
-                board.TrySwap(selected, cell);
-                state = State.Idle;
-                return;
-            }
-
-            // Any other token: select that one instead (TryPickUp puts the old one down).
+            // Any other token: pick it up instead (TryPickUp puts the selected one down). What
+            // happens next waits for the release, so pressing a neighbor can still start a drag.
+            // Only if it turns out to be a click on a neighbor does it swap with the old selection.
+            // Manhattan distance 1 means up/down/left/right.
+            bool isNeighbor = Mathf.Abs(cell.x - selected.x) + Mathf.Abs(cell.y - selected.y) == 1;
             if (board.TryPickUp(cell))
             {
-                BeginPress(cell, wasSelected: false);
+                BeginPress(cell, wasSelected: false, clickSwapsWith: isNeighbor ? selected : (Vector2Int?)null);
             }
             else
             {
@@ -184,10 +184,11 @@ namespace Match3
             }
         }
 
-        private void BeginPress(Vector2Int cell, bool wasSelected)
+        private void BeginPress(Vector2Int cell, bool wasSelected, Vector2Int? clickSwapsWith = null)
         {
             pressCell = cell;
             pressWasSelected = wasSelected;
+            pressClickSwapsWith = clickSwapsWith;
             pressStartWorld = PointerWorldPosition();
             lastPointerWorld = pressStartWorld;
             pointerVelocity = Vector2.zero;
@@ -271,7 +272,14 @@ namespace Match3
 
         private void FinishClick()
         {
-            if (pressWasSelected)
+            if (pressClickSwapsWith is Vector2Int selected)
+            {
+                // Clicked a neighbor of the selected token: swap them. TrySwap puts the
+                // pressed token down.
+                board.TrySwap(selected, pressCell);
+                state = State.Idle;
+            }
+            else if (pressWasSelected)
             {
                 // Clicked the selected token again: put it down.
                 board.DropHeld();
