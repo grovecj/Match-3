@@ -2,14 +2,15 @@
 
 GitHub Actions and [GameCI](https://game.ci) build the game in the cloud (issue #23):
 
-- **Pull requests** build **Windows only**, as a check that the player build still compiles.
-  No artifacts are uploaded.
-- **Release builds are manual.** **Actions → Build → Run workflow**, pick a branch (usually
-  `main`), builds **Windows and Web** and uploads both. Merges to `main` don't build on their
-  own: with lots of small PRs, one release per merge isn't needed. The `push` trigger is
-  commented out in the workflow if you want it back.
- The workflow is
-[`.github/workflows/build.yml`](../.github/workflows/build.yml). Its comments explain each step.
+- **Pull requests** that change `Assets/`, `Packages/`, `ProjectSettings/` or the workflow
+  build **Windows only**, as a check that the player build still compiles. No artifacts are
+  uploaded. Other PRs (docs only, say) don't build.
+- **Release builds are manual.** Go to **Actions → Build → Run workflow** and pick a branch
+  (usually `main`). That builds **Windows and Web** and uploads both. Merges to `main` don't
+  build on their own: with lots of small PRs, one release per merge isn't needed. The `push`
+  trigger is commented out in the workflow if you want it back.
+
+The workflow is [`.github/workflows/build.yml`](../.github/workflows/build.yml). Its comments explain each step.
 
 ## What it does
 
