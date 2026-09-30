@@ -5,9 +5,12 @@ using UnityEngine;
 namespace Match3
 {
     /// <summary>
-    /// Owns the play area: its dimensions, the cell background tiles, the tokens in each cell,
-    /// the rules for resolving a swap (matching, clearing, gravity, refilling), and the math
-    /// for converting between grid coordinates (column, row) and world positions.
+    /// Owns the play area on screen: its dimensions, the cell background tiles, the Token
+    /// GameObjects, the animations for a swap and everything it causes, and the math for
+    /// converting between grid coordinates (column, row) and world positions.
+    ///
+    /// The rules themselves (matching, clearing, gravity, refilling) live in
+    /// <see cref="BoardModel"/>. Board asks the model what changed, then makes the scene match.
     ///
     /// Grid convention: (0, 0) is the bottom-left cell, x grows to the right, y grows upward.
     /// The board is centered on this GameObject's position.
@@ -54,9 +57,6 @@ namespace Match3
         // `Random` ambiguous between System.Random and UnityEngine.Random.
         public event System.Action<int> MatchCleared;
 
-        // The smallest run of same-type tokens that counts as a match.
-        private const int MinMatchLength = 3;
-
         // Idle: waiting for the player. Resolving: a swap and everything it caused (clearing,
         // falling, refilling, cascades) is still playing out, so input has to wait.
         private enum BoardState { Idle, Resolving }
@@ -69,11 +69,18 @@ namespace Match3
         private bool needsRebuild;
         private BoardState state = BoardState.Idle;
 
-        // The "model": which token is in which cell, indexed [x, y]. This array is the source of
-        // truth for game logic. The Token GameObjects are the "view": they just display it.
-        // Keeping the two separate means rules like matching can work on plain data without
-        // asking the scene where things are.
+        // The "model": which type of token is in which cell, plus the rules for changing that.
+        // It's the source of truth for game logic. Null until the board has been filled.
+        private BoardModel model;
+
+        // The "view": the Token GameObject displaying each cell, indexed [x, y]. Every change
+        // to the model is mirrored here so the two always agree about which cell holds what.
         private Token[,] tokens;
+
+        // Every random choice the model makes comes from here. `readonly` means this field is
+        // assigned once (right here) and never replaced. System.Random is plain C#, so unlike
+        // most Unity APIs it's fine to create in a field initializer.
+        private readonly System.Random random = new System.Random();
 
         /// <summary>The kinds of token that can appear on the board (e.g. for previews in menus).</summary>
         public IReadOnlyList<TokenType> TokenTypes => tokenTypes;
@@ -302,21 +309,22 @@ namespace Match3
             tokenContainer = new GameObject("Tokens").transform;
             tokenContainer.SetParent(transform, false);
             tokens = new Token[width, height];
+            model = null;
 
-            if (tokenPrefab == null || CountDistinctTypes(tokenTypes) < 3)
+            if (tokenPrefab == null || BoardModel.CountDistinctTypes(tokenTypes) < 3)
             {
                 Debug.LogError("Board: assign a Token Prefab and at least 3 distinct Token Types.", this);
                 return;
             }
 
-            // Fill column by column, bottom to top. That order matters: by the time we reach
-            // (x, y), the two cells to its left and the two cells below it are already filled,
-            // which is exactly what PickTypeWithoutMatch needs to look at.
+            // The model decides what goes where; we just spawn a token to show each cell.
+            model = new BoardModel(width, height, tokenTypes, random);
+            model.FillWithoutMatches();
             for (int x = 0; x < width; x++)
             {
                 for (int y = 0; y < height; y++)
                 {
-                    SpawnToken(x, y, PickTypeWithoutMatch(x, y), GridToWorld(x, y));
+                    SpawnToken(x, y, model.TypeAt(x, y), GridToWorld(x, y));
                 }
             }
         }
@@ -338,80 +346,14 @@ namespace Match3
         }
 
         /// <summary>
-        /// Records <paramref name="token"/> as occupying cell (x, y) in the model. Only the model
-        /// changes; moving the token on screen is left to the animations.
+        /// Records <paramref name="token"/> as occupying cell (x, y) in the view array. Its
+        /// position on screen is left to the animations.
         /// </summary>
         private void PlaceToken(Token token, int x, int y)
         {
             tokens[x, y] = token;
             // Naming tokens after their cell makes the Hierarchy a handy live view of the model.
             token.name = $"Token ({x}, {y})";
-        }
-
-        /// <summary>
-        /// Picks a random type for cell (x, y) that won't complete a 3-in-a-row with the two
-        /// already-placed tokens to its left or the two below it.
-        /// </summary>
-        private TokenType PickTypeWithoutMatch(int x, int y)
-        {
-            // A type is forbidden if the two neighbors in a line are both that same type.
-            TokenType forbiddenHorizontal = x >= 2 && tokens[x - 1, y].Type == tokens[x - 2, y].Type
-                ? tokens[x - 1, y].Type
-                : null;
-            TokenType forbiddenVertical = y >= 2 && tokens[x, y - 1].Type == tokens[x, y - 2].Type
-                ? tokens[x, y - 1].Type
-                : null;
-
-            // Collect the types that are still allowed, then pick one of them at random.
-            // At most two types are forbidden, and FillWithRandomTokens guarantees at least
-            // 3 distinct types, so there's always at least one candidate left.
-            var candidates = new List<TokenType>();
-            foreach (TokenType type in tokenTypes)
-            {
-                if (type != null && type != forbiddenHorizontal && type != forbiddenVertical)
-                {
-                    candidates.Add(type);
-                }
-            }
-
-            // Random.Range with ints excludes the max, so this returns 0..Count-1: a valid index.
-            return candidates[Random.Range(0, candidates.Count)];
-        }
-
-        /// <summary>
-        /// A random type for refilling the board. Unlike the starting fill, refills are allowed
-        /// to create matches: those become cascades, which is part of the fun.
-        /// </summary>
-        private TokenType PickRandomType()
-        {
-            var candidates = new List<TokenType>();
-            foreach (TokenType type in tokenTypes)
-            {
-                if (type != null)
-                {
-                    candidates.Add(type);
-                }
-            }
-            return candidates[Random.Range(0, candidates.Count)];
-        }
-
-        /// <summary>Number of distinct, non-null entries in <paramref name="types"/>.</summary>
-        private static int CountDistinctTypes(TokenType[] types)
-        {
-            if (types == null)
-            {
-                return 0;
-            }
-
-            var distinct = new HashSet<TokenType>();
-            foreach (TokenType type in types)
-            {
-                if (type != null)
-                {
-                    distinct.Add(type);
-                }
-            }
-            return distinct.Count;
         }
 
         /// <summary>
@@ -451,16 +393,16 @@ namespace Match3
         /// </summary>
         private IEnumerator ResolveSwap(Vector2Int a, Vector2Int b)
         {
-            // Update the model first, so matching sees the new layout; the animation just
-            // catches the view up to it.
-            SwapInModel(a, b);
+            // Update the model (and view array) first, so matching sees the new layout; the
+            // animation just catches the screen up to it.
+            Swap(a, b);
             yield return StartCoroutine(AnimateSwap(a, b));
 
-            List<List<Vector2Int>> runs = FindMatches();
+            List<List<Vector2Int>> runs = model.FindMatches();
             if (runs.Count == 0)
             {
                 // Not a valid move: put everything back exactly as it was.
-                SwapInModel(a, b);
+                Swap(a, b);
                 yield return StartCoroutine(AnimateSwap(a, b));
             }
 
@@ -477,15 +419,16 @@ namespace Match3
                 CollapseAndRefill();
                 yield return StartCoroutine(AnimateFalls());
 
-                runs = FindMatches();
+                runs = model.FindMatches();
             }
 
             state = BoardState.Idle;
         }
 
-        /// <summary>Exchanges the tokens in cells a and b in the model.</summary>
-        private void SwapInModel(Vector2Int a, Vector2Int b)
+        /// <summary>Exchanges the contents of cells a and b in both the model and the view array.</summary>
+        private void Swap(Vector2Int a, Vector2Int b)
         {
+            model.Swap(a, b);
             Token tokenA = tokens[a.x, a.y];
             Token tokenB = tokens[b.x, b.y];
             PlaceToken(tokenB, a.x, a.y);
@@ -523,88 +466,17 @@ namespace Match3
         }
 
         /// <summary>
-        /// Finds every horizontal and vertical run of 3+ same-type tokens. Each run is returned
-        /// separately, so an L or T shape comes back as two runs that share a cell.
-        /// </summary>
-        private List<List<Vector2Int>> FindMatches()
-        {
-            var runs = new List<List<Vector2Int>>();
-
-            // Every row, scanned left to right...
-            for (int y = 0; y < height; y++)
-            {
-                FindRunsInLine(new Vector2Int(0, y), Vector2Int.right, width, runs);
-            }
-
-            // ...and every column, scanned bottom to top.
-            for (int x = 0; x < width; x++)
-            {
-                FindRunsInLine(new Vector2Int(x, 0), Vector2Int.up, height, runs);
-            }
-
-            return runs;
-        }
-
-        /// <summary>
-        /// Walks one row or column (starting at <paramref name="start"/> and moving by
-        /// <paramref name="step"/> for <paramref name="length"/> cells) and adds each run of
-        /// 3+ same-type tokens to <paramref name="runs"/>.
-        /// </summary>
-        private void FindRunsInLine(Vector2Int start, Vector2Int step, int length, List<List<Vector2Int>> runs)
-        {
-            // runStart is the index where the current run of one type began. We go one step past
-            // the end (i == length) so the last run in the line gets checked too.
-            int runStart = 0;
-            for (int i = 1; i <= length; i++)
-            {
-                if (i < length)
-                {
-                    TokenType current = TypeAt(start + step * i);
-                    if (current != null && current == TypeAt(start + step * runStart))
-                    {
-                        continue; // Same type as the run: it keeps growing.
-                    }
-                }
-
-                // The run covering indices runStart..i-1 just ended. Keep it if it's long enough.
-                if (i - runStart >= MinMatchLength)
-                {
-                    var run = new List<Vector2Int>();
-                    for (int j = runStart; j < i; j++)
-                    {
-                        run.Add(start + step * j);
-                    }
-                    runs.Add(run);
-                }
-                runStart = i;
-            }
-        }
-
-        /// <summary>The type of the token in <paramref name="cell"/>, or null if the cell is empty.</summary>
-        private TokenType TypeAt(Vector2Int cell)
-        {
-            Token token = tokens[cell.x, cell.y];
-            return token != null ? token.Type : null;
-        }
-
-        /// <summary>
-        /// Destroys every token in <paramref name="runs"/>, empties their cells, and reports each
-        /// run through <see cref="MatchCleared"/>.
+        /// Empties every cell in <paramref name="runs"/> in the model, destroys the tokens that
+        /// were there, and reports each run through <see cref="MatchCleared"/>.
         /// </summary>
         private void ClearMatches(List<List<Vector2Int>> runs)
         {
-            // Runs can overlap (L/T shapes), so gather their cells into a set first. A HashSet
-            // ignores duplicates, which guarantees a shared cell is only cleared once.
-            var cellsToClear = new HashSet<Vector2Int>();
-            foreach (List<Vector2Int> run in runs)
-            {
-                cellsToClear.UnionWith(run);
-            }
-
-            foreach (Vector2Int cell in cellsToClear)
+            // The model hands back each cleared cell once, even where an L or T shape's two runs
+            // share a cell, so no token gets destroyed twice.
+            foreach (Vector2Int cell in model.Clear(runs))
             {
                 // Destroy removes the GameObject at the end of the current frame. We null the
-                // model entry right away so game logic treats the cell as empty immediately.
+                // view entry right away so it agrees with the model immediately.
                 Destroy(tokens[cell.x, cell.y].gameObject);
                 tokens[cell.x, cell.y] = null;
             }
@@ -617,41 +489,27 @@ namespace Match3
         }
 
         /// <summary>
-        /// Updates the model so every column is full again: tokens drop into the empty cells
-        /// below them, and new random tokens fill the gap left at the top. New tokens are spawned
-        /// above the board; <see cref="AnimateFalls"/> then moves everything into place.
+        /// Has the model apply gravity and refill, then mirrors that in the view: falling tokens
+        /// are re-filed under their new cells, and new tokens are spawned above the board.
+        /// <see cref="AnimateFalls"/> then moves everything into place on screen.
         /// </summary>
         private void CollapseAndRefill()
         {
-            for (int x = 0; x < width; x++)
+            // Replaying the falls in the order the model made them is safe: each token's
+            // destination cell has already been vacated by the time it gets there.
+            foreach (BoardModel.Fall fall in model.Collapse())
             {
-                // Walk up the column moving each token down to the lowest free cell. `nextFree`
-                // is that cell; it only moves up once a token has landed in it.
-                int nextFree = 0;
-                for (int y = 0; y < height; y++)
-                {
-                    Token token = tokens[x, y];
-                    if (token == null)
-                    {
-                        continue;
-                    }
+                Token token = tokens[fall.From.x, fall.From.y];
+                tokens[fall.From.x, fall.From.y] = null;
+                PlaceToken(token, fall.To.x, fall.To.y);
+            }
 
-                    if (y != nextFree)
-                    {
-                        tokens[x, y] = null;
-                        PlaceToken(token, x, nextFree);
-                    }
-                    nextFree++;
-                }
-
-                // Cells nextFree..height-1 are now empty. Spawn a token for each one, stacked
-                // above the board in the same order, so every new token falls exactly as far
-                // as the gap is tall and they arrive together as a neat column.
-                int missing = height - nextFree;
-                for (int y = nextFree; y < height; y++)
-                {
-                    SpawnToken(x, y, PickRandomType(), GridToWorld(x, y + missing));
-                }
+            // Each new token starts FallDistance cells above its cell, so the new tokens in a
+            // column are stacked just above the board and arrive together as a neat column.
+            foreach (BoardModel.Spawn spawn in model.Refill())
+            {
+                Vector2Int cell = spawn.Cell;
+                SpawnToken(cell.x, cell.y, spawn.Type, GridToWorld(cell.x, cell.y + spawn.FallDistance));
             }
         }
 
