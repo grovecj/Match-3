@@ -63,12 +63,24 @@ build Windows only on PRs.
 
 ## Timings
 
-Fill in from the run summaries (Actions → a run → each job's duration).
+Measured on PR #45 (2026-09-29/30), `ubuntu-latest`. "Unity" is the *Build with Unity* step and
+"Job" is the whole job, including pulling the Docker image and freeing disk space.
 
-| Run | Windows | Web |
+| Run | Windows (Unity / Job) | Web (Unity / Job) |
 |---|---|---|
-| Cold (no caches) | _TBD_ | _TBD_ |
-| Cached (Library + LFS hit) | _TBD_ | _TBD_ |
+| Cold (no `Library/` cache) | 31 / 33 min | 60 / 64 min |
+| Cached (`Library/` hit) | 5–7 / 7–11 min | 13.5 / 16 min |
+
+- **Web is slow cold because of IL2CPP.** Almost all of it is compiling C# to C++ and then to
+  WebAssembly on a 2-core runner. That's why `timeout-minutes` is 90: at 60, a cold Web build
+  was killed on step 494 of 495.
+- **The cache matters most for Web** (about 4× faster), because the IL2CPP output is kept in
+  `Library/Bee`.
+- **A failed or cancelled job doesn't save its cache,** so the run after a failure is cold again.
+- **`main` starts cold.** Caches made on a PR can't be read by `main`, so the first build after
+  merging is a cold one (~64 min for Web). After that, PRs start from `main`'s cache.
+- **Cache sizes:** each `Library/` cache is about 1.2–1.4 GB, well within the repo's 10 GB.
+- **Artifacts:** Windows is about 49 MB and Web about 17 MB, zipped.
 
 ## Web settings live in ProjectSettings.asset
 
