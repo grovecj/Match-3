@@ -1,8 +1,11 @@
-# Builds the game with Unity (issue #23):
+# Builds the game with Unity (issue #23) and deploys it (issue #24):
 #   - Pull requests: Windows only, as a quick "does the player build still compile?" check.
 #   - Run workflow (manual, any branch): Windows and Web, with downloadable builds. This is how
 #     you make a release build, rather than getting one for every merge.
-# See Docs/CI.md for how it works, the one-time Unity license setup, and timings.
+#   - Run workflow on main (with "Deploy" ticked, the default): also publishes the release.
+#     The Web build goes live at games.cartergrove.me/match3 and the Windows zip is uploaded
+#     for download.
+# See Docs/CI.md for how it works, the one-time secrets setup, and timings.
 #
 # A GitHub Actions *workflow* is a YAML file in .github/workflows/. It says *when* to run (`on:`)
 # and *what* to run (`jobs:`). Each job runs on a fresh virtual machine (a "runner") that is
@@ -31,6 +34,14 @@ on:
   # Adds a "Run workflow" button on the Actions tab (pick a branch, usually main). This is the
   # way to get Windows + Web builds now.
   workflow_dispatch:
+    # Inputs appear as form fields next to the Run workflow button, and the workflow reads them
+    # as `inputs.<name>`. Untick this to build main without releasing it, e.g. just to refresh
+    # main's Library/ cache. Runs on other branches never deploy, whatever this says.
+    inputs:
+      deploy:
+        description: 'Deploy (main only): Web to games.cartergrove.me/match3, Windows zip to Spaces'
+        type: boolean
+        default: true
 
 # If you push again to the same PR while a build is still running, cancel the old build:
 # only the newest commit's result matters, and it saves CI minutes. Manual builds are never
@@ -153,3 +164,122 @@ jobs:
           path: build/${{ matrix.targetPlatform }}
           retention-days: 7
           if-no-files-found: error
+
+  # Publishes a release (issue #24). The DigitalOcean side (the games hub app, the downloads
+  # bucket and its CDN) is created by Terraform in grovecj/cartergrove-me-infra
+  # (projects/games/). This job only hands new files to it.
+  deploy:
+    name: Deploy
+    # `needs` makes this job wait for every leg of the build matrix, and it's skipped if any
+    # of them failed, so we never publish a Web build without the matching Windows one.
+    needs: build
+    # Deploy only from a Run workflow on main with the Deploy box ticked. Pull requests never
+    # deploy: their event_name is 'pull_request', and they don't get the secrets anyway.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # This job pushes the web-build branch, so its token needs write access to the repo.
+    # Setting `permissions` on a job replaces the workflow-level `contents: read` for this job
+    # only; the build jobs, which get the Unity credentials, stay read-only.
+    permissions:
+      contents: write
+    # Names from the infra repo's Terraform outputs (`terraform output` in projects/games/).
+    # If the infra changes, update them here.
+    env:
+      DOWNLOADS_BUCKET: games-downloads                        # downloads_bucket
+      SPACES_ENDPOINT: https://nyc3.digitaloceanspaces.com     # downloads_bucket_endpoint
+      DOWNLOADS_CDN_URL: https://games-downloads.nyc3.cdn.digitaloceanspaces.com  # downloads_cdn_url
+      GAME_URL: https://games.cartergrove.me/match3/           # game_urls["match3"]
+
+    steps:
+      # With no `name`, download-artifact fetches every artifact from this run, each into its own
+      # folder: artifacts/Match3-WebGL/ and artifacts/Match3-StandaloneWindows64/.
+      # Any action can read this job's write-access token, even when it isn't passed in, so the
+      # action is pinned to a commit SHA, like unity-builder above.
+      - name: Download builds
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: artifacts
+
+      # App Platform serves the match3 component straight from the web-build branch
+      # (deploy_on_push), so updating the live game is just replacing that branch.
+      #
+      # The branch is a *deploy branch*: one commit holding only the built files, with no history
+      # and nothing in common with main. We make a brand-new repo inside the build folder, commit
+      # everything, and force-push it over the old branch. Old builds aren't kept (the commit
+      # message records which main commit this came from), so the repo doesn't grow ~19 MB per
+      # release. GameCI puts the Web build in a subfolder named after buildName, and index.html
+      # has to be at the branch root, so that subfolder is what we commit.
+      - name: Publish Web build to the web-build branch
+        working-directory: artifacts/Match3-WebGL/Match3
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test -f index.html || { echo "::error::index.html not found in the Web build"; ls -R; exit 1; }
+          git init --quiet --initial-branch=web-build
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add --all
+          git commit --quiet -m "Web build of ${GITHUB_SHA::7} (run ${GITHUB_RUN_ID})"
+          git push --force --quiet "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:web-build
+
+      # Spaces speaks the same API as Amazon S3, so the AWS CLI (preinstalled on the runner) can
+      # upload to it: point --endpoint-url at Spaces and give it a Spaces access key.
+      #
+      # The zip is uploaded once under a name with the commit in it, then copied to the "latest"
+      # name. The copy happens inside Spaces ("server-side"), so the 49 MB isn't sent twice.
+      # The bucket is private (nobody can list it), so each file is made public-read on its own.
+      #
+      # The *_DoNotShip folder is debug info that Burst writes next to the game; as the name
+      # says, it doesn't belong in the download.
+      - name: Upload Windows zip to Spaces
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_ACCESS_KEY }}
+          # The AWS CLI insists on a region. Spaces ignores it (the endpoint picks the region).
+          AWS_DEFAULT_REGION: us-east-1
+          # Newer AWS CLIs add checksums that S3-compatible services like Spaces may reject.
+          # These turn them back to "only when the request requires it".
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+        run: |
+          zip_name="Match3-Windows-${GITHUB_SHA::7}.zip"
+          (cd artifacts/Match3-StandaloneWindows64 && zip -r -q "$RUNNER_TEMP/$zip_name" . -x '*_DoNotShip/*')
+          aws s3 cp "$RUNNER_TEMP/$zip_name" "s3://$DOWNLOADS_BUCKET/match3/$zip_name" \
+            --endpoint-url "$SPACES_ENDPOINT" --acl public-read
+          aws s3 cp "s3://$DOWNLOADS_BUCKET/match3/$zip_name" "s3://$DOWNLOADS_BUCKET/match3/Match3-Windows-latest.zip" \
+            --endpoint-url "$SPACES_ENDPOINT" --acl public-read
+          echo "ZIP_NAME=$zip_name" >> "$GITHUB_ENV"
+
+      # The CDN keeps a copy of each file at its edge servers for an hour (the TTL set in
+      # Terraform), so without this, the "latest" link could serve the previous build for up to
+      # an hour. Purging (DigitalOcean calls it "flush") makes the edges fetch it again.
+      # This uses DigitalOcean's HTTP API directly with curl, and jq to read its JSON:
+      #   1. GET /v2/cdn/endpoints lists the CDN endpoints; we find ours by its URL.
+      #   2. DELETE /v2/cdn/endpoints/<id>/cache purges the files we name.
+      - name: Purge the CDN's copy of the latest zip
+        env:
+          DO_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+        run: |
+          cdn_host="${DOWNLOADS_CDN_URL#https://}"
+          cdn_id=$(curl --fail-with-body -sS -H "Authorization: Bearer $DO_TOKEN" \
+            "https://api.digitalocean.com/v2/cdn/endpoints?per_page=200" \
+            | jq -r --arg host "$cdn_host" '.endpoints[] | select(.endpoint == $host) | .id')
+          if [ -z "$cdn_id" ]; then
+            echo "::error::No CDN endpoint named $cdn_host. Check DOWNLOADS_CDN_URL against the Terraform outputs."
+            exit 1
+          fi
+          curl --fail-with-body -sS -X DELETE -H "Authorization: Bearer $DO_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"files": ["match3/Match3-Windows-latest.zip"]}' \
+            "https://api.digitalocean.com/v2/cdn/endpoints/$cdn_id/cache"
+
+      # The job summary is Markdown shown at the top of the run's page.
+      - name: Summary
+        run: |
+          {
+            echo "## Deployed ${GITHUB_SHA::7}"
+            echo "- **Play:** $GAME_URL (App Platform takes a few minutes to redeploy)"
+            echo "- **Windows (latest):** $DOWNLOADS_CDN_URL/match3/Match3-Windows-latest.zip"
+            echo "- **Windows (this build):** $DOWNLOADS_CDN_URL/match3/$ZIP_NAME"
+          } >> "$GITHUB_STEP_SUMMARY"

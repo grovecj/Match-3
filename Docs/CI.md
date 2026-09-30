@@ -10,6 +10,11 @@ GitHub Actions and [GameCI](https://game.ci) build the game in the cloud (issue 
   build on their own: with lots of small PRs, one release per merge isn't needed. The `push`
   trigger is commented out in the workflow if you want it back.
 
+- **Releases (deploys) are manual too** (issue #24). A **Run workflow** on `main` with
+  **Deploy** ticked (the default) also publishes the build: Web to
+  <https://games.cartergrove.me/match3/>, and the Windows zip to Spaces. See
+  [Deploying](#deploying) below and the README's *Releasing* section.
+
 The workflow is [`.github/workflows/build.yml`](../.github/workflows/build.yml). Its comments explain each step.
 
 ## What it does
@@ -22,6 +27,7 @@ The workflow is [`.github/workflows/build.yml`](../.github/workflows/build.yml).
 | **Caches** | Git LFS objects (`.git/lfs`), keyed on the list of LFS files. Unity's `Library/`, per platform, keyed on `Assets/`, `Packages/` and `ProjectSettings/`. |
 | **Artifacts** | Manual runs only: `Match3-StandaloneWindows64` and `Match3-WebGL`, kept for 7 days. Download them from the bottom of a run's summary page. |
 | **Pinned versions** | `game-ci/unity-builder` is pinned to the v6.0.0 commit SHA and its `game-ci/cli` to `v0.1.69`, because that step receives the Unity credentials. Upgrade both on purpose after reading the release notes. |
+| **Deploy** | Only a Run workflow on `main` with **Deploy** ticked, and only after every build succeeded. Pushes the Web build to the `web-build` branch and uploads the Windows zip to Spaces. |
 | **Fails when** | Unity exits non-zero: a C# compile error, a failed build, or a license problem. |
 
 Unity version check: GameCI publishes images for **6000.5.7f1** (`ubuntu-6000.5.7f1-windows-mono-3`
@@ -47,6 +53,50 @@ encrypted secrets.
 The workflow reads these as `${{ secrets.NAME }}`. GitHub masks them as `***` in logs.
 Pull requests from **forks** don't get secrets, so their builds fail at activation. That's
 expected: only branches in this repo can be built.
+
+## Deploying
+
+The `deploy` job runs after the builds, only on a **Run workflow** on `main` with **Deploy**
+ticked. Every DigitalOcean resource it touches is created by Terraform in
+[grovecj/cartergrove-me-infra](https://github.com/grovecj/cartergrove-me-infra)
+(`projects/games/`). This repo only hands new files over. The bucket name and URLs at the top
+of the job come from that project's `terraform output`, so update them if the infra changes.
+
+- **Web → App Platform.** The games hub app has one *static site* component per game. The
+  `match3` component serves the root of this repo's **`web-build` branch** at `/match3/`, and
+  redeploys whenever that branch changes. So the job turns the Web build folder into a
+  one-commit repo and force-pushes it as `web-build`. That's a *deploy branch*: build output
+  only, no history, nothing in common with `main`. Don't edit it by hand; the next release
+  overwrites it.
+- **Windows → Spaces.** Spaces is DigitalOcean's S3-compatible storage, so the AWS CLI uploads
+  to it with `--endpoint-url`. The zip goes to the `games-downloads` bucket as
+  `match3/Match3-Windows-<short-sha>.zip`, then is copied to `match3/Match3-Windows-latest.zip`.
+  Both are `public-read`; the bucket itself isn't listable. Players download through the CDN
+  (`games-downloads.nyc3.cdn.digitaloceanspaces.com`), which caches files for an hour, so the
+  job purges the CDN's copy of the "latest" zip via the DigitalOcean API.
+- **Order.** The Web push happens first. If the Spaces upload then fails, the new Web build is
+  live but the zip isn't; fix the problem and run the workflow again.
+- **Timing.** App Platform usually has the new build live a few minutes after the push.
+  Watch it under the `games-hub` app's **Activity** tab in the DigitalOcean control panel.
+
+**First deploy.** App Platform can't create the `match3` component until `web-build` exists,
+and the upload needs the bucket. So: run the workflow on `main` once (the Web push succeeds,
+the Spaces upload fails because the bucket doesn't exist yet), `terraform apply` in the infra
+repo, then run the workflow again.
+
+## One-time setup: deploy secrets
+
+Add these in **Settings → Secrets and variables → Actions → New repository secret**, next to
+the Unity ones. The Web push needs no secret: it uses the workflow's own `GITHUB_TOKEN`, which
+the `deploy` job gets with write access.
+
+- `SPACES_ACCESS_KEY_ID` and `SPACES_SECRET_ACCESS_KEY`: a Spaces access key. In the DigitalOcean
+  control panel, **Spaces Object Storage → Access Keys → Create Access Key**. Limit it to the
+  `games-downloads` bucket with read/write/delete access, so a leaked key can't touch the
+  Terraform state bucket. The secret is only shown once.
+- `DIGITALOCEAN_ACCESS_TOKEN`: an API token for the CDN purge. **API → Tokens → Generate New
+  Token**, with custom scopes limited to CDN read and update, and an expiry. When it expires,
+  the purge step fails with a 401. Generate a new one and replace the secret.
 
 ## How the caches work
 
