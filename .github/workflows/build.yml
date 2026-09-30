@@ -1,4 +1,7 @@
-# Builds the game for Windows and the Web on every pull request and every push to main (issue #23).
+# Builds the game with Unity (issue #23):
+#   - Pull requests: Windows only, as a quick "does the player build still compile?" check.
+#   - Run workflow (manual, any branch): Windows and Web, with downloadable builds. This is how
+#     you make a release build, rather than getting one for every merge.
 # See Docs/CI.md for how it works, the one-time Unity license setup, and timings.
 #
 # A GitHub Actions *workflow* is a YAML file in .github/workflows/. It says *when* to run (`on:`)
@@ -16,19 +19,22 @@ on:
       - 'Packages/**'
       - 'ProjectSettings/**'
       - '.github/workflows/build.yml'
-  push:
-    branches: [main]
-    paths:
-      - 'Assets/**'
-      - 'Packages/**'
-      - 'ProjectSettings/**'
-      - '.github/workflows/build.yml'
-  # Adds a "Run workflow" button on the Actions tab, handy for re-running a build by hand.
+  # Building every merge to main is switched off: with lots of small PRs, a Windows + Web build
+  # (and ~65 MB of artifacts) per merge isn't worth the minutes. Uncomment to turn it back on.
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - 'Assets/**'
+  #     - 'Packages/**'
+  #     - 'ProjectSettings/**'
+  #     - '.github/workflows/build.yml'
+  # Adds a "Run workflow" button on the Actions tab (pick a branch, usually main). This is the
+  # way to get Windows + Web builds now.
   workflow_dispatch:
 
 # If you push again to the same PR while a build is still running, cancel the old build:
-# only the newest commit's result matters, and it saves CI minutes. Builds of main are never
-# cancelled, so every merge ends up with its own artifacts.
+# only the newest commit's result matters, and it saves CI minutes. Manual builds are never
+# cancelled.
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -46,7 +52,7 @@ jobs:
     # truly stuck build burn minutes forever (GitHub's default limit is 6 hours).
     timeout-minutes: 90
 
-    # A matrix runs this job once per entry, in parallel: one Windows build, one Web build.
+    # A matrix runs this job once per entry, in parallel.
     strategy:
       # Don't cancel the Web build just because the Windows build failed (or vice versa):
       # seeing both results is more useful.
@@ -57,10 +63,15 @@ jobs:
       # FullWindow template, ...) from that same file: Match3 > Build Web writes them there
       # (Assets/Editor/WebBuild.cs), so after changing WebBuild's settings, run it once and
       # commit ProjectSettings.asset so CI picks them up.
+      #
+      # Which platforms depends on how the run started. `cond && a || b` is the workflow
+      # expression language's if/else, and fromJSON turns the text into a list:
+      #   - pull_request: Windows only. A Mono build is cheap (~7-11 min cached) and catches what
+      #     unit tests can't, like runtime code using UnityEditor without #if UNITY_EDITOR.
+      #     Web (IL2CPP) costs 2-6x as much, so it only runs on demand.
+      #   - anything else (Run workflow): Windows and Web.
       matrix:
-        targetPlatform:
-          - StandaloneWindows64
-          - WebGL
+        targetPlatform: ${{ github.event_name == 'pull_request' && fromJSON('["StandaloneWindows64"]') || fromJSON('["StandaloneWindows64", "WebGL"]') }}
 
     steps:
       # The Unity Docker images are large (the Web one especially) and the runner starts with
@@ -132,8 +143,10 @@ jobs:
 
       # Artifacts are files a workflow run keeps after the runner is gone. They show up at the
       # bottom of the run's summary page as downloadable zips. The repo is private, so artifact
-      # storage counts against the free quota; a week is plenty to grab a build.
+      # storage counts against the free quota; a week is plenty to grab a build. PR builds are
+      # only a check, so they don't upload anything.
       - name: Upload build
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v7
         with:
           name: Match3-${{ matrix.targetPlatform }}
