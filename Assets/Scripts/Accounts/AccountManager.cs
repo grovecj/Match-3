@@ -64,8 +64,13 @@ namespace Match3.Accounts
 
         // True while a refresh request is out. The server rotates refresh tokens and treats a
         // reused old one as theft (revoking everything), so two refreshes must never overlap:
-        // the second would send the token the first just used up.
+        // the second would send the token the first just used up. (Other tabs are kept out
+        // by the refresh lease; see RefreshAccessToken.)
         private bool refreshing;
+
+        // Identifies this copy of the game (this tab, in a browser) when taking the refresh
+        // lease that stops two tabs refreshing at once. See RefreshAccessToken.
+        private readonly string instanceId = Guid.NewGuid().ToString("N");
 
         // Bumped every time the player signs out, so a request that was still in flight can
         // tell its answer is for an account that's gone.
@@ -206,19 +211,60 @@ namespace Match3.Accounts
             }
 
             int startedIn = generation;
-            TokenResult result = null;
             refreshing = true;
             try
             {
-                yield return tokenClient.Refresh(store.RefreshToken, r => result = r);
+                // Other tabs of the game share the saved refresh token (in the browser), so
+                // wait until this one holds the refresh lease (see TokenStore). Writing it and
+                // then checking a frame later that it's still ours settles a tie: if two tabs
+                // write at once, the last write wins and the other tab goes back to waiting.
+                while (true)
+                {
+                    if (store.TryTakeRefreshLease(instanceId))
+                    {
+                        yield return null;
+                        if (store.HoldsRefreshLease(instanceId))
+                        {
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        yield return null;
+                    }
+                    if (generation != startedIn || State != AccountState.SignedIn)
+                    {
+                        yield break; // Signed out while we waited.
+                    }
+                }
+
+                // Read the token only now: another tab may have just rotated it.
+                string refreshToken = store.RefreshToken;
+                if (refreshToken.Length == 0)
+                {
+                    // Another tab signed out.
+                    Forget();
+                    SetState(AccountState.SignedOut);
+                    yield break;
+                }
+
+                TokenResult result = null;
+                yield return tokenClient.Refresh(refreshToken, r => result = r);
+                // Handled before the lease is released (in "finally"), so the rotated refresh
+                // token is saved before any other tab may refresh.
+                HandleRefreshResult(result, startedIn);
             }
             finally
             {
                 // "finally" runs even if the coroutine is stopped (e.g. the object destroyed)
-                // while waiting, so the flag can't get stuck on.
+                // while waiting, so neither the flag nor the lease can get stuck on.
+                store.ReleaseRefreshLease(instanceId);
                 refreshing = false;
             }
+        }
 
+        private void HandleRefreshResult(TokenResult result, int startedIn)
+        {
             if (generation != startedIn || State != AccountState.SignedIn)
             {
                 // Signed out while we waited. Don't resurrect the account; just make sure the
@@ -227,7 +273,7 @@ namespace Match3.Accounts
                 {
                     StartCoroutine(tokenClient.Revoke(result.RefreshToken));
                 }
-                yield break;
+                return;
             }
 
             if (result != null && result.Succeeded)

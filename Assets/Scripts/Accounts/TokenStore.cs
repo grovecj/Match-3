@@ -1,3 +1,4 @@
+using System;
 #if UNITY_WEBGL && !UNITY_EDITOR
 using System.Runtime.InteropServices;
 #else
@@ -32,12 +33,20 @@ namespace Match3.Accounts
         private readonly string refreshTokenKey;
         private readonly string userIdKey;
         private readonly string nameKey;
+        private readonly string refreshLeaseKey;
+
+        /// <summary>
+        /// How long a refresh lease lasts if its tab never releases it (closed mid-refresh).
+        /// Longer than a token request's timeout, so a slow refresh keeps its lease.
+        /// </summary>
+        public static readonly TimeSpan RefreshLeaseDuration = TimeSpan.FromSeconds(30);
 
         public TokenStore(string prefix = DefaultPrefix)
         {
             refreshTokenKey = prefix + "RefreshToken";
             userIdKey = prefix + "UserId";
             nameKey = prefix + "Name";
+            refreshLeaseKey = prefix + "RefreshLease";
         }
 
         public string RefreshToken => Get(refreshTokenKey);
@@ -63,7 +72,58 @@ namespace Match3.Accounts
             Delete(refreshTokenKey);
             Delete(userIdKey);
             Delete(nameKey);
+            Delete(refreshLeaseKey);
             Flush();
+        }
+
+        // ---- The refresh lease ------------------------------------------------------------
+        // Every tab of the game in a browser shares this store. If two of them refreshed at
+        // the same moment, both would send the same refresh token, and the server would treat
+        // the second use as theft and revoke the account's whole token chain. So a tab first
+        // takes the "refresh lease": it writes "<its id>|<expiry>" here, and only refreshes
+        // while that's still what's stored. Other tabs wait until it's released or expires.
+
+        /// <summary>
+        /// Takes the lease for <paramref name="owner"/>, unless someone else holds an unexpired
+        /// one. True if written. Check <see cref="HoldsRefreshLease"/> a moment later: if two
+        /// tabs write at the same time, only the last write counts.
+        /// </summary>
+        public bool TryTakeRefreshLease(string owner)
+        {
+            if (TryReadLease(out string holder) && holder != owner)
+            {
+                return false;
+            }
+            long expires = DateTimeOffset.UtcNow.Add(RefreshLeaseDuration).ToUnixTimeMilliseconds();
+            Set(refreshLeaseKey, owner + "|" + expires);
+            Flush();
+            return true;
+        }
+
+        public bool HoldsRefreshLease(string owner) => TryReadLease(out string holder) && holder == owner;
+
+        /// <summary>Releases the lease if <paramref name="owner"/> holds it.</summary>
+        public void ReleaseRefreshLease(string owner)
+        {
+            if (HoldsRefreshLease(owner))
+            {
+                Delete(refreshLeaseKey);
+                Flush();
+            }
+        }
+
+        // True with the holder's id if there's an unexpired lease.
+        private bool TryReadLease(out string holder)
+        {
+            holder = null;
+            string[] parts = Get(refreshLeaseKey).Split('|');
+            if (parts.Length != 2 || !long.TryParse(parts[1], out long expires) ||
+                expires <= DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())
+            {
+                return false;
+            }
+            holder = parts[0];
+            return true;
         }
 
 #if UNITY_WEBGL && !UNITY_EDITOR

@@ -84,7 +84,12 @@ for a new access token. The access token is kept in memory only.
 
 The server **rotates** refresh tokens: every refresh returns a new one and retires the old one,
 and reusing a retired one revokes the whole chain (it looks like theft). So the new token is
-saved every time, and `AccountManager` never lets two refreshes overlap.
+saved every time, and two refreshes must never overlap: not within one game (a `refreshing`
+flag), and not across browser tabs, which share the saved token. For tabs, `TokenStore` has a
+*refresh lease*: a tab writes its id and an expiry (30s) to `Account.RefreshLease`, checks a
+frame later that it's still its own (if two tabs write at once, the last write wins), then
+re-reads the refresh token (another tab may just have rotated it), refreshes, saves, and
+releases the lease.
 
 | Refresh result | What happens |
 |----------------|--------------|

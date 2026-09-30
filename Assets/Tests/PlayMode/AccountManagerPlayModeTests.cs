@@ -296,6 +296,31 @@ namespace Match3.Tests
         }
 
         [UnityTest]
+        public IEnumerator Refresh_WaitsForAnotherTabsLease_ThenUsesItsNewToken()
+        {
+            // Another tab of the game is mid-refresh: it holds the lease.
+            store.Save("refresh-1", new JwtClaims { sub = "user-1", name = "Saved Name" });
+            Assert.That(store.TryTakeRefreshLease("other-tab"), Is.True);
+            tokens.RefreshResult = TokenResult.Success(Jwt("user-1", "Test Player"), "refresh-3", 900);
+            yield return CreateManager();
+
+            for (int i = 0; i < 5; i++)
+            {
+                yield return null;
+            }
+            Assert.That(tokens.RefreshCalls, Is.EqualTo(0), "Must not refresh while another tab holds the lease.");
+
+            // The other tab finishes: it saves its rotated token and lets go.
+            store.Save("refresh-2", null);
+            store.ReleaseRefreshLease("other-tab");
+            yield return WaitFor(() => tokens.RefreshCalls == 1 && store.RefreshToken == "refresh-3");
+
+            Assert.That(tokens.RefreshedWith, Is.EqualTo(new[] { "refresh-2" }), "Should send the other tab's new token, not the retired one.");
+            Assert.That(store.HoldsRefreshLease("other-tab"), Is.False);
+            Assert.That(manager.State, Is.EqualTo(AccountManager.AccountState.SignedIn));
+        }
+
+        [UnityTest]
         public IEnumerator SignIn_WhileAlreadySignedIn_DoesNothing()
         {
             flow.Result = Code();
