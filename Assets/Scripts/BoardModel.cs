@@ -268,6 +268,27 @@ namespace Match3
         // ------------------------------------------------------------ Clearing, gravity, refill
 
         /// <summary>
+        /// Every cell in <paramref name="runs"/>, with the length of the longest run it's part
+        /// of. A cell shared by an L or T shape's two runs appears once, with the longer length.
+        /// </summary>
+        // `static` because it only looks at the runs it's given, not at this board's grid.
+        public static Dictionary<Vector2Int, int> LongestRunPerCell(List<List<Vector2Int>> runs)
+        {
+            // A Dictionary maps keys (cells) to values (lengths), with each key stored only once.
+            var lengths = new Dictionary<Vector2Int, int>();
+            foreach (List<Vector2Int> run in runs)
+            {
+                foreach (Vector2Int cell in run)
+                {
+                    // TryGetValue returns false (and 0) if the cell isn't in the dictionary yet.
+                    lengths.TryGetValue(cell, out int longestSoFar);
+                    lengths[cell] = Mathf.Max(longestSoFar, run.Count);
+                }
+            }
+            return lengths;
+        }
+
+        /// <summary>
         /// Empties every cell in <paramref name="runs"/> and returns the set of cells cleared.
         /// Runs can overlap (L/T shapes); a shared cell is only listed once.
         /// </summary>

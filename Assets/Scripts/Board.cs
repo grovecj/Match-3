@@ -42,10 +42,23 @@ namespace Match3
         [SerializeField, Min(0.01f)] private float swapDuration = 0.15f;
 
         [Header("Resolving")]
-        [Tooltip("Pause, in seconds, after matched tokens disappear and before the rest fall.")]
-        [SerializeField, Min(0f)] private float clearDelay = 0.1f;
+        [Tooltip("Pause, in seconds, between matched tokens being cleared and the rest falling. The pop plays during it.")]
+        [SerializeField, Min(0f)] private float clearDelay = 0.25f;
         [Tooltip("How fast falling tokens move, in cells per second.")]
         [SerializeField, Min(0.1f)] private float fallSpeed = 10f;
+
+        [Header("Clearing Effects")]
+        [Tooltip("How long, in seconds, a cleared token takes to pop (swell, then shrink away).")]
+        [SerializeField, Min(0f)] private float popDuration = 0.12f;
+        [Tooltip("Particle burst spawned on every cleared cell. Optional: without one, tokens just pop.")]
+        [SerializeField] private Explosion explosionPrefab;
+
+        /// <summary>How big a popping token gets at its largest, relative to its normal size.</summary>
+        public const float PopPeakScale = 1.2f;
+
+        // How far through the pop (0 to 1) the token is at its largest. Swelling is quick and
+        // shrinking takes the rest, so it reads as a "pop" rather than a slow pulse.
+        private const float PopPeakTime = 0.3f;
 
         /// <summary>
         /// Fired once for every run of matching tokens that gets cleared, with the run's length
@@ -456,10 +469,14 @@ namespace Match3
             // local to this turn, so every new swap starts counting from 0 again.
             for (int cascadeIndex = 0; runs.Count > 0; cascadeIndex++)
             {
-                ClearMatches(runs, cascadeIndex);
-                if (clearDelay > 0f)
+                List<Token> cleared = ClearMatches(runs, cascadeIndex);
+                // The pop is part of the clear delay, not extra time on top of it; waiting for it
+                // here also means every popped token is gone before anything falls.
+                yield return StartCoroutine(AnimatePops(cleared));
+                float remainingDelay = clearDelay - popDuration;
+                if (remainingDelay > 0f)
                 {
-                    yield return new WaitForSeconds(clearDelay);
+                    yield return new WaitForSeconds(remainingDelay);
                 }
 
                 CollapseAndRefill();
@@ -512,19 +529,28 @@ namespace Match3
         }
 
         /// <summary>
-        /// Empties every cell in <paramref name="runs"/> in the model, destroys the tokens that
-        /// were there, and reports each run through <see cref="MatchCleared"/>, then the step as
-        /// a whole through <see cref="ClearStepResolved"/>.
+        /// Empties every cell in <paramref name="runs"/> in the model and the view array, spawns
+        /// a burst on each, and reports each run through <see cref="MatchCleared"/>, then the
+        /// step as a whole through <see cref="ClearStepResolved"/>. Returns the tokens that were
+        /// removed: they're no longer on the board, but they're still on screen, for
+        /// <see cref="AnimatePops"/> to pop and then destroy.
         /// </summary>
-        private void ClearMatches(List<List<Vector2Int>> runs, int cascadeIndex)
+        private List<Token> ClearMatches(List<List<Vector2Int>> runs, int cascadeIndex)
         {
-            // The model hands back each cleared cell once, even where an L or T shape's two runs
-            // share a cell, so no token gets destroyed twice.
+            // Worked out before clearing, so each cell's burst can be sized by its run. A cell an
+            // L or T shape's two runs share gets the longer one.
+            Dictionary<Vector2Int, int> runLengths = BoardModel.LongestRunPerCell(runs);
+            var cleared = new List<Token>();
+
+            // The model hands back each cleared cell once, even where two runs share it, so no
+            // cell pops or bursts twice.
             foreach (Vector2Int cell in model.Clear(runs))
             {
-                // Destroy removes the GameObject at the end of the current frame. We null the
-                // view entry right away so it agrees with the model immediately.
-                Destroy(tokens[cell.x, cell.y].gameObject);
+                Token token = tokens[cell.x, cell.y];
+                SpawnExplosion(cell, token.Type, runLengths[cell]);
+                cleared.Add(token);
+                // Null the view entry right away so it agrees with the model immediately; only
+                // the visuals linger for the pop.
                 tokens[cell.x, cell.y] = null;
             }
 
@@ -537,6 +563,67 @@ namespace Match3
             }
 
             ClearStepResolved?.Invoke(longestRun, cascadeIndex);
+            return cleared;
+        }
+
+        /// <summary>
+        /// Spawns a burst on <paramref name="cell"/> in <paramref name="type"/>'s color, sized for
+        /// a run of <paramref name="runLength"/>.
+        /// </summary>
+        private void SpawnExplosion(Vector2Int cell, TokenType type, int runLength)
+        {
+            if (explosionPrefab == null)
+            {
+                return;
+            }
+
+            // Parented to the Board (just to keep the Hierarchy tidy), never to the token: the
+            // token is about to be destroyed, and its children would go with it. The burst
+            // destroys itself when it's done (see Explosion).
+            Explosion explosion = Instantiate(explosionPrefab, GridToWorld(cell.x, cell.y), Quaternion.identity, transform);
+            // The prefab is built for a 1-unit cell; scaling it scales the whole burst with it.
+            explosion.transform.localScale = Vector3.one * cellSize;
+            TokenStyle style = CurrentTokenStyle;
+            explosion.Play(style != null ? style.BurstColorFor(type) : Color.white, runLength);
+        }
+
+        /// <summary>
+        /// Swells <paramref name="popping"/> slightly and then shrinks them to nothing over
+        /// <see cref="popDuration"/>, then destroys them.
+        /// </summary>
+        private IEnumerator AnimatePops(List<Token> popping)
+        {
+            // Time.deltaTime is scaled time, so while the game is paused (Time.timeScale = 0) it's
+            // 0 and the pop freezes along with everything else.
+            for (float elapsed = 0f; elapsed < popDuration; elapsed += Time.deltaTime)
+            {
+                Vector3 scale = Vector3.one * (cellSize * PopScale(elapsed / popDuration));
+                foreach (Token token in popping)
+                {
+                    token.transform.localScale = scale;
+                }
+                yield return null;
+            }
+
+            // Destroy removes each GameObject at the end of the current frame.
+            foreach (Token token in popping)
+            {
+                Destroy(token.gameObject);
+            }
+        }
+
+        /// <summary>
+        /// A popping token's size (1 = normal) at <paramref name="t"/> of the way through the pop:
+        /// it grows from 1 to <see cref="PopPeakScale"/>, then shrinks to 0 at t = 1.
+        /// </summary>
+        public static float PopScale(float t)
+        {
+            t = Mathf.Clamp01(t);
+            if (t < PopPeakTime)
+            {
+                return Mathf.Lerp(1f, PopPeakScale, t / PopPeakTime);
+            }
+            return Mathf.Lerp(PopPeakScale, 0f, (t - PopPeakTime) / (1f - PopPeakTime));
         }
 
         /// <summary>
@@ -642,7 +729,8 @@ namespace Match3
         /// </summary>
         internal void ConfigureForTests(int width, int height, SpriteRenderer cellPrefab, Token tokenPrefab,
             ThemeManager themeManager, TokenType[] tokenTypes, int seed,
-            float swapDuration, float clearDelay, float fallSpeed)
+            float swapDuration, float clearDelay, float fallSpeed,
+            float popDuration = 0f, Explosion explosionPrefab = null)
         {
             this.width = width;
             this.height = height;
@@ -655,6 +743,8 @@ namespace Match3
             this.swapDuration = swapDuration;
             this.clearDelay = clearDelay;
             this.fallSpeed = fallSpeed;
+            this.popDuration = popDuration;
+            this.explosionPrefab = explosionPrefab;
         }
 
         /// <summary>

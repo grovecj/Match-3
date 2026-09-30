@@ -65,6 +65,7 @@ namespace Match3.Tests
         private GameObject themeObject;
         private GameObject cellTemplate;
         private GameObject tokenTemplate;
+        private GameObject explosionTemplates;
         private GameObject boardObject;
         private Board board;
 
@@ -73,6 +74,10 @@ namespace Match3.Tests
 
         // Every (longest run, cascade index) reported through Board.ClearStepResolved, in order.
         private List<(int longestRun, int cascadeIndex)> clearSteps;
+
+        // The run length of every burst on screen when the swap's own clear step (index 0) was
+        // reported, which is just after the Board spawned that step's bursts.
+        private List<int> firstStepBursts;
 
         // Board.SwapStarted and Board.SwapRejected, recorded as "started"/"rejected" in the
         // order they fired, so a test can check both which ones fired and their order.
@@ -97,6 +102,7 @@ namespace Match3.Tests
             ThemeManager themeManager = themeObject.AddComponent<ThemeManager>();
             cellTemplate = new GameObject("Cell Template", typeof(SpriteRenderer));
             tokenTemplate = new GameObject("Token Template", typeof(Token));
+            Explosion explosionTemplate = CreateExplosionTemplate();
 
             // Create the Board inactive: an inactive object's Awake/OnEnable/Start wait until it's
             // activated, which gives us the chance to configure it first, like the Inspector would.
@@ -114,7 +120,9 @@ namespace Match3.Tests
                 // Speed the animations right up so each test only takes a few frames.
                 swapDuration: 0.01f,
                 clearDelay: 0f,
-                fallSpeed: 1000f);
+                fallSpeed: 1000f,
+                popDuration: 0.02f,
+                explosionPrefab: explosionTemplate);
             boardObject.SetActive(true);
 
             // Start runs just before the object's first frame; wait for it to deal its
@@ -128,6 +136,18 @@ namespace Match3.Tests
             // A lambda (an unnamed method written inline) turns the event's two ints into one
             // tuple for the list.
             board.ClearStepResolved += (longestRun, cascadeIndex) => clearSteps.Add((longestRun, cascadeIndex));
+            firstStepBursts = null;
+            board.ClearStepResolved += (_, cascadeIndex) =>
+            {
+                if (cascadeIndex == 0)
+                {
+                    firstStepBursts = new List<int>();
+                    foreach (Explosion explosion in Bursts())
+                    {
+                        firstStepBursts.Add(explosion.RunLength);
+                    }
+                }
+            };
             swapEvents = new List<string>();
             board.SwapStarted += () => swapEvents.Add("started");
             board.SwapRejected += () => swapEvents.Add("rejected");
@@ -138,7 +158,10 @@ namespace Match3.Tests
         [TearDown]
         public void TearDown()
         {
+            // A test that pauses might fail before unpausing, and timeScale outlives the test.
+            Time.timeScale = 1f;
             Object.Destroy(boardObject);
+            Object.Destroy(explosionTemplates);
             Object.Destroy(tokenTemplate);
             Object.Destroy(cellTemplate);
             Object.Destroy(themeObject);
@@ -217,6 +240,62 @@ namespace Match3.Tests
         }
 
         [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator TShapedMatch_BurstsOncePerCellSizedByItsLongestRun_ThenCleansUp()
+        {
+            board.LoadLayoutForTests(BuildLayout(TShapeLayout));
+
+            Assert.IsTrue(board.TrySwap(TShapeA, TShapeB));
+            yield return WaitUntilIdle();
+
+            // A row of 3 and a column of 4 sharing one cell: 6 cells, so 6 bursts, not 7. The
+            // shared cell bursts at the column's size, so 4 of them are 4s.
+            Assert.IsNotNull(firstStepBursts, "The swap's clear step was never reported.");
+            CollectionAssert.AreEquivalent(new[] { 3, 3, 4, 4, 4, 4 }, firstStepBursts);
+
+            // Every burst destroys itself once its particles have faded, so none pile up.
+            yield return WaitUntilNoBursts();
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator Pausing_FreezesThePopAndTheBursts()
+        {
+            Assert.IsTrue(board.TrySwap(MatchA, MatchB));
+            // Let the swap finish and the clear begin: the bursts appear as the tokens start popping.
+            yield return new WaitUntil(() => Bursts().Length > 0);
+
+            // Pause the way the GameManager does. The new timeScale only applies from the next
+            // frame (this one's deltaTime is already worked out), so let one frame go by before
+            // taking a snapshot of where everything is.
+            Time.timeScale = 0f;
+            yield return null;
+            Explosion[] bursts = Bursts();
+            var burstTimes = new List<float>();
+            foreach (Explosion burst in bursts)
+            {
+                // ParticleSystem.time: how far into its playback the system is, in (scaled) seconds.
+                burstTimes.Add(burst.GetComponent<ParticleSystem>().time);
+            }
+            bool wasResolving = board.IsResolving;
+
+            // Real (unscaled) seconds keep passing while paused: plenty of time for things to
+            // move on, if they weren't frozen.
+            yield return new WaitForSecondsRealtime(0.3f);
+
+            Assert.AreEqual(bursts.Length, Bursts().Length, "Bursts shouldn't finish (and destroy themselves) while paused.");
+            for (int i = 0; i < bursts.Length; i++)
+            {
+                Assert.AreEqual(burstTimes[i], bursts[i].GetComponent<ParticleSystem>().time,
+                    "A burst's particles moved on while paused.");
+            }
+            Assert.AreEqual(wasResolving, board.IsResolving, "The turn shouldn't move on while paused.");
+
+            Time.timeScale = 1f;
+            yield return WaitUntilIdle();
+            yield return WaitUntilNoBursts();
+            AssertBoardIsFullAndSettled();
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
         public IEnumerator SwapWithoutMatch_PutsBothTokensBack()
         {
             Token tokenA = board.GetToken(NoMatchA.x, NoMatchA.y);
@@ -257,6 +336,53 @@ namespace Match3.Tests
         }
 
         // ---------------------------------------------------------------- Helpers
+
+        /// <summary>
+        /// A stand-in for the Explosion prefab: a bare ParticleSystem with a short life that
+        /// destroys itself when done, like the real one (but with no textures or flash).
+        /// </summary>
+        private Explosion CreateExplosionTemplate()
+        {
+            // The template sits under an inactive parent, so it never wakes up or plays itself
+            // (and so never destroys itself). Clones are made under the Board, which is active,
+            // so they do.
+            explosionTemplates = new GameObject("Explosion Templates");
+            explosionTemplates.SetActive(false);
+            // Parent it first and add the components after: a new GameObject starts out active,
+            // so a ParticleSystem added straight away would already be playing.
+            var template = new GameObject("Explosion Template");
+            template.transform.SetParent(explosionTemplates.transform);
+            // Explosion's [RequireComponent] adds the ParticleSystem too.
+            template.AddComponent<Explosion>();
+
+            ParticleSystem.MainModule main = template.GetComponent<ParticleSystem>().main;
+            // Long enough to outlast a slow frame (so the pause test finds them still going),
+            // short enough that waiting for them to clean up is quick.
+            main.duration = 0.1f;
+            main.loop = false;
+            main.startLifetime = 0.5f;
+            main.playOnAwake = false;
+            main.stopAction = ParticleSystemStopAction.Destroy;
+            return template.GetComponent<Explosion>();
+        }
+
+        /// <summary>Every burst under the board right now.</summary>
+        private Explosion[] Bursts()
+        {
+            return boardObject.GetComponentsInChildren<Explosion>();
+        }
+
+        /// <summary>Waits until every burst has destroyed itself, failing the test if some never do.</summary>
+        private IEnumerator WaitUntilNoBursts()
+        {
+            bool timedOut = false;
+            yield return new WaitUntil(
+                () => Bursts().Length == 0,
+                System.TimeSpan.FromSeconds(ResolveTimeoutSeconds),
+                () => timedOut = true);
+
+            Assert.IsFalse(timedOut, $"{Bursts().Length} bursts were still around after {ResolveTimeoutSeconds} seconds.");
+        }
 
         /// <summary>Turns <paramref name="rows"/> (top row first) into a [x, y] array of token types.</summary>
         private TokenType[,] BuildLayout(string[] rows)
