@@ -103,7 +103,9 @@ namespace Match3
             }
 
             // Time.timeScale is global and outlives this scene, so never leave the game frozen.
+            // The same goes for AudioListener.pause.
             Time.timeScale = 1f;
+            AudioListener.pause = false;
         }
 
         // Unity calls this when the game window gains or loses focus. Pausing when the player
@@ -221,6 +223,12 @@ namespace Match3
             // (UI buttons still work because the UI uses Time.unscaledDeltaTime, real time.)
             Time.timeScale = 0f;
 
+            // timeScale doesn't touch audio: a sound that's playing would carry on over the
+            // pause screen. AudioListener.pause pauses every AudioSource (mid-sound, so they pick
+            // up where they left off on resume). A sound requested while paused starts off paused
+            // too, so nothing is heard until Resume.
+            AudioListener.pause = true;
+
             SetInputEnabled(false);
             boardBlur.Show();
             pauseOverlay.SetActive(true);
@@ -236,6 +244,7 @@ namespace Match3
 
             state = GameState.Playing;
             Time.timeScale = 1f;
+            AudioListener.pause = false;
             pauseOverlay.SetActive(false);
             boardBlur.Hide();
 

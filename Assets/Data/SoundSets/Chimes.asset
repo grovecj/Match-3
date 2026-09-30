@@ -1,0 +1,23 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6f42c3a3ad56473d8a6f518273da9dff, type: 3}
+  m_Name: Chimes
+  m_EditorClassIdentifier: Match3::Match3.SoundSet
+  id: chimes
+  displayName: Chimes
+  match3: {fileID: 8300000, guid: f3713e88c31343b19bf0bd081cf94812, type: 3}
+  match4: {fileID: 8300000, guid: cffca69cadb54dbc9461acc0dc165ffc, type: 3}
+  match5Plus: {fileID: 8300000, guid: cd99c025b7f74831a5602baff738bab3, type: 3}
+  countdownTick: {fileID: 8300000, guid: b932984c5e854f43b177b801639ab76c, type: 3}
+  roundEndHorn: {fileID: 0}
+  swap: {fileID: 8300000, guid: 170a9f0617b640e3a4ba5f0e47aa4eb7, type: 3}
+  invalidSwap: {fileID: 8300000, guid: 54827ad15a3544f9b9349582a9367f17, type: 3}
