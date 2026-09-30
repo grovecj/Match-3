@@ -1,4 +1,5 @@
 using System.Globalization;
+using Match3.Accounts;
 using TMPro;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -20,8 +21,8 @@ namespace Match3
     ///               button goes back to Playing.
     ///   RoundOver - time ran out. The final score and a "Play Again" button are shown.
     /// Clicking the button in Ready or RoundOver starts a new round (-> Playing).
-    /// The Settings menu (gear button) and the Leaderboard are only available in Ready and
-    /// RoundOver. A RoundOver score that makes the top 10 is offered to the leaderboard, which
+    /// The Settings menu (gear button), the Leaderboard and the Account menu are only available
+    /// in Ready and RoundOver. A RoundOver score that makes the top 10 is offered to the leaderboard, which
     /// asks for the player's initials.
     /// </summary>
     public class GameManager : MonoBehaviour
@@ -58,6 +59,10 @@ namespace Match3
         [Tooltip("Shown between rounds only. Gets each finished round's score.")]
         [SerializeField] private LeaderboardMenu leaderboardMenu;
 
+        [Header("Account")]
+        [Tooltip("Shown between rounds only, like Settings.")]
+        [SerializeField] private AccountMenu accountMenu;
+
         private enum GameState { Ready, Playing, Paused, RoundOver }
 
         private GameState state;
@@ -69,7 +74,7 @@ namespace Match3
             if (board == null || boardInput == null || scoreKeeper == null ||
                 timerText == null || messageText == null || roundButton == null || roundButtonLabel == null ||
                 pauseOverlay == null || resumeButton == null || boardBlur == null || settingsMenu == null ||
-                leaderboardMenu == null)
+                leaderboardMenu == null || accountMenu == null)
             {
                 Debug.LogError("GameManager: assign every field in the Inspector.", this);
                 enabled = false;
@@ -207,6 +212,7 @@ namespace Match3
             messageText.gameObject.SetActive(false);
             settingsMenu.SetAvailable(false);
             leaderboardMenu.SetAvailable(false);
+            accountMenu.SetAvailable(false);
             SetInputEnabled(true);
 
             state = GameState.Playing;
@@ -263,6 +269,7 @@ namespace Match3
             ShowButton("Start Round");
             settingsMenu.SetAvailable(true);
             leaderboardMenu.SetAvailable(true);
+            accountMenu.SetAvailable(true);
         }
 
         private void EnterRoundOver()
@@ -275,6 +282,7 @@ namespace Match3
             ShowButton("Play Again");
             settingsMenu.SetAvailable(true);
             leaderboardMenu.SetAvailable(true);
+            accountMenu.SetAvailable(true);
 
             // If the score makes the top 10, this pops up the initials prompt over the
             // round-end screen. Otherwise nothing more happens.

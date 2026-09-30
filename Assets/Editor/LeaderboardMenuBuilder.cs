@@ -245,32 +245,4 @@ public static class LeaderboardMenuBuilder
         field.customCaretColor = true;
         return field;
     }
-
-    // ---- Shared -----------------------------------------------------------------------------
-
-    /// <summary>
-    /// Adds a modal: a dimmed full-screen backdrop that swallows clicks, with a centered window
-    /// on it that grows to fit its contents (a Vertical Layout Group + Content Size Fitter, as
-    /// in the Settings menu). Returns the modal; <paramref name="window"/> is where content goes.
-    /// </summary>
-    private static GameObject AddModal(GameObject root, string name, out GameObject window)
-    {
-        GameObject modal = NewUI(name, root.transform);
-        Stretch(Rect(modal), 0);
-        AddImage(modal, new Color(0, 0, 0, 0.6f), null).raycastTarget = true;
-
-        window = NewUI("Window", modal.transform);
-        Anchor(Rect(window), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(700, 0));
-        AddImage(window, WindowColor, UISprite());
-        var layout = window.AddComponent<VerticalLayoutGroup>();
-        layout.padding = new RectOffset(40, 40, 30, 40);
-        layout.spacing = 16;
-        layout.childControlWidth = true;
-        layout.childControlHeight = true;
-        layout.childForceExpandWidth = true;
-        layout.childForceExpandHeight = false;
-        var fitter = window.AddComponent<ContentSizeFitter>();
-        fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-        return modal;
-    }
 }
