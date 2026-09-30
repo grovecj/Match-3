@@ -45,6 +45,49 @@ namespace Match3.Tests
         }
 
         [Test]
+        public void Load_NoFile_WithDefaults_ReturnsTheDefaultsSorted()
+        {
+            var store = new JsonFileLeaderboardStore(path, new[]
+            {
+                new LeaderboardEntry("LOW", 1000, Start),
+                new LeaderboardEntry("TOP", 9000, Start),
+            });
+
+            var loaded = store.Load();
+
+            Assert.That(loaded.Count, Is.EqualTo(2));
+            Assert.That(loaded[0].Initials, Is.EqualTo("TOP"));
+            Assert.That(File.Exists(path), Is.False, "Loading alone shouldn't create the file.");
+        }
+
+        [Test]
+        public void Submit_WithDefaults_SavesTheNewEntryAlongsideThem()
+        {
+            var store = new JsonFileLeaderboardStore(path, Leaderboard.DefaultEntries());
+
+            int rank = store.Submit(new LeaderboardEntry("NEW", 125000, Start.AddYears(1)));
+
+            // 125k sits between the 2nd (135k) and 3rd (120k) defaults, and pushes the last
+            // default (50k) off the list.
+            Assert.That(rank, Is.EqualTo(2));
+            var reloaded = new JsonFileLeaderboardStore(path).Load();
+            Assert.That(reloaded.Count, Is.EqualTo(Leaderboard.Capacity));
+            Assert.That(reloaded[2].Initials, Is.EqualTo("NEW"));
+            Assert.That(reloaded[reloaded.Count - 1].Score, Is.EqualTo(60000));
+        }
+
+        [Test]
+        public void Load_ExistingFile_IgnoresDefaults()
+        {
+            new JsonFileLeaderboardStore(path).Submit(new LeaderboardEntry("OWN", 1000, Start));
+
+            var loaded = new JsonFileLeaderboardStore(path, Leaderboard.DefaultEntries()).Load();
+
+            Assert.That(loaded.Count, Is.EqualTo(1));
+            Assert.That(loaded[0].Initials, Is.EqualTo("OWN"));
+        }
+
+        [Test]
         public void Submit_ThenLoadInANewStore_ReturnsTheEntries()
         {
             // Two separate store objects reading the same file is what happens when the game is

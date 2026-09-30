@@ -31,8 +31,19 @@ namespace Match3
         /// <summary>PlayerPrefs key for the initials used last time, used to pre-fill the prompt.</summary>
         public const string LastInitialsKey = "Leaderboard.LastInitials";
 
-        /// <summary>The file name the leaderboard is saved under, in Application.persistentDataPath.</summary>
+        /// <summary>
+        /// The file name the leaderboard is saved under, in Application.persistentDataPath.
+        ///
+        /// On Windows the Editor and a built game share the same persistentDataPath, so without
+        /// separate names every test round played in the Editor would show up on the leaderboard
+        /// of a build run on the same PC. #if UNITY_EDITOR is a compile-time switch: the Editor
+        /// compiles the first line, a build compiles the second.
+        /// </summary>
+#if UNITY_EDITOR
+        public const string FileName = "leaderboard-editor.json";
+#else
         public const string FileName = "leaderboard.json";
+#endif
 
         [Header("Leaderboard panel")]
         [Tooltip("The Leaderboard button in the side panel that opens the panel.")]
@@ -73,7 +84,9 @@ namespace Match3
             }
 
             // Path.Combine joins folder and file name with the right separator for the platform.
-            store = new JsonFileLeaderboardStore(Path.Combine(Application.persistentDataPath, FileName));
+            // Until a score is saved, the store shows the default entries (150k down to 50k).
+            store = new JsonFileLeaderboardStore(Path.Combine(Application.persistentDataPath, FileName),
+                Leaderboard.DefaultEntries());
 
             openButton.onClick.AddListener(Open);
             closeButton.onClick.AddListener(Close);
