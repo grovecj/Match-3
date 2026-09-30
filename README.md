@@ -1,5 +1,7 @@
 # Match-3
 
+[![Build](https://github.com/grovecj/Match-3/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/grovecj/Match-3/actions/workflows/build.yml)
+
 A Bejeweled-style match-3 game built in Unity, primarily as a learning project for
 Unity game development and AI-assisted workflows.
 

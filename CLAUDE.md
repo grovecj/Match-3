@@ -11,6 +11,8 @@ well-explained code over polish. Explain Unity concepts when introducing them.
   its option prefabs, and `Match3 > Build Leaderboard Menu`) live in `Assets/Editor/`, sharing
   helpers from `UIBuilder.cs`. `Match3 > Build Web` makes the browser build into `Builds/Web`
   (see `Docs/WebBuild.md`).
+- CI (`.github/workflows/build.yml`, GameCI) builds Windows and Web on every PR and push to
+  main; see `Docs/CI.md`. Needs the `UNITY_LICENSE`/`UNITY_EMAIL`/`UNITY_PASSWORD` repo secrets.
 - Game scripts live in `Assets/Scripts/` (the `Match3` assembly). Edit Mode tests live in
   `Assets/Tests/EditMode/` (`Match3.Tests.EditMode`). Run them from **Window → General → Test
   Runner → EditMode**, or headless (Unity must not already have the project open):
