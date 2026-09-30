@@ -52,9 +52,9 @@ namespace Match3.Tests
         [Test]
         public void ShortDiagonalDrag_IsRejected()
         {
-            // Length ~0.53 is past the threshold, but neither axis on its own is. The threshold
+            // Length ~0.58 is past the threshold, but neither axis on its own is. The threshold
             // is measured along the dominant axis, not the straight-line distance.
-            AssertNoDirection(new Vector2(0.4375f, 0.3f));
+            AssertNoDirection(new Vector2(0.4375f, 0.375f));
         }
 
         // ---- The four directions ----
