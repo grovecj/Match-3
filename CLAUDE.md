@@ -12,7 +12,10 @@ well-explained code over polish. Explain Unity concepts when introducing them.
   helpers from `UIBuilder.cs`. `Match3 > Build Web` makes the browser build into `Builds/Web`
   (see `Docs/WebBuild.md`).
 - Game scripts live in `Assets/Scripts/` (the `Match3` assembly). Edit Mode tests live in
-  `Assets/Tests/EditMode/` (`Match3.Tests.EditMode`). Run them from **Window → General → Test
-  Runner → EditMode**, or headless (Unity must not already have the project open):
+  `Assets/Tests/EditMode/` (`Match3.Tests.EditMode`); Play Mode tests live in
+  `Assets/Tests/PlayMode/` (`Match3.Tests.PlayMode`, which can see `Match3`'s `internal` test
+  hooks via `Assets/Scripts/AssemblyInfo.cs`). Run them from **Window → General → Test
+  Runner → EditMode / PlayMode**, or headless (Unity must not already have the project open):
   `Unity.exe -batchmode -projectPath . -runTests -testPlatform EditMode -testResults results.xml`
+  (or `-testPlatform PlayMode`)
 - Don't commit `Library/`, `Temp/`, `Logs/`, `UserSettings/`, or generated `.csproj`/`.sln*` files.

@@ -77,10 +77,10 @@ namespace Match3
         // to the model is mirrored here so the two always agree about which cell holds what.
         private Token[,] tokens;
 
-        // Every random choice the model makes comes from here. `readonly` means this field is
-        // assigned once (right here) and never replaced. System.Random is plain C#, so unlike
-        // most Unity APIs it's fine to create in a field initializer.
-        private readonly System.Random random = new System.Random();
+        // Every random choice the model makes comes from here. System.Random is plain C#, so
+        // unlike most Unity APIs it's fine to create in a field initializer. Not `readonly`
+        // only so tests can swap in a seeded one (see ConfigureForTests).
+        private System.Random random = new System.Random();
 
         /// <summary>The kinds of token that can appear on the board (e.g. for previews in menus).</summary>
         public IReadOnlyList<TokenType> TokenTypes => tokenTypes;
@@ -297,6 +297,20 @@ namespace Match3
         /// </summary>
         private void FillWithRandomTokens()
         {
+            if (!ResetTokens())
+            {
+                return;
+            }
+            model.FillWithoutMatches();
+            SpawnTokenInEveryCell();
+        }
+
+        /// <summary>
+        /// Destroys any existing tokens and creates a new, empty model. Returns false (leaving
+        /// no model) if the board isn't configured well enough to hold tokens.
+        /// </summary>
+        private bool ResetTokens()
+        {
             // Same "container" trick as the cells: one child object to hold (and clear) all tokens.
             // Clear the old container and rebuild the `tokens` array before validating the
             // replacement configuration below, so a bad config still leaves `tokens` correctly
@@ -314,12 +328,17 @@ namespace Match3
             if (tokenPrefab == null || BoardModel.CountDistinctTypes(tokenTypes) < 3)
             {
                 Debug.LogError("Board: assign a Token Prefab and at least 3 distinct Token Types.", this);
-                return;
+                return false;
             }
 
-            // The model decides what goes where; we just spawn a token to show each cell.
             model = new BoardModel(width, height, tokenTypes, random);
-            model.FillWithoutMatches();
+            return true;
+        }
+
+        /// <summary>Spawns a token on every cell's center showing the type the model has there.</summary>
+        private void SpawnTokenInEveryCell()
+        {
+            // The model decides what goes where; we just spawn a token to show each cell.
             for (int x = 0; x < width; x++)
             {
                 for (int y = 0; y < height; y++)
@@ -576,6 +595,62 @@ namespace Match3
         public bool IsInBounds(Vector2Int cell)
         {
             return cell.x >= 0 && cell.x < width && cell.y >= 0 && cell.y < height;
+        }
+
+        // ---------------------------------------------------------------- Test hooks
+
+        // `internal` means "visible only inside this assembly (Match3)". AssemblyInfo.cs adds
+        // one exception with [InternalsVisibleTo]: the Play Mode tests, which need to build a
+        // Board in code (no scene, no Inspector) and give it a known layout. The rest of the
+        // game can't see these, so they don't clutter Board's public API.
+
+        /// <summary>
+        /// Sets everything a scene would normally assign in the Inspector. Call it while the
+        /// Board's GameObject is still inactive, so it's in place before Start builds the board.
+        /// </summary>
+        internal void ConfigureForTests(int width, int height, SpriteRenderer cellPrefab, Token tokenPrefab,
+            ThemeManager themeManager, TokenType[] tokenTypes, int seed,
+            float swapDuration, float clearDelay, float fallSpeed)
+        {
+            this.width = width;
+            this.height = height;
+            this.cellPrefab = cellPrefab;
+            this.tokenPrefab = tokenPrefab;
+            this.themeManager = themeManager;
+            this.tokenTypes = tokenTypes;
+            // A seeded Random makes the same "random" choices (refills) on every run.
+            random = new System.Random(seed);
+            this.swapDuration = swapDuration;
+            this.clearDelay = clearDelay;
+            this.fallSpeed = fallSpeed;
+        }
+
+        /// <summary>
+        /// Replaces the current tokens with <paramref name="layout"/> (indexed [x, y], the same
+        /// size as the board), cancelling anything in progress. Call it after Start has run.
+        /// </summary>
+        internal void LoadLayoutForTests(TokenType[,] layout)
+        {
+            if (layout.GetLength(0) != width || layout.GetLength(1) != height)
+            {
+                throw new System.ArgumentException(
+                    $"Layout is {layout.GetLength(0)}x{layout.GetLength(1)} but the board is {width}x{height}.");
+            }
+
+            StopAllCoroutines();
+            state = BoardState.Idle;
+            if (!ResetTokens())
+            {
+                return;
+            }
+            for (int x = 0; x < width; x++)
+            {
+                for (int y = 0; y < height; y++)
+                {
+                    model.SetTypeAt(x, y, layout[x, y]);
+                }
+            }
+            SpawnTokenInEveryCell();
         }
 
         // Gizmos are drawn only in the Scene view (not in the game). This outline lets you
