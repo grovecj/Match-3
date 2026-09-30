@@ -12,7 +12,7 @@ well-explained code over polish. Explain Unity concepts when introducing them.
   helpers from `UIBuilder.cs`. `Match3 > Build Web` makes the browser build into `Builds/Web`
   (see `Docs/WebBuild.md`).
 - CI (`.github/workflows/build.yml`, GameCI) builds Windows on PRs that touch `Assets/`,
-  `Packages/`, `ProjectSettings/` or the workflow; Windows + Web builds are manual
+  `Packages/`, `ProjectSettings/` or a workflow; Windows + Web builds are manual
   (Actions → Build → Run workflow). A Run workflow on `main` with **Deploy** ticked also
   releases: Web via the `web-build` branch (App Platform), Windows zip to Spaces. See
   `Docs/CI.md`. Needs the `UNITY_LICENSE`/`UNITY_EMAIL`/`UNITY_PASSWORD` repo secrets, plus

@@ -2,7 +2,7 @@
 
 GitHub Actions and [GameCI](https://game.ci) build the game in the cloud (issue #23):
 
-- **Pull requests** that change `Assets/`, `Packages/`, `ProjectSettings/` or the workflow
+- **Pull requests** that change `Assets/`, `Packages/`, `ProjectSettings/` or a workflow
   build **Windows only**, as a check that the player build still compiles. No artifacts are
   uploaded. Other PRs (docs only, say) don't build.
 - **Release builds are manual.** Go to **Actions → Build → Run workflow** and pick a branch
@@ -24,7 +24,7 @@ The workflow is [`.github/workflows/build.yml`](../.github/workflows/build.yml).
 
 | | |
 |---|---|
-| **Triggers** | `pull_request`, only when `Assets/`, `Packages/`, `ProjectSettings/` or the workflow file changes. `workflow_dispatch` (**Run workflow**) on any branch. `push` to `main` is commented out. |
+| **Triggers** | `pull_request`, only when `Assets/`, `Packages/`, `ProjectSettings/` or anything in `.github/workflows/` changes (judged on the PR's whole diff against `main`). `workflow_dispatch` (**Run workflow**) on any branch. `push` to `main` is commented out. |
 | **Runner** | `ubuntu-latest`. Unity runs headless inside GameCI's Docker image `unityci/editor:ubuntu-6000.5.7f1-<platform>-3`. |
 | **Matrix** | PRs: `StandaloneWindows64` (Mono). Run workflow: `StandaloneWindows64` and `WebGL`, in parallel. All use GameCI's default build method with the Player Settings committed in `ProjectSettings/ProjectSettings.asset`. |
 | **Caches** | Git LFS objects (`.git/lfs`), keyed on the list of LFS files. Unity's `Library/`, per platform, keyed on `Assets/`, `Packages/` and `ProjectSettings/`. |
@@ -47,7 +47,7 @@ the build uses.
 
 | | |
 |---|---|
-| **Triggers** | The same as the build: `pull_request` when `Assets/`, `Packages/`, `ProjectSettings/` or `test.yml` changes, plus **Actions → Test → Run workflow** on any branch. |
+| **Triggers** | The same as the build: `pull_request` when `Assets/`, `Packages/`, `ProjectSettings/` or `.github/workflows/` changes, plus **Actions → Test → Run workflow** on any branch. |
 | **What runs** | `testMode: all`: every test in `Match3.Tests.EditMode`, then every test in `Match3.Tests.PlayMode`. |
 | **Fails when** | Any test fails, the code doesn't compile, or the license can't be activated. The PR then shows a red **Test** check. |
 | **Results** | A **Test Results** check run on the commit (from `githubToken`), listing every test with failures annotated. Plus a `Test-results` artifact holding the NUnit XML files, kept 7 days, uploaded even when tests fail. |
@@ -65,7 +65,7 @@ in parallel rather than one after the other.
 **Why `checks: write`?** The `Test Results` check run is created with the workflow's own token,
 and creating check runs needs that permission. Otherwise the token can only read the repo.
 
-**Code coverage is off** (`coverageEnabled: false`): it needs the
+**Code coverage is off** (`GAME_CI_COVERAGE_ENABLED: false`): it needs the
 `com.unity.testtools.codecoverage` package, which this project doesn't have.
 
 ## One-time setup: Unity license secrets
