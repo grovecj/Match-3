@@ -229,21 +229,32 @@ namespace Match3.Tests
         }
 
         /// <summary>
-        /// Every cell holds a live token, and every token sits exactly on its cell's center: if
-        /// the view array and the animations disagreed, a token would be missing or off-center.
+        /// Every cell holds its own live token, every token sits exactly on its cell's center,
+        /// and there are no other tokens in the scene under the board. If the view array and the
+        /// scene disagreed, a token would be missing, off-center, shared by two cells, or left
+        /// behind as an orphan (say, a cleared token that was never destroyed).
         /// </summary>
         private void AssertBoardIsFullAndSettled()
         {
+            // A HashSet holds each item at most once, so it can spot a token filed under two cells.
+            var cellTokens = new HashSet<Token>();
             for (int x = 0; x < board.Width; x++)
             {
                 for (int y = 0; y < board.Height; y++)
                 {
                     Token token = board.GetToken(x, y);
                     Assert.IsTrue(token != null, $"Cell ({x}, {y}) has no token.");
+                    Assert.IsTrue(cellTokens.Add(token), $"The token in cell ({x}, {y}) is also in another cell.");
                     Assert.That(token.transform.position, Is.EqualTo(board.GridToWorld(x, y)).Using(Vector3Comparer),
                         $"The token in cell ({x}, {y}) isn't on the cell's center.");
                 }
             }
+
+            // GetComponentsInChildren searches the whole hierarchy under the board, so it finds
+            // every Token GameObject, including any the Board has lost track of.
+            Token[] sceneTokens = boardObject.GetComponentsInChildren<Token>();
+            Assert.That(sceneTokens, Is.EquivalentTo(cellTokens),
+                "The tokens under the board should be exactly the ones in its cells, with no orphans.");
         }
 
         /// <summary>
