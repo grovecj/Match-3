@@ -46,9 +46,11 @@ namespace Match3
         /// <summary>
         /// Plays <paramref name="sound"/> from the current sound set, once. Does nothing if the
         /// set has no clip for it. <paramref name="pitch"/> 1 is normal; 2 is an octave up (and
-        /// twice as fast), 0.5 an octave down.
+        /// twice as fast), 0.5 an octave down. <paramref name="volumeScale"/> makes this one play
+        /// quieter (0-1) without changing the master volume, e.g. for a sound that plays so often
+        /// it would get tiring at full volume.
         /// </summary>
-        public void Play(SoundId sound, float pitch = 1f)
+        public void Play(SoundId sound, float pitch = 1f, float volumeScale = 1f)
         {
             AudioClip clip = soundSet != null ? soundSet.GetClip(sound) : null;
             if (clip == null)
@@ -65,7 +67,7 @@ namespace Match3
             // one-shot from this source that's still ringing out. That's fine for short effects;
             // if it ever becomes audible, the fix is a few AudioSources to take turns with.
             audioSource.pitch = pitch;
-            audioSource.PlayOneShot(clip);
+            audioSource.PlayOneShot(clip, volumeScale);
         }
 
         /// <summary>

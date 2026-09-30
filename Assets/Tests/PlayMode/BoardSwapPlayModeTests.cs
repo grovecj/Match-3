@@ -74,6 +74,10 @@ namespace Match3.Tests
         // Every (longest run, cascade index) reported through Board.ClearStepResolved, in order.
         private List<(int longestRun, int cascadeIndex)> clearSteps;
 
+        // Board.SwapStarted and Board.SwapRejected, recorded as "started"/"rejected" in the
+        // order they fired, so a test can check both which ones fired and their order.
+        private List<string> swapEvents;
+
         // [UnitySetUp] is [SetUp] that can span frames: it's a coroutine, so it can
         // `yield return null` ("wait one frame") to let Unity run Start before the test begins.
         [UnitySetUp]
@@ -124,6 +128,9 @@ namespace Match3.Tests
             // A lambda (an unnamed method written inline) turns the event's two ints into one
             // tuple for the list.
             board.ClearStepResolved += (longestRun, cascadeIndex) => clearSteps.Add((longestRun, cascadeIndex));
+            swapEvents = new List<string>();
+            board.SwapStarted += () => swapEvents.Add("started");
+            board.SwapRejected += () => swapEvents.Add("rejected");
         }
 
         // Runs after every test, even a failing one. In Play Mode, Destroy is the normal way to
@@ -183,6 +190,10 @@ namespace Match3.Tests
             {
                 Assert.AreEqual(i, clearSteps[i].cascadeIndex, $"Step {i} has the wrong cascade index.");
             }
+
+            // One swap sound for the player's swap, and none for the refills and cascades after it.
+            Assert.AreEqual(new[] { "started" }, swapEvents,
+                "A matching swap should fire SwapStarted once and never SwapRejected.");
         }
 
         [UnityTest, Timeout(TestTimeoutMs)]
@@ -222,6 +233,8 @@ namespace Match3.Tests
             Assert.AreSame(tokenB, board.GetToken(NoMatchB.x, NoMatchB.y), "Token B should be back in its own cell.");
             AssertBoardIsFullAndSettled();
             Assert.That(clearedRuns, Is.Empty, "Nothing matched, so MatchCleared shouldn't fire.");
+            Assert.AreEqual(new[] { "started", "rejected" }, swapEvents,
+                "An invalid swap should fire SwapStarted, then SwapRejected, once each.");
         }
 
         [UnityTest, Timeout(TestTimeoutMs)]
@@ -232,6 +245,9 @@ namespace Match3.Tests
             // Any other swap, valid or not, has to wait for the first one to finish.
             Assert.IsFalse(board.TrySwap(NoMatchA, NoMatchB), "A second swap should be rejected while resolving.");
             Assert.IsTrue(board.IsResolving, "The rejected swap mustn't unlock the board.");
+            // StartCoroutine runs a coroutine up to its first `yield` straight away, so the first
+            // swap has already fired SwapStarted. The refused one mustn't fire anything.
+            Assert.AreEqual(new[] { "started" }, swapEvents, "A refused TrySwap shouldn't fire swap events.");
 
             yield return WaitUntilIdle();
 
