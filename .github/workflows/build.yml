@@ -41,7 +41,10 @@ jobs:
   build:
     name: Build ${{ matrix.targetPlatform }}
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # A cold Web build (no Library cache) takes ~55 min, almost all of it IL2CPP compiling C# to
+    # C++ and then WebAssembly on a 2-core runner. 90 minutes leaves room without letting a
+    # truly stuck build burn minutes forever (GitHub's default limit is 6 hours).
+    timeout-minutes: 90
 
     # A matrix runs this job once per entry, in parallel: one Windows build, one Web build.
     strategy:
