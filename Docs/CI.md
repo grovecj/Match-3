@@ -15,6 +15,9 @@ GitHub Actions and [GameCI](https://game.ci) build the game in the cloud (issue 
   <https://games.cartergrove.me/match3/>, and the Windows zip to Spaces. See
   [Deploying](#deploying) below and the README's *Releasing* section.
 
+- **Tests run on pull requests too** (issue #33), in a separate workflow that runs next to the
+  build. See [Tests](#tests) below.
+
 The workflow is [`.github/workflows/build.yml`](../.github/workflows/build.yml). Its comments explain each step.
 
 ## What it does
@@ -34,6 +37,36 @@ Unity version check: GameCI publishes images for **6000.5.7f1** (`ubuntu-6000.5.
 and `ubuntu-6000.5.7f1-webgl-3`, checked on Docker Hub 2026-09-29), so no workaround is needed.
 When the project upgrades Unity, check that
 [images for the new version exist](https://hub.docker.com/r/unityci/editor/tags) first.
+
+## Tests
+
+[`.github/workflows/test.yml`](../.github/workflows/test.yml) runs the Edit Mode and Play Mode
+tests with GameCI's [`unity-test-runner`](https://game.ci/docs/github/test-runner). It is the
+same as running `Unity.exe -batchmode -runTests` locally, but in the same kind of Docker image
+the build uses.
+
+| | |
+|---|---|
+| **Triggers** | The same as the build: `pull_request` when `Assets/`, `Packages/`, `ProjectSettings/` or `test.yml` changes, plus **Actions → Test → Run workflow** on any branch. |
+| **What runs** | `testMode: all`: every test in `Match3.Tests.EditMode`, then every test in `Match3.Tests.PlayMode`. |
+| **Fails when** | Any test fails, the code doesn't compile, or the license can't be activated. The PR then shows a red **Test** check. |
+| **Results** | A **Test Results** check run on the commit (from `githubToken`), listing every test with failures annotated. Plus a `Test-results` artifact holding the NUnit XML files, kept 7 days, uploaded even when tests fail. |
+| **Caches** | The same LFS cache as the build. Its own `Library-Tests-` cache, because the Editor imports for its default (Linux) target, not Windows or Web. |
+| **Pinned versions** | `game-ci/unity-test-runner` is pinned to the v4.4.0 commit SHA and `game-ci/cli` to `v0.1.69`, like the builder, since this step also gets the Unity credentials. |
+
+**Reading a failure.** Open the PR's **Checks** tab and pick **Test Results**. It lists each
+failed test with its assertion message and stack trace, and puts an annotation on the failing
+line. For the full Unity log, open the **Test** job's *Run tests* step instead.
+
+**Why a separate workflow?** It gives the PR a separate check for "tests pass" and "the player
+builds", so you can tell at a glance which one broke, re-run just the tests, and have both run
+in parallel rather than one after the other.
+
+**Why `checks: write`?** The `Test Results` check run is created with the workflow's own token,
+and creating check runs needs that permission. Otherwise the token can only read the repo.
+
+**Code coverage is off** (`coverageEnabled: false`): it needs the
+`com.unity.testtools.codecoverage` package, which this project doesn't have.
 
 ## One-time setup: Unity license secrets
 

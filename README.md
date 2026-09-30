@@ -54,7 +54,7 @@ Pull requests never deploy. Untick **Deploy** to build `main` without releasing 
 
 | What | Where |
 |---|---|
-| Workflow | [`.github/workflows/build.yml`](.github/workflows/build.yml), explained in [`Docs/CI.md`](Docs/CI.md) |
+| Workflows | [`.github/workflows/build.yml`](.github/workflows/build.yml) (build and deploy) and [`.github/workflows/test.yml`](.github/workflows/test.yml) (tests on PRs), explained in [`Docs/CI.md`](Docs/CI.md) |
 | DigitalOcean resources (app, domain, bucket, CDN) | Terraform in [grovecj/cartergrove-me-infra](https://github.com/grovecj/cartergrove-me-infra) (`projects/games/`), not this repo |
 | Secrets | This repo's **Settings → Secrets and variables → Actions**: `UNITY_LICENSE`, `UNITY_EMAIL`, `UNITY_PASSWORD` (builds), `SPACES_ACCESS_KEY_ID`, `SPACES_SECRET_ACCESS_KEY`, `DIGITALOCEAN_ACCESS_TOKEN` (deploy). Setup steps are in [`Docs/CI.md`](Docs/CI.md#one-time-setup-deploy-secrets). |
 
