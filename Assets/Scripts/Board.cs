@@ -57,6 +57,17 @@ namespace Match3
         // `Random` ambiguous between System.Random and UnityEngine.Random.
         public event System.Action<int> MatchCleared;
 
+        /// <summary>
+        /// Fired once per clear step (each pass of the cascade loop), after that step's
+        /// <see cref="MatchCleared"/> events, with the step's longest run and its cascade index
+        /// (0 = the player's own swap, 1 = the first cascade, and so on).
+        /// </summary>
+        // MatchCleared fires once per *run*, so an L or T shape (two runs that share a cell)
+        // fires it twice. That's right for scoring, but a sound played per run would play twice
+        // on top of itself. Listeners that care about "something was cleared" rather than "how
+        // many runs" (like MatchSounds) want exactly one call per step, so they get their own event.
+        public event System.Action<int, int> ClearStepResolved;
+
         // Idle: waiting for the player. Resolving: a swap and everything it caused (clearing,
         // falling, refilling, cascades) is still playing out, so input has to wait.
         private enum BoardState { Idle, Resolving }
@@ -427,9 +438,11 @@ namespace Match3
 
             // Cascade loop: clear the current matches, let tokens fall and refill, then check
             // whether the new layout made more matches. Skipped entirely for an invalid swap.
-            while (runs.Count > 0)
+            // cascadeIndex counts the passes: 0 is the swap's own match, 1+ are cascades. It's
+            // local to this turn, so every new swap starts counting from 0 again.
+            for (int cascadeIndex = 0; runs.Count > 0; cascadeIndex++)
             {
-                ClearMatches(runs);
+                ClearMatches(runs, cascadeIndex);
                 if (clearDelay > 0f)
                 {
                     yield return new WaitForSeconds(clearDelay);
@@ -486,9 +499,10 @@ namespace Match3
 
         /// <summary>
         /// Empties every cell in <paramref name="runs"/> in the model, destroys the tokens that
-        /// were there, and reports each run through <see cref="MatchCleared"/>.
+        /// were there, and reports each run through <see cref="MatchCleared"/>, then the step as
+        /// a whole through <see cref="ClearStepResolved"/>.
         /// </summary>
-        private void ClearMatches(List<List<Vector2Int>> runs)
+        private void ClearMatches(List<List<Vector2Int>> runs, int cascadeIndex)
         {
             // The model hands back each cleared cell once, even where an L or T shape's two runs
             // share a cell, so no token gets destroyed twice.
@@ -500,11 +514,15 @@ namespace Match3
                 tokens[cell.x, cell.y] = null;
             }
 
+            int longestRun = 0;
             foreach (List<Vector2Int> run in runs)
             {
                 // ?.Invoke calls every subscriber, or does nothing if nobody has subscribed.
                 MatchCleared?.Invoke(run.Count);
+                longestRun = Mathf.Max(longestRun, run.Count);
             }
+
+            ClearStepResolved?.Invoke(longestRun, cascadeIndex);
         }
 
         /// <summary>
