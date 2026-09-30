@@ -68,6 +68,18 @@ namespace Match3
         // many runs" (like MatchSounds) want exactly one call per step, so they get their own event.
         public event System.Action<int, int> ClearStepResolved;
 
+        /// <summary>
+        /// Fired when the player's swap starts animating, whether or not it will make a match.
+        /// Only player swaps fire it: tokens falling during a refill or cascade never do.
+        /// </summary>
+        public event System.Action SwapStarted;
+
+        /// <summary>
+        /// Fired when a swap made no match and the tokens start sliding back. Always comes
+        /// after a <see cref="SwapStarted"/>.
+        /// </summary>
+        public event System.Action SwapRejected;
+
         // Idle: waiting for the player. Resolving: a swap and everything it caused (clearing,
         // falling, refilling, cascades) is still playing out, so input has to wait.
         private enum BoardState { Idle, Resolving }
@@ -426,6 +438,7 @@ namespace Match3
             // Update the model (and view array) first, so matching sees the new layout; the
             // animation just catches the screen up to it.
             Swap(a, b);
+            SwapStarted?.Invoke();
             yield return StartCoroutine(AnimateSwap(a, b));
 
             List<List<Vector2Int>> runs = model.FindMatches();
@@ -433,6 +446,7 @@ namespace Match3
             {
                 // Not a valid move: put everything back exactly as it was.
                 Swap(a, b);
+                SwapRejected?.Invoke();
                 yield return StartCoroutine(AnimateSwap(a, b));
             }
 
