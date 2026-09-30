@@ -111,33 +111,57 @@ namespace Match3
         private void UpdateDrag()
         {
             Vector2 delta = PointerWorldPosition() - dragStartWorld;
-            float absX = Mathf.Abs(delta.x);
-            float absY = Mathf.Abs(delta.y);
-            float major = Mathf.Max(absX, absY);
-            float minor = Mathf.Min(absX, absY);
 
-            // Not far enough yet: keep waiting.
-            if (major < dragThreshold * board.CellSize)
+            // No clear direction yet (too short, or too diagonal): keep waiting. Not canceling
+            // lets the player keep dragging, or straighten out a diagonal drag.
+            if (!TryGetSwapDirection(delta, dragThreshold * board.CellSize, diagonalTolerance, out Vector2Int direction))
             {
                 return;
             }
-
-            // Too close to 45° to tell which neighbor the player meant. Keep waiting rather than
-            // canceling, so the player can straighten the drag out.
-            if (minor >= major * diagonalTolerance)
-            {
-                return;
-            }
-
-            // Pick the dominant direction. Mathf.Sign returns +1 or -1.
-            Vector2Int direction = absX > absY
-                ? new Vector2Int((int)Mathf.Sign(delta.x), 0)
-                : new Vector2Int(0, (int)Mathf.Sign(delta.y));
 
             // TrySwap refuses targets off the edge of the board, so an outward drag from an
             // edge cell simply does nothing. Either way this drag is finished.
             board.TrySwap(dragStartCell, dragStartCell + direction);
             state = State.Idle;
+        }
+
+        /// <summary>
+        /// Decides which neighbor a drag points at. Pure math with no input or scene access,
+        /// which is why it's <c>static</c>: Edit Mode tests can call it directly with any delta.
+        /// </summary>
+        /// <param name="delta">How far the pointer has moved since the press, in world units.</param>
+        /// <param name="threshold">Minimum distance along the dominant axis, in world units.
+        /// A drag exactly this long counts.</param>
+        /// <param name="diagonalTolerance">Drags whose minor axis is at least this fraction of the
+        /// major axis are too diagonal and are rejected.</param>
+        /// <param name="direction">One of up/down/left/right when this returns true; zero otherwise.</param>
+        /// <returns>True if the drag is long and straight enough to pick a direction.</returns>
+        public static bool TryGetSwapDirection(Vector2 delta, float threshold, float diagonalTolerance, out Vector2Int direction)
+        {
+            direction = Vector2Int.zero;
+
+            float absX = Mathf.Abs(delta.x);
+            float absY = Mathf.Abs(delta.y);
+            float major = Mathf.Max(absX, absY);
+            float minor = Mathf.Min(absX, absY);
+
+            // Not far enough yet.
+            if (major < threshold)
+            {
+                return false;
+            }
+
+            // Too close to 45° to tell which neighbor the player meant.
+            if (minor >= major * diagonalTolerance)
+            {
+                return false;
+            }
+
+            // Pick the dominant direction. Mathf.Sign returns +1 or -1.
+            direction = absX > absY
+                ? new Vector2Int((int)Mathf.Sign(delta.x), 0)
+                : new Vector2Int(0, (int)Mathf.Sign(delta.y));
+            return true;
         }
 
         /// <summary>The pointer's current position converted from screen pixels to world units.</summary>
