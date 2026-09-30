@@ -44,3 +44,36 @@ re-renders.
 3. **Create > Match3 > Token Style**, give it a unique id, and add one entry per token type.
 4. Add it to the `ThemeManager`'s **Token Styles** list in the Game scene. The Settings menu
    shows it automatically, and `TokenStyleAssetTests` checks that it covers every token type.
+
+## Sounds (`Audio/`)
+
+Each folder is one **sound set**, a `SoundSet` asset in `Assets/Data/SoundSets/` that maps
+every gameplay sound (Match3, Swap, ...) to a clip. `Audio/<Set>/` keeps the files exactly as
+downloaded, plus the pack's license. The copies Unity imports live in `Assets/Audio/<Set>/`.
+Every file is listed with its source, author and license in `CREDITS.md` at the repo root.
+
+| Set      | Sound                                | Source                                        |
+|----------|--------------------------------------|-----------------------------------------------|
+| `chimes` | soft, glassy UI chimes and clicks    | Kenney's Interface Sounds (CC0)               |
+
+### Import settings
+
+Short sound effects all use the same import settings (select the clips in Unity to see them
+in the Inspector):
+
+- **Force To Mono: on.** The game is 2D and every sound plays from the middle, so a stereo
+  file only doubles the memory for no audible gain.
+- **Load Type: Decompress On Load.** The clip is unpacked to raw samples once, when the scene
+  loads, so playing it costs nothing. Right for short, frequent sounds. (Long music would use
+  *Streaming* instead, which decodes a little at a time from disk.)
+- **Compression Format: ADPCM.** A light compression that is very cheap to decode and fine
+  for short effects. Vorbis is smaller but heavier to decode and can blur very short clicks.
+- **Preload Audio Data: on,** so the first play of each sound isn't delayed by loading it.
+
+### Adding a set
+
+1. Put the original files in `Art/Audio/<Set>/` and copies in `Assets/Audio/<Set>/`, and
+   apply the import settings above to the copies.
+2. **Create > Match3 > Sound Set**, give it a unique id, and drag clips into the slots. Empty
+   slots are fine: they just play nothing.
+3. Add every file to `CREDITS.md`.

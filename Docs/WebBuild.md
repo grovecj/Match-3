@@ -65,9 +65,14 @@ Load times over localhost are mostly decompression and startup. Over a real netw
   are stored in the browser's IndexedDB for that site (origin). That means:
   - Data is per origin: `localhost:8000` and `localhost:8001` have separate saves, and so do
     each deploy URL.
-  - Call `PlayerPrefs.Save()` after changing a value (ThemeManager does). Otherwise the change
-    may not be written before the tab closes.
+  - Call `PlayerPrefs.Save()` after changing a value (ThemeManager does, and the sound volume
+    is saved when the Settings menu closes). Otherwise the change may not be written before
+    the tab closes.
   - Private/incognito windows throw the data away when they close.
+- **Audio waits for a click.** Browsers' autoplay policy keeps a page silent until the
+  player interacts with it (a click or key press). Unity's Web player resumes its audio
+  context on that first gesture, so no code is needed. The game makes no sound before the
+  first click (Start Round or the Settings gear) anyway, so nothing is lost.
 - **Pause blur.** `BoardBlur` renders the camera into a RenderTexture and downsamples it.
   This needs render-to-texture support, which WebGL2 has. If the render pipeline refuses the
   request, `BoardBlur` hides the board behind a black image instead.
