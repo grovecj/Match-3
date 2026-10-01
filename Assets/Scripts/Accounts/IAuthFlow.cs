@@ -10,7 +10,8 @@ namespace Match3.Accounts
     /// <see cref="AccountManager"/>.
     ///
     /// Why an interface? The browser build and the Windows build get the code back in very
-    /// different ways (a page redirect vs. a tiny local web server), and tests need a fake
+    /// different ways (a page redirect, <see cref="WebRedirectAuthFlow"/>, vs. a tiny local web
+    /// server, <see cref="LoopbackAuthFlow"/>), and tests need a fake
     /// that answers instantly without any browser at all. AccountManager only talks to this
     /// interface, so any of them can be plugged in.
     /// </summary>
@@ -32,6 +33,13 @@ namespace Match3.Accounts
         /// Otherwise returns false.
         /// </summary>
         bool TryResume(out AuthFlowResult result);
+
+        /// <summary>
+        /// Gives up on a <see cref="SignIn"/> that's still waiting for the player: it then calls
+        /// its <c>done</c> with a failure. Also called when the game shuts down, so nothing is
+        /// left running. Does nothing if no sign-in is running.
+        /// </summary>
+        void Cancel();
     }
 
     /// <summary>

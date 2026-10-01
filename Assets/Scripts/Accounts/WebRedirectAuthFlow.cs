@@ -105,6 +105,11 @@ namespace Match3.Accounts
                 : AuthFlowResult.Failure(error);
             return true;
         }
+
+        /// <summary>Nothing to cancel: by the time anyone could, this page has navigated away.</summary>
+        public void Cancel()
+        {
+        }
     }
 }
 #endif

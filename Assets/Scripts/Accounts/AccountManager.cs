@@ -20,8 +20,8 @@ namespace Match3.Accounts
     /// or the player is offline, we say so in <see cref="Message"/> and carry on.
     ///
     /// The platform-specific part (how the player gets to the sign-in page and back) is an
-    /// <see cref="IAuthFlow"/>. Only the browser build has one so far; elsewhere
-    /// <see cref="CanSignIn"/> is false.
+    /// <see cref="IAuthFlow"/>: <see cref="WebRedirectAuthFlow"/> in the browser build,
+    /// <see cref="LoopbackAuthFlow"/> in the Windows build and the Editor.
     /// </summary>
     public class AccountManager : MonoBehaviour
     {
@@ -51,10 +51,18 @@ namespace Match3.Accounts
         /// </summary>
         public string Message { get; private set; }
 
-        /// <summary>False where there's no way to sign in yet (the Editor and the Windows build).</summary>
+        /// <summary>False if there's no way to sign in on this platform.</summary>
         public bool CanSignIn => flow != null;
 
+        /// <summary>
+        /// True while we're waiting for the player to finish in the browser, when
+        /// <see cref="CancelSignIn"/> can stop it. (Once the code is back and being traded for
+        /// tokens, it's too late: that only takes a moment.)
+        /// </summary>
+        public bool CanCancelSignIn => waitingForFlow;
+
         private IAuthFlow flow;
+        private bool waitingForFlow;
         private ITokenClient tokenClient;
         private TokenStore store;
 
@@ -80,10 +88,27 @@ namespace Match3.Accounts
         {
             // Tests set these first (see ConfigureForTests); otherwise make the real ones.
             store ??= new TokenStore();
-            tokenClient ??= new HttpTokenClient(issuer, AuthConfig.WebClientId);
+            // Each build is its own client on the accounts server, and refresh tokens belong to
+            // the client they were issued to, so refreshing and revoking must use the same id.
 #if UNITY_WEBGL && !UNITY_EDITOR
+            tokenClient ??= new HttpTokenClient(issuer, AuthConfig.WebClientId);
             flow ??= new WebRedirectAuthFlow(issuer);
+#else
+            tokenClient ??= new HttpTokenClient(issuer, AuthConfig.DesktopClientId);
+            flow ??= new LoopbackAuthFlow(issuer);
 #endif
+        }
+
+        private void OnDestroy()
+        {
+            // The game is closing (or Play Mode is ending, in the Editor) mid sign-in: stop
+            // waiting for the browser, so the Windows flow's little web server doesn't keep its
+            // port open. Destroying this object also stops its coroutines, so the flow's
+            // `done` won't be called.
+            if (waitingForFlow)
+            {
+                flow.Cancel();
+            }
         }
 
         private void Start()
@@ -113,7 +138,10 @@ namespace Match3.Accounts
             }
         }
 
-        /// <summary>Starts signing in. In the browser this leaves the page and comes back.</summary>
+        /// <summary>
+        /// Starts signing in. In the browser this leaves the page and comes back; on Windows it
+        /// opens the player's browser and waits for it.
+        /// </summary>
         public void SignIn()
         {
             if (State != AccountState.SignedOut || !CanSignIn)
@@ -121,8 +149,21 @@ namespace Match3.Accounts
                 return;
             }
             Message = null;
+            waitingForFlow = true;
             SetState(AccountState.SigningIn);
             StartCoroutine(flow.SignIn(OnFlowFinished));
+        }
+
+        /// <summary>
+        /// Stops waiting for the browser. The flow then finishes with "Sign-in was cancelled."
+        /// and we're back to SignedOut.
+        /// </summary>
+        public void CancelSignIn()
+        {
+            if (CanCancelSignIn)
+            {
+                flow.Cancel();
+            }
         }
 
         /// <summary>Forgets the account here and asks the server to revoke its refresh token.</summary>
@@ -176,12 +217,15 @@ namespace Match3.Accounts
         // Called by the auth flow with the authorization code (or an error).
         private void OnFlowFinished(AuthFlowResult result)
         {
+            waitingForFlow = false;
             if (!result.Succeeded)
             {
                 Message = result.Error;
                 SetState(AccountState.SignedOut);
                 return;
             }
+            // Still SigningIn, but no longer cancellable: let the menu hide its Cancel button.
+            Changed?.Invoke();
             StartCoroutine(ExchangeCode(result));
         }
 
