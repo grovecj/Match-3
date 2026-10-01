@@ -11,7 +11,8 @@ namespace Match3.Accounts
     /// The Account button in the side panel and the modal window it opens. The window shows
     /// "Sign in with Google" when signed out, and the player's name with a Sign out button when
     /// signed in, plus any message from the <see cref="AccountManager"/> (such as "Sign-in was
-    /// cancelled.").
+    /// cancelled."). While the Windows build waits for the player to finish in their browser,
+    /// it shows a Cancel button instead.
     ///
     /// This class only displays things and forwards clicks; the AccountManager does the actual
     /// work and raises Changed when there's something new to show.
@@ -42,6 +43,8 @@ namespace Match3.Accounts
         [SerializeField] private TMP_Text messageText;
         [SerializeField] private Button signInButton;
         [SerializeField] private Button signOutButton;
+        [Tooltip("Stops waiting for the browser while signing in.")]
+        [SerializeField] private Button cancelSignInButton;
         [SerializeField] private Button closeButton;
 
         private InputAction cancelAction;
@@ -53,8 +56,9 @@ namespace Match3.Accounts
         {
             if (accountManager == null || openButton == null || openButtonLabel == null || panel == null ||
                 statusText == null || nameText == null || messageText == null ||
-                signInButton == null || signOutButton == null || closeButton == null)
+                signInButton == null || signOutButton == null || cancelSignInButton == null || closeButton == null)
             {
+                // Built before the Cancel button existed? Run Match3 > Build Account Menu again.
                 Debug.LogError("AccountMenu: assign every field in the Inspector.", this);
                 enabled = false;
                 return;
@@ -64,6 +68,7 @@ namespace Match3.Accounts
             closeButton.onClick.AddListener(Close);
             signInButton.onClick.AddListener(accountManager.SignIn);
             signOutButton.onClick.AddListener(accountManager.SignOut);
+            cancelSignInButton.onClick.AddListener(accountManager.CancelSignIn);
             // An event, like UnityEvent but plain C#: "+=" adds our method to the list of
             // methods the AccountManager calls when it raises Changed.
             accountManager.Changed += OnAccountChanged;
@@ -94,6 +99,10 @@ namespace Match3.Accounts
                 if (signOutButton != null)
                 {
                     signOutButton.onClick.RemoveListener(accountManager.SignOut);
+                }
+                if (cancelSignInButton != null)
+                {
+                    cancelSignInButton.onClick.RemoveListener(accountManager.CancelSignIn);
                 }
                 // Always unsubscribe from another object's event: otherwise it keeps a
                 // reference to this (destroyed) menu and would call into it.
@@ -154,7 +163,9 @@ namespace Match3.Accounts
             switch (state)
             {
                 case AccountManager.AccountState.SigningIn:
-                    statusText.text = "Signing in...";
+                    statusText.text = accountManager.CanCancelSignIn
+                        ? "Finish signing in in your browser..."
+                        : "Signing in...";
                     break;
                 case AccountManager.AccountState.SignedIn:
                     statusText.text = "Signed in as";
@@ -162,7 +173,7 @@ namespace Match3.Accounts
                 default:
                     statusText.text = accountManager.CanSignIn
                         ? "Not signed in"
-                        : "Signing in is only available in the browser version, for now.";
+                        : "Signing in isn't available here.";
                     break;
             }
 
@@ -175,6 +186,7 @@ namespace Match3.Accounts
 
             signInButton.gameObject.SetActive(state == AccountManager.AccountState.SignedOut && accountManager.CanSignIn);
             signOutButton.gameObject.SetActive(signedIn);
+            cancelSignInButton.gameObject.SetActive(accountManager.CanCancelSignIn);
 
             openButtonLabel.text = signedIn && !string.IsNullOrEmpty(playerName) ? playerName : ButtonLabel;
         }
@@ -196,7 +208,7 @@ namespace Match3.Accounts
             Select(openButton.gameObject.activeInHierarchy ? openButton : null);
         }
 
-        // Focus the window's main action: Sign in, else Sign out, else Close.
+        // Focus the window's main action: Sign in, else Sign out, else Cancel, else Close.
         private void SelectDefault()
         {
             if (signInButton.gameObject.activeSelf)
@@ -206,6 +218,10 @@ namespace Match3.Accounts
             else if (signOutButton.gameObject.activeSelf)
             {
                 Select(signOutButton);
+            }
+            else if (cancelSignInButton.gameObject.activeSelf)
+            {
+                Select(cancelSignInButton);
             }
             else
             {

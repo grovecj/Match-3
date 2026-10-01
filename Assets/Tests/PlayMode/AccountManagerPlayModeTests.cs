@@ -122,8 +122,52 @@ namespace Match3.Tests
             {
                 AccountManager.AccountState.SignedOut, // Start
                 AccountManager.AccountState.SigningIn,
+                AccountManager.AccountState.SigningIn, // The code is back: no longer cancellable
                 AccountManager.AccountState.SignedIn,
             }));
+        }
+
+        [UnityTest]
+        public IEnumerator CancelSignIn_WhileWaitingForTheBrowser_IsSignedOut()
+        {
+            flow.Hold = true;
+            flow.Result = Code();
+            yield return CreateManager();
+            manager.SignIn();
+            Assert.That(manager.CanCancelSignIn, Is.True);
+
+            manager.CancelSignIn();
+            yield return WaitFor(() => manager.State != AccountManager.AccountState.SigningIn);
+
+            Assert.That(flow.CancelCalls, Is.EqualTo(1));
+            Assert.That(manager.State, Is.EqualTo(AccountManager.AccountState.SignedOut));
+            Assert.That(manager.Message, Is.EqualTo("Sign-in was cancelled."));
+            Assert.That(manager.CanCancelSignIn, Is.False);
+            Assert.That(tokens.ExchangedCode, Is.Null);
+        }
+
+        [UnityTest]
+        public IEnumerator CancelSignIn_WhenNotSigningIn_DoesNothing()
+        {
+            yield return CreateManager();
+
+            manager.CancelSignIn();
+
+            Assert.That(flow.CancelCalls, Is.EqualTo(0));
+            Assert.That(manager.State, Is.EqualTo(AccountManager.AccountState.SignedOut));
+        }
+
+        [UnityTest]
+        public IEnumerator Destroy_WhileWaitingForTheBrowser_CancelsTheFlow()
+        {
+            flow.Hold = true;
+            yield return CreateManager();
+            manager.SignIn();
+
+            UnityEngine.Object.Destroy(gameObject);
+            yield return null;
+
+            Assert.That(flow.CancelCalls, Is.EqualTo(1), "So the Windows flow frees its port.");
         }
 
         [UnityTest]
@@ -344,15 +388,24 @@ namespace Match3.Tests
             public AuthFlowResult ResumeResult;
             public bool Hold;
             public int SignInCalls;
+            public int CancelCalls;
+            private bool cancelled;
 
             public IEnumerator SignIn(Action<AuthFlowResult> done)
             {
                 SignInCalls++;
-                while (Hold)
+                cancelled = false;
+                while (Hold && !cancelled)
                 {
                     yield return null;
                 }
-                done(Result);
+                done(cancelled ? AuthFlowResult.Failure("Sign-in was cancelled.") : Result);
+            }
+
+            public void Cancel()
+            {
+                CancelCalls++;
+                cancelled = true;
             }
 
             public bool TryResume(out AuthFlowResult result)

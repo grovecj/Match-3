@@ -18,7 +18,7 @@ namespace Match3.Accounts
         /// <summary>The client id for the browser build. Its redirect URI is the game's page.</summary>
         public const string WebClientId = "match3-web";
 
-        /// <summary>The client id for the Windows build (a later issue). It redirects to 127.0.0.1.</summary>
+        /// <summary>The client id for the Windows build and the Editor. It redirects to 127.0.0.1 (see LoopbackAuthFlow).</summary>
         public const string DesktopClientId = "match3-desktop";
 
         /// <summary>

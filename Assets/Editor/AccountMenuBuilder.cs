@@ -127,10 +127,12 @@ public static class AccountMenuBuilder
         message.textWrappingMode = TextWrappingModes.Normal;
         message.richText = false;
 
-        // Sign in and Sign out share a row; only one of them is ever shown.
+        // Sign in, Sign out and Cancel (while waiting for the browser) share a row; only one
+        // of them is ever shown.
         GameObject actionRow = AddCenteredRow(window, "ActionRow", 90, 0);
         Button signInButton = AddButton(actionRow.transform, "SignInButton", "Sign in with Google", 460, 80);
         Button signOutButton = AddButton(actionRow.transform, "SignOutButton", "Sign out", 300, 80);
+        Button cancelSignInButton = AddButton(actionRow.transform, "CancelSignInButton", "Cancel", 300, 80);
 
         GameObject closeRow = AddCenteredRow(window, "CloseRow", 90, 0);
         Button closeButton = AddButton(closeRow.transform, "CloseButton", "Close", 300, 80);
@@ -141,6 +143,7 @@ public static class AccountMenuBuilder
         SetReference(menu, "messageText", message);
         SetReference(menu, "signInButton", signInButton);
         SetReference(menu, "signOutButton", signOutButton);
+        SetReference(menu, "cancelSignInButton", cancelSignInButton);
         SetReference(menu, "closeButton", closeButton);
 
         // Hidden until opened.
