@@ -1,4 +1,6 @@
 using Match3;
+using Match3.Accounts;
+using Match3.Online;
 using TMPro;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -7,10 +9,12 @@ using UnityEngine.UI;
 using static UIBuilder;
 
 /// <summary>
-/// Editor-only helper that builds the local leaderboard UI (issue #21): the Leaderboard button
-/// in the side panel, the modal Leaderboard panel with its ten rows, and the modal initials
-/// prompt, with every Inspector reference wired up (including the GameManager's). Run it from
-/// the menu bar: Match3 > Build Leaderboard Menu, then save the scene.
+/// Editor-only helper that builds the leaderboard UI (issues #21 and #25): the Leaderboard button
+/// in the side panel, the modal Leaderboard panel with its Local / Global tabs, ten rows and
+/// status line, the modal initials prompt, and the OnlineLeaderboardClient that talks to the
+/// global leaderboard, with every Inspector reference wired up (including the GameManager's).
+/// Run it from the menu bar: Match3 > Build Leaderboard Menu, then save the scene. It needs the
+/// scene's AccountManager, so run Match3 > Build Account Menu first if there isn't one.
 ///
 /// Like <see cref="SettingsMenuBuilder"/>, running it again replaces what it built before.
 /// </summary>
@@ -24,10 +28,16 @@ public static class LeaderboardMenuBuilder
     {
         var canvas = Object.FindAnyObjectByType<Canvas>();
         var gameManager = Object.FindAnyObjectByType<GameManager>();
+        var accountManager = Object.FindAnyObjectByType<AccountManager>();
         Transform sidePanel = canvas != null ? canvas.transform.Find("ScorePanel") : null;
         if (canvas == null || gameManager == null || sidePanel == null)
         {
             Debug.LogError("Build Leaderboard Menu: open the Game scene first (needs Canvas/ScorePanel and GameManager).");
+            return;
+        }
+        if (accountManager == null)
+        {
+            Debug.LogError("Build Leaderboard Menu: the scene has no AccountManager. Run Match3 > Build Account Menu first.");
             return;
         }
 
@@ -43,10 +53,15 @@ public static class LeaderboardMenuBuilder
         Stretch(Rect(root), 0);
         root.transform.SetAsLastSibling();
         var menu = root.AddComponent<LeaderboardMenu>();
+        // The global leaderboard's client lives on the same always-active object, so its
+        // coroutines keep running while the panel is hidden.
+        var online = root.AddComponent<OnlineLeaderboardClient>();
+        SetReference(online, "accountManager", accountManager);
 
         BuildPanel(root, menu);
         BuildPrompt(root, menu);
         SetReference(menu, "openButton", openButton);
+        SetReference(menu, "online", online);
         SetReference(gameManager, "leaderboardMenu", menu);
 
         Undo.RegisterCreatedObjectUndo(root, "Build Leaderboard Menu");
@@ -84,6 +99,11 @@ public static class LeaderboardMenuBuilder
         title.fontStyle = FontStyles.Bold;
         PreferredHeight(title.gameObject, 76);
 
+        // The tabs: two buttons side by side. The LeaderboardMenu fades the one not selected.
+        GameObject tabs = AddCenteredRow(window, "Tabs", 60, 16);
+        Button localTab = AddButton(tabs.transform, "LocalTab", "Local", 240, 60);
+        Button globalTab = AddButton(tabs.transform, "GlobalTab", "Global", 240, 60);
+
         // Column headings, laid out exactly like the rows below them.
         GameObject header = NewUI("ColumnHeaders", window.transform);
         PreferredHeight(header, 40);
@@ -109,12 +129,24 @@ public static class LeaderboardMenuBuilder
             rows[i] = BuildRow(rowList, i + 1);
         }
 
+        // The status line. Its messages vary in length, so TextMeshPro's auto size shrinks the
+        // font (down to fontSizeMin) until the text fits in two lines' worth of height.
+        TMP_Text status = AddText(window, "Status", "", 26);
+        status.color = ColumnHeaderColor;
+        status.enableAutoSizing = true;
+        status.fontSizeMin = 18;
+        status.fontSizeMax = 26;
+        PreferredHeight(status.gameObject, 64);
+
         GameObject closeRow = AddCenteredRow(window, "CloseRow", 90, 0);
         Button closeButton = AddButton(closeRow.transform, "CloseButton", "Close", 300, 80);
 
         SetReference(menu, "panel", modal);
         SetReference(menu, "closeButton", closeButton);
         SetArray(menu, "rows", rows);
+        SetReference(menu, "localTabButton", localTab);
+        SetReference(menu, "globalTabButton", globalTab);
+        SetReference(menu, "statusText", status);
 
         // Hidden until opened.
         modal.SetActive(false);

@@ -37,7 +37,8 @@ Everything lives in `Assets/Scripts/Accounts/` (namespace `Match3.Accounts`):
 | `AccountManager` | The SignedOut / SigningIn / SignedIn state machine, refreshing, sign-out. Raises `Changed`. |
 | `AccountMenu` | The Account button and window (with Cancel while waiting for the browser). Built by **Match3 > Build Account Menu** (`Assets/Editor/AccountMenuBuilder.cs`). |
 
-Other code that needs to call our servers as the player (the global leaderboard, #25) asks the
+Other code that needs to call our servers as the player (the global leaderboard, #25; see
+[GlobalLeaderboard.md](GlobalLeaderboard.md)) asks the
 `AccountManager` for a token:
 
 ```csharp
