@@ -27,6 +27,8 @@ namespace Match3.Online
     /// </summary>
     public class OnlineLeaderboardClient : MonoBehaviour
     {
+        private const string NoAccessTokenMessage = "Couldn't reach the account server, so this round wasn't posted.";
+
         public enum PostState
         {
             /// <summary>No round has ended since the last one started.</summary>
@@ -79,6 +81,8 @@ namespace Match3.Online
         private int round;
         private bool roundStarting;
         private string roundToken;
+        // Why this round couldn't be registered, to tell the player when it ends; or null.
+        private string startFailure;
         // The same idea for board loads: only the latest one's answer is shown.
         private int boardLoad;
 
@@ -110,6 +114,7 @@ namespace Match3.Online
             round++;
             roundToken = null;
             roundStarting = false;
+            startFailure = null;
             LastPost = PostState.None;
             LastStanding = null;
             PostMessage = null;
@@ -178,9 +183,10 @@ namespace Match3.Online
             }
             else
             {
-                // Not worth interrupting the round for. PostScore notices there's no token and
-                // says so when the round ends.
+                // Not worth interrupting the round for. Keep the reason; PostScore tells the
+                // player when the round ends.
                 Debug.LogWarning($"Global leaderboard: couldn't start a round ({(token == null ? "no access token" : result?.Error)}).");
+                startFailure = token == null ? NoAccessTokenMessage : MessageFor(result);
             }
         }
 
@@ -201,7 +207,7 @@ namespace Match3.Online
             }
             if (roundToken == null)
             {
-                Fail("Couldn't reach the global leaderboard when this round started, so it wasn't posted.");
+                Fail(startFailure ?? "Couldn't reach the global leaderboard when this round started, so it wasn't posted.");
                 yield break;
             }
 
@@ -213,7 +219,7 @@ namespace Match3.Online
             }
             if (token == null)
             {
-                Fail("Couldn't reach the account server, so this round wasn't posted.");
+                Fail(NoAccessTokenMessage);
                 yield break;
             }
 

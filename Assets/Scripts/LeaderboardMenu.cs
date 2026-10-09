@@ -410,6 +410,7 @@ namespace Match3
         {
             GlobalEntry[] entries = online.Top;
             PlayerProfile me = online.Me;
+            int mine = MyRow(entries, me);
             for (int i = 0; i < rows.Length; i++)
             {
                 GlobalEntry entry = entries != null && i < entries.Length ? entries[i] : null;
@@ -418,12 +419,39 @@ namespace Match3
                     rows[i].ShowEmpty(i + 1);
                     continue;
                 }
-                // The player's own line. Tags aren't unique, so match the rank and score too.
-                bool mine = me != null && me.HasScore &&
-                    entry.rank == me.rank && entry.score == me.best && entry.tag == me.tag;
-                rows[i].Show(entry.rank, entry.tag, entry.score, mine);
+                rows[i].Show(entry.rank, entry.tag, entry.score, i == mine);
             }
             statusText.text = GlobalStatus(me);
+        }
+
+        /// <summary>
+        /// The index of the player's own line in <paramref name="entries"/>, or -1. The board is
+        /// public, so it doesn't say which line is whose: we look for the player's tag, best score
+        /// and rank. Tags aren't unique, though, and two players with the same tag and the same
+        /// best would share a rank too. If more than one line matches, we can't tell which is
+        /// theirs, so none is highlighted (the status line still gives their rank).
+        /// </summary>
+        // Internal so the Play Mode tests can check it (see AssemblyInfo.cs).
+        internal static int MyRow(GlobalEntry[] entries, PlayerProfile me)
+        {
+            if (entries == null || me == null || !me.HasScore)
+            {
+                return -1;
+            }
+            int found = -1;
+            for (int i = 0; i < entries.Length; i++)
+            {
+                GlobalEntry entry = entries[i];
+                if (entry.rank == me.rank && entry.score == me.best && entry.tag == me.tag)
+                {
+                    if (found >= 0)
+                    {
+                        return -1; // A second match: ambiguous.
+                    }
+                    found = i;
+                }
+            }
+            return found;
         }
 
         private string GlobalStatus(PlayerProfile me)

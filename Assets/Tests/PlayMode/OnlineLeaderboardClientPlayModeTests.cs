@@ -128,6 +128,35 @@ namespace Match3.Tests
         }
 
         [UnityTest]
+        public IEnumerator RateLimitedWhenTheRoundStarts_SaysSo()
+        {
+            yield return CreateClient();
+            api.RoundResult = ApiResult<string>.Failure("rate_limited", "rate_limited", reached: true);
+
+            yield return PlayRound(5000);
+
+            Assert.That(api.Calls, Does.Not.Contain("SubmitScore"));
+            Assert.That(client.LastPost, Is.EqualTo(OnlineLeaderboardClient.PostState.Failed));
+            Assert.That(client.PostMessage, Does.Contain("Too many rounds"));
+        }
+
+        [UnityTest]
+        public IEnumerator NoAccessTokenWhenTheRoundStarts_BlamesTheAccountServer()
+        {
+            accessToken = null;
+            yield return CreateClient();
+
+            client.RoundStarted();
+            yield return null;
+            yield return null;
+            client.RoundEnded(5000);
+            yield return WaitFor(() => client.LastPost != OnlineLeaderboardClient.PostState.Posting);
+
+            Assert.That(api.Calls, Is.Empty);
+            Assert.That(client.PostMessage, Does.Contain("account server"));
+        }
+
+        [UnityTest]
         public IEnumerator NoAccessToken_FailsWithAMessage()
         {
             yield return CreateClient();
@@ -279,6 +308,47 @@ namespace Match3.Tests
                 yield return null;
                 done(ApiResult<PlayerProfile>.Success(Me));
             }
+        }
+    }
+
+    /// <summary>
+    /// Which line of the global board is the player's (<see cref="LeaderboardMenu.MyRow"/>).
+    /// Plain tests, no frames needed; they live here because only the Play Mode tests can see
+    /// the game's internal members.
+    /// </summary>
+    public class LeaderboardMenuMyRowTests
+    {
+        private static GlobalEntry Entry(int rank, string tag, int score) =>
+            new GlobalEntry { rank = rank, tag = tag, score = score };
+
+        private static readonly PlayerProfile Me = new PlayerProfile { tag = "CAR", best = 80000, rank = 2 };
+
+        [Test]
+        public void FindsThePlayersLine()
+        {
+            GlobalEntry[] board = { Entry(1, "ADA", 90000), Entry(2, "CAR", 80000), Entry(3, "CAR", 70000) };
+
+            Assert.That(LeaderboardMenu.MyRow(board, Me), Is.EqualTo(1));
+        }
+
+        [Test]
+        public void TwoMatchingLines_HighlightsNeither()
+        {
+            // Another "CAR" with the very same best: same rank too, so we can't tell them apart.
+            GlobalEntry[] board = { Entry(1, "ADA", 90000), Entry(2, "CAR", 80000), Entry(2, "CAR", 80000) };
+
+            Assert.That(LeaderboardMenu.MyRow(board, Me), Is.EqualTo(-1));
+        }
+
+        [Test]
+        public void NotOnTheBoardOrNoScore_IsNone()
+        {
+            GlobalEntry[] board = { Entry(1, "ADA", 90000) };
+
+            Assert.That(LeaderboardMenu.MyRow(board, Me), Is.EqualTo(-1));
+            Assert.That(LeaderboardMenu.MyRow(board, new PlayerProfile { tag = "ADA" }), Is.EqualTo(-1));
+            Assert.That(LeaderboardMenu.MyRow(null, Me), Is.EqualTo(-1));
+            Assert.That(LeaderboardMenu.MyRow(board, null), Is.EqualTo(-1));
         }
     }
 }
