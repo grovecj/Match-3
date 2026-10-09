@@ -23,10 +23,32 @@ namespace Match3
         /// </summary>
         public void Show(int rank, LeaderboardEntry entry, bool highlighted)
         {
+            if (entry != null)
+            {
+                Show(rank, entry.Initials, entry.Score, highlighted);
+            }
+            else
+            {
+                ShowEmpty(rank);
+            }
+        }
+
+        /// <summary>Shows one line: used for global entries, whose rank comes from the server (tied players share one).</summary>
+        public void Show(int rank, string initials, int score, bool highlighted)
+        {
             rankText.text = rank.ToString(CultureInfo.InvariantCulture);
-            initialsText.text = entry != null ? entry.Initials : "---";
-            scoreText.text = entry != null ? entry.Score.ToString("N0", CultureInfo.InvariantCulture) : "---";
+            initialsText.text = initials;
+            scoreText.text = score.ToString("N0", CultureInfo.InvariantCulture);
             highlight.SetActive(highlighted);
+        }
+
+        /// <summary>An empty slot at <paramref name="rank"/>, shown as "---".</summary>
+        public void ShowEmpty(int rank)
+        {
+            rankText.text = rank.ToString(CultureInfo.InvariantCulture);
+            initialsText.text = "---";
+            scoreText.text = "---";
+            highlight.SetActive(false);
         }
     }
 }

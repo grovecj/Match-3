@@ -23,7 +23,8 @@ namespace Match3
     /// Clicking the button in Ready or RoundOver starts a new round (-> Playing).
     /// The Settings menu (gear button), the Leaderboard and the Account menu are only available
     /// in Ready and RoundOver. A RoundOver score that makes the top 10 is offered to the leaderboard, which
-    /// asks for the player's initials.
+    /// asks for the player's initials. A signed-in player's rounds are also posted to the global
+    /// leaderboard.
     /// </summary>
     public class GameManager : MonoBehaviour
     {
@@ -213,6 +214,9 @@ namespace Match3
             settingsMenu.SetAvailable(false);
             leaderboardMenu.SetAvailable(false);
             accountMenu.SetAvailable(false);
+            // For a signed-in player, this registers the round with the global leaderboard (in
+            // the background), so its score can be posted when it ends.
+            leaderboardMenu.RoundStarted();
             SetInputEnabled(true);
 
             state = GameState.Playing;
@@ -284,8 +288,8 @@ namespace Match3
             leaderboardMenu.SetAvailable(true);
             accountMenu.SetAvailable(true);
 
-            // If the score makes the top 10, this pops up the initials prompt over the
-            // round-end screen. Otherwise nothing more happens.
+            // If the score makes the local top 10, this pops up the initials prompt over the
+            // round-end screen. A signed-in player's score also goes to the global leaderboard.
             leaderboardMenu.OfferEntry(scoreKeeper.Total);
         }
 

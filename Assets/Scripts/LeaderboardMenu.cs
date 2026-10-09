@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using Match3.Online;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -12,19 +13,26 @@ using UnityEngine.UI;
 namespace Match3
 {
     /// <summary>
-    /// The local leaderboard's UI, in two modal windows:
-    ///   - the initials prompt, shown at the end of a round whose score makes the top 10. The
-    ///     player types 1-3 letters and presses Submit (or Enter), or Skip (or Esc) to save
+    /// The leaderboards' UI, in two modal windows:
+    ///   - the initials prompt, shown at the end of a round whose score makes the local top 10.
+    ///     The player types 1-3 letters and presses Submit (or Enter), or Skip (or Esc) to save
     ///     nothing.
     ///   - the Leaderboard panel, opened with the Leaderboard button in the side panel (and
-    ///     automatically after submitting), listing the top 10 with the new entry highlighted.
+    ///     automatically after submitting). It has two tabs:
+    ///       Local  - the top 10 on this computer, with the new entry highlighted.
+    ///       Global - the top 10 players everywhere, from the leaderboard server, with the
+    ///                player's own line highlighted. A line under the list says how the last
+    ///                round's post went, or to sign in.
     ///
-    /// The entries themselves are kept by an <see cref="ILeaderboardStore"/>. This class makes a
+    /// The local entries are kept by an <see cref="ILeaderboardStore"/>. This class makes a
     /// <see cref="JsonFileLeaderboardStore"/>, but it only ever uses it through the interface.
+    /// The global ones come from an <see cref="OnlineLeaderboardClient"/>, which also posts each
+    /// signed-in player's rounds by itself: no initials needed, the server knows who they are.
     ///
     /// Like the Settings menu, the GameManager decides when the leaderboard is allowed (between
-    /// rounds only) by calling <see cref="SetAvailable"/>, and hands over each finished round's
-    /// score with <see cref="OfferEntry"/>.
+    /// rounds only) by calling <see cref="SetAvailable"/>, says when a round starts with
+    /// <see cref="RoundStarted"/>, and hands over each finished round's score with
+    /// <see cref="OfferEntry"/>.
     /// </summary>
     public class LeaderboardMenu : MonoBehaviour
     {
@@ -53,6 +61,13 @@ namespace Match3
         [SerializeField] private Button closeButton;
         [Tooltip("One row per place, best first. There should be Leaderboard.Capacity of them.")]
         [SerializeField] private LeaderboardRow[] rows;
+        [SerializeField] private Button localTabButton;
+        [SerializeField] private Button globalTabButton;
+        [Tooltip("The line under the list: the global tab's news (\"Sign in to...\", \"Posted!...\").")]
+        [SerializeField] private TMP_Text statusText;
+
+        [Header("Global leaderboard")]
+        [SerializeField] private OnlineLeaderboardClient online;
 
         [Header("Initials prompt")]
         [Tooltip("The full-screen modal asking for initials after a top-10 round.")]
@@ -63,11 +78,18 @@ namespace Match3
         [SerializeField] private Button submitButton;
         [SerializeField] private Button skipButton;
 
+        // The selected tab's button is drawn solid, the other faded.
+        private static readonly Color SelectedTabColor = Color.white;
+        private static readonly Color OtherTabColor = new Color(1f, 1f, 1f, 0.4f);
+
+        private enum Tab { Local, Global }
+
         private ILeaderboardStore store;
         private InputAction cancelAction;
         private int pendingScore;
         // The rank (0-based) of the entry submitted since the last round started, or -1.
         private int highlightedRank = -1;
+        private Tab tab = Tab.Local;
 
         public bool IsOpen => panel != null && panel.activeSelf;
         public bool IsPrompting => prompt != null && prompt.activeSelf;
@@ -75,9 +97,11 @@ namespace Match3
         private void Awake()
         {
             if (openButton == null || panel == null || closeButton == null || rows == null || rows.Length == 0 ||
+                localTabButton == null || globalTabButton == null || statusText == null || online == null ||
                 prompt == null || promptScoreText == null || initialsField == null ||
                 submitButton == null || skipButton == null)
             {
+                // Built before the Global tab existed? Run Match3 > Build Leaderboard Menu again.
                 Debug.LogError("LeaderboardMenu: assign every field in the Inspector.", this);
                 enabled = false;
                 return;
@@ -92,6 +116,10 @@ namespace Match3
             closeButton.onClick.AddListener(Close);
             submitButton.onClick.AddListener(Submit);
             skipButton.onClick.AddListener(Skip);
+            localTabButton.onClick.AddListener(ShowLocal);
+            globalTabButton.onClick.AddListener(ShowGlobal);
+            // Redraw when news arrives from the server (see AccountMenu for how events work).
+            online.Changed += OnOnlineChanged;
 
             // Input validation for the initials field:
             //  - characterLimit stops typing after 3 characters.
@@ -129,6 +157,18 @@ namespace Match3
             if (skipButton != null)
             {
                 skipButton.onClick.RemoveListener(Skip);
+            }
+            if (localTabButton != null)
+            {
+                localTabButton.onClick.RemoveListener(ShowLocal);
+            }
+            if (globalTabButton != null)
+            {
+                globalTabButton.onClick.RemoveListener(ShowGlobal);
+            }
+            if (online != null)
+            {
+                online.Changed -= OnOnlineChanged;
             }
             if (initialsField != null)
             {
@@ -174,12 +214,30 @@ namespace Match3
         }
 
         /// <summary>
-        /// Called with the final score when a round ends. If it makes the top 10, asks for
-        /// initials; otherwise does nothing, and the normal round-end screen is all that shows.
+        /// Called when a round starts, so a signed-in player's round can be registered with the
+        /// global leaderboard.
+        /// </summary>
+        public void RoundStarted()
+        {
+            if (enabled)
+            {
+                online.RoundStarted();
+            }
+        }
+
+        /// <summary>
+        /// Called with the final score when a round ends. A signed-in player's score is posted to
+        /// the global leaderboard in the background. If it also makes the local top 10, asks for
+        /// initials; otherwise the normal round-end screen is all that shows.
         /// </summary>
         public void OfferEntry(int score)
         {
-            if (!enabled || !Leaderboard.Qualifies(store.Load(), score))
+            if (!enabled)
+            {
+                return;
+            }
+            online.RoundEnded(score);
+            if (!Leaderboard.Qualifies(store.Load(), score))
             {
                 return;
             }
@@ -243,6 +301,8 @@ namespace Match3
 
             highlightedRank = store.Submit(new LeaderboardEntry(initials, pendingScore, DateTime.UtcNow));
             ClosePrompt();
+            // Show the local list, where the new entry is.
+            tab = Tab.Local;
             Open();
         }
 
@@ -269,6 +329,10 @@ namespace Match3
 
         private void Open()
         {
+            if (tab == Tab.Global)
+            {
+                online.RefreshBoard();
+            }
             Refresh();
             // The panel's backdrop swallows clicks to everything behind it, as in the Settings
             // menu, which is what makes it modal.
@@ -288,8 +352,49 @@ namespace Match3
             Select(openButton.gameObject.activeInHierarchy ? openButton : null);
         }
 
-        /// <summary>Fills the rows from the store: entries first, then empty "---" slots.</summary>
+        private void ShowLocal()
+        {
+            tab = Tab.Local;
+            Refresh();
+        }
+
+        private void ShowGlobal()
+        {
+            tab = Tab.Global;
+            // Load it fresh each time the tab is picked; until it arrives, the rows show what
+            // was loaded last (or "---") and the status line says "Loading...".
+            online.RefreshBoard();
+            Refresh();
+        }
+
+        private void OnOnlineChanged()
+        {
+            if (IsOpen && tab == Tab.Global)
+            {
+                Refresh();
+            }
+        }
+
+        /// <summary>Draws the selected tab: its button, its rows and the status line.</summary>
         private void Refresh()
+        {
+            // targetGraphic is the button's background Image; Button tints it on hover/press,
+            // multiplying this base color.
+            localTabButton.targetGraphic.color = tab == Tab.Local ? SelectedTabColor : OtherTabColor;
+            globalTabButton.targetGraphic.color = tab == Tab.Global ? SelectedTabColor : OtherTabColor;
+
+            if (tab == Tab.Local)
+            {
+                RefreshLocal();
+            }
+            else
+            {
+                RefreshGlobal();
+            }
+        }
+
+        /// <summary>Fills the rows from the store: entries first, then empty "---" slots.</summary>
+        private void RefreshLocal()
         {
             List<LeaderboardEntry> entries = store.Load();
             for (int i = 0; i < rows.Length; i++)
@@ -297,6 +402,55 @@ namespace Match3
                 LeaderboardEntry entry = i < entries.Count ? entries[i] : null;
                 rows[i].Show(i + 1, entry, i == highlightedRank);
             }
+            statusText.text = "Scores on this computer";
+        }
+
+        /// <summary>Fills the rows from the last global load, and says where the player stands.</summary>
+        private void RefreshGlobal()
+        {
+            GlobalEntry[] entries = online.Top;
+            PlayerProfile me = online.Me;
+            for (int i = 0; i < rows.Length; i++)
+            {
+                GlobalEntry entry = entries != null && i < entries.Length ? entries[i] : null;
+                if (entry == null)
+                {
+                    rows[i].ShowEmpty(i + 1);
+                    continue;
+                }
+                // The player's own line. Tags aren't unique, so match the rank and score too.
+                bool mine = me != null && me.HasScore &&
+                    entry.rank == me.rank && entry.score == me.best && entry.tag == me.tag;
+                rows[i].Show(entry.rank, entry.tag, entry.score, mine);
+            }
+            statusText.text = GlobalStatus(me);
+        }
+
+        private string GlobalStatus(PlayerProfile me)
+        {
+            if (online.BoardMessage != null)
+            {
+                return online.BoardMessage;
+            }
+            if (online.Loading && online.Top == null)
+            {
+                return "Loading...";
+            }
+            if (!online.IsSignedIn)
+            {
+                return "Sign in to post to the global leaderboard.";
+            }
+            // News about the round that just ended comes first.
+            if (online.PostMessage != null)
+            {
+                return online.PostMessage;
+            }
+            if (me != null && me.HasScore)
+            {
+                string best = me.best.ToString("N0", CultureInfo.InvariantCulture);
+                return $"You ({me.tag}): best {best}, #{me.rank}";
+            }
+            return "Your rounds are posted automatically while you're signed in.";
         }
 
         /// <summary>
