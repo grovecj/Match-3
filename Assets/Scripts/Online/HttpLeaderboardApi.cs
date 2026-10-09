@@ -35,50 +35,85 @@ namespace Match3.Online
         public IEnumerator StartRound(string accessToken, Action<ApiResult<string>> done)
         {
             // The server needs no body here: who's playing comes from the token.
-            using (UnityWebRequest request = UnityWebRequest.Post(baseUrl + "/rounds", "{}", "application/json"))
-            {
-                yield return Send(request, accessToken);
-                done(Read(request, LeaderboardJson.ParseRoundToken));
-            }
+            yield return Send(() => UnityWebRequest.Post(baseUrl + "/rounds", "{}", "application/json"),
+                accessToken, LeaderboardJson.ParseRoundToken, done);
         }
 
         public IEnumerator SubmitScore(string accessToken, string roundToken, int score, Action<ApiResult<Standing>> done)
         {
             // JsonUtility.ToJson writes an object's public fields as JSON, the reverse of FromJson.
             string body = JsonUtility.ToJson(new ScoreSubmission { roundToken = roundToken, score = score });
-            using (UnityWebRequest request = UnityWebRequest.Post(baseUrl + "/scores", body, "application/json"))
+            ApiResult<Standing> result = null;
+            bool retried = false;
+            yield return Send(() => UnityWebRequest.Post(baseUrl + "/scores", body, "application/json"),
+                accessToken, LeaderboardJson.ParseStanding, r => result = r, () => retried = true);
+
+            // A retry that's told the round already has a score means the first try did reach the
+            // server, and only its reply was lost. So it was posted; ask for the standing instead.
+            if (retried && result.Code == "round_already_scored")
             {
-                yield return Send(request, accessToken);
-                done(Read(request, LeaderboardJson.ParseStanding));
+                ApiResult<PlayerProfile> me = null;
+                yield return GetMe(accessToken, r => me = r);
+                if (me.Succeeded && me.Value.HasScore)
+                {
+                    result = ApiResult<Standing>.Success(new Standing { best = me.Value.best, rank = me.Value.rank });
+                }
             }
+            done(result);
         }
 
         public IEnumerator GetTop(int limit, Action<ApiResult<GlobalEntry[]>> done)
         {
-            using (UnityWebRequest request = UnityWebRequest.Get(baseUrl + "/scores/top?limit=" + limit))
-            {
-                yield return Send(request, null);
-                done(Read(request, LeaderboardJson.ParseTop));
-            }
+            yield return Send(() => UnityWebRequest.Get(baseUrl + "/scores/top?limit=" + limit),
+                null, LeaderboardJson.ParseTop, done);
         }
 
         public IEnumerator GetMe(string accessToken, Action<ApiResult<PlayerProfile>> done)
         {
-            using (UnityWebRequest request = UnityWebRequest.Get(baseUrl + "/me"))
-            {
-                yield return Send(request, accessToken);
-                done(Read(request, LeaderboardJson.ParseProfile));
-            }
+            yield return Send(() => UnityWebRequest.Get(baseUrl + "/me"),
+                accessToken, LeaderboardJson.ParseProfile, done);
         }
 
-        private static IEnumerator Send(UnityWebRequest request, string accessToken)
+        /// <summary>
+        /// Sends a request made by <paramref name="create"/> and reads its reply with
+        /// <paramref name="parse"/>, trying once more if the connection itself failed.
+        ///
+        /// Why retry? UnityWebRequest keeps connections open and reuses them, which saves time.
+        /// But Cloudflare (in front of the server) closes a connection that has been idle for
+        /// about a minute, and a round lasts a minute: so the score is sent on a connection that
+        /// was closed while the round was played, and fails without reaching the server. The
+        /// failed connection is then thrown away, so the second try opens a fresh one. (Browsers
+        /// do this by themselves, so the web build never sees the problem.)
+        ///
+        /// Only connection failures are retried, never an answer from the server: a 4xx or 5xx
+        /// would just come back the same. A request can't be sent twice, so <paramref name="create"/>
+        /// makes a new one for each try. <paramref name="onRetry"/> is called before the second.
+        /// </summary>
+        private static IEnumerator Send<T>(Func<UnityWebRequest> create, string accessToken,
+            Func<string, T> parse, Action<ApiResult<T>> done, Action onRetry = null) where T : class
         {
-            request.timeout = TimeoutSeconds;
-            if (accessToken != null)
+            for (int attempt = 1; attempt <= 2; attempt++)
             {
-                request.SetRequestHeader("Authorization", "Bearer " + accessToken);
+                // "using" disposes each request when we're done with it, freeing its native memory.
+                using (UnityWebRequest request = create())
+                {
+                    request.timeout = TimeoutSeconds;
+                    if (accessToken != null)
+                    {
+                        request.SetRequestHeader("Authorization", "Bearer " + accessToken);
+                    }
+                    yield return request.SendWebRequest();
+
+                    if (request.result == UnityWebRequest.Result.ConnectionError && attempt == 1)
+                    {
+                        Debug.Log($"Global leaderboard: {request.method} {request.url} failed ({request.error}); retrying once.");
+                        onRetry?.Invoke();
+                        continue;
+                    }
+                    done(Read(request, parse));
+                    yield break;
+                }
             }
-            yield return request.SendWebRequest();
         }
 
         /// <summary>

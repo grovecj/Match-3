@@ -32,6 +32,14 @@ points per second of play. So a round must really be played to be posted.
 GameManager) is turned down with "The global leaderboard didn't accept this round." Test
 posting with full 60-second rounds.
 
+**Idle connections:** `UnityWebRequest` reuses connections, and Cloudflare (in front of the
+server) closes one that has been idle for about a minute: exactly a round's length. The score
+would then go out on a dead connection and fail without reaching the server (Unity reports
+"Unknown Error"). So `HttpLeaderboardApi` retries a request once when the *connection* fails,
+on a fresh one. If the retried score post is told the round already has a score, the first
+try did arrive, and it counts as posted. Browsers retry by themselves, so this only matters
+in the Editor and the Windows build.
+
 ## The pieces
 
 All in `Assets/Scripts/Online/` (namespace `Match3.Online`):
