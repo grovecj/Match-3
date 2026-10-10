@@ -358,8 +358,9 @@ namespace Match3
         private void ShowNoMovesMessage()
         {
             // The board can also run dry on the cascade that ends the round. "Time's up!" is
-            // about to replace the message then, so don't flash this one first.
-            if (state != GameState.Playing || timeRemaining <= 0f)
+            // about to replace the message then, so don't flash this one first. A duration of 0
+            // means "no message": showing it would leave nothing counting down to hide it again.
+            if (state != GameState.Playing || timeRemaining <= 0f || noMovesMessageDuration <= 0f)
             {
                 return;
             }

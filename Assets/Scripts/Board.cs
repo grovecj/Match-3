@@ -512,8 +512,9 @@ namespace Match3
             }
 
             ClearHint();
-            // The same search that decides whether to reshuffle. It scans from the bottom-left,
-            // so on a board with several moves the hint is always the lowest, leftmost one.
+            // The same search that decides whether to reshuffle. It scans column by column from
+            // the bottom-left, so on a board with several moves the hint is always the one in
+            // the leftmost column (and the lowest of those).
             if (!model.TryFindValidMove(out Vector2Int a, out Vector2Int b))
             {
                 return false;

@@ -474,7 +474,7 @@ namespace Match3.Tests
         [UnityTest, Timeout(TestTimeoutMs)]
         public IEnumerator PickingUpAHintedToken_EndsTheHint_AndItStillGoesBackToItsOwnSize()
         {
-            // On this layout the hint is (1,1) and (2,1): the lowest, leftmost valid move.
+            // On this layout the hint is (1,1) and (2,1): the valid move in the leftmost column.
             Token hintedToken = board.GetToken(1, 1);
             Token otherHinted = board.GetToken(2, 1);
             Vector3 restScale = hintedToken.transform.localScale;
