@@ -55,6 +55,12 @@ namespace Match3
         private readonly List<BoardThemeOption> boardThemeOptions = new List<BoardThemeOption>();
         private InputAction cancelAction;
 
+        /// <summary>
+        /// Fired when the menu closes, after the choices are saved. PreferencesSync listens, to
+        /// send them to the player's account.
+        /// </summary>
+        public event System.Action Closed;
+
         public bool IsOpen => modal != null && modal.activeSelf;
 
         private void Awake()
@@ -89,10 +95,7 @@ namespace Match3
             RefreshSelection();
 
             // Start (not Awake) so the AudioManager's Awake has already loaded the saved volume.
-            // SetValueWithoutNotify moves the handle without firing onValueChanged: we're showing
-            // the current volume, not changing it.
-            volumeSlider.SetValueWithoutNotify(Mathf.Round(audioManager.Volume * 100f));
-            ShowVolume();
+            RefreshVolume();
         }
 
         private void OnEnable()
@@ -101,9 +104,14 @@ namespace Match3
             {
                 themeManager.ThemeChanged += RefreshSelection;
             }
+            if (audioManager != null)
+            {
+                audioManager.VolumeChanged += RefreshVolume;
+            }
             // Catch up on anything that changed while we weren't listening (a no-op before Start
             // has built the options).
             RefreshSelection();
+            RefreshVolume();
         }
 
         private void OnDisable()
@@ -111,6 +119,10 @@ namespace Match3
             if (themeManager != null)
             {
                 themeManager.ThemeChanged -= RefreshSelection;
+            }
+            if (audioManager != null)
+            {
+                audioManager.VolumeChanged -= RefreshVolume;
             }
         }
 
@@ -187,6 +199,8 @@ namespace Match3
 
             // Hand focus back to the gear, unless it's hidden because a round is starting.
             Select(openButton.gameObject.activeInHierarchy ? openButton : null);
+
+            Closed?.Invoke();
         }
 
         /// <summary>
@@ -204,6 +218,19 @@ namespace Match3
         private void OnVolumeSliderChanged(float percent)
         {
             audioManager.SetVolume(percent / 100f);
+            ShowVolume();
+        }
+
+        /// <summary>Moves the slider to the AudioManager's volume.</summary>
+        private void RefreshVolume()
+        {
+            if (volumeSlider == null || volumeValueText == null || audioManager == null)
+            {
+                return;
+            }
+            // SetValueWithoutNotify moves the handle without firing onValueChanged: we're showing
+            // the current volume, not changing it.
+            volumeSlider.SetValueWithoutNotify(Mathf.Round(audioManager.Volume * 100f));
             ShowVolume();
         }
 

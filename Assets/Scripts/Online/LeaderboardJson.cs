@@ -61,7 +61,11 @@ namespace Match3.Online
             return reply != null && !string.IsNullOrEmpty(reply.code) ? reply.code : null;
         }
 
-        private static T Parse<T>(string json) where T : class
+        /// <summary>
+        /// <paramref name="json"/> as a <typeparamref name="T"/>, or null if it isn't a JSON object.
+        /// (Internal: <see cref="PreferencesJson"/> uses it too.)
+        /// </summary>
+        internal static T Parse<T>(string json) where T : class
         {
             if (string.IsNullOrEmpty(json) || !json.TrimStart().StartsWith("{"))
             {

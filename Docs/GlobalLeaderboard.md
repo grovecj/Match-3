@@ -51,6 +51,8 @@ All in `Assets/Scripts/Online/` (namespace `Match3.Online`):
 | `LeaderboardJson` | Reads the replies with `JsonUtility` (and works around its limits: no top-level arrays, no `null` numbers). |
 | `OnlineLeaderboardClient` | The MonoBehaviour that runs it all: registers rounds, posts scores, loads the board, and keeps the messages the panel shows. Raises `Changed`. |
 
+The same server keeps signed-in players' settings; see [SettingsSync.md](SettingsSync.md).
+
 `LeaderboardMenu` owns the tabs and asks the client for what to show. **Match3 > Build
 Leaderboard Menu** (`Assets/Editor/LeaderboardMenuBuilder.cs`) builds the tabs and the status
 line, and puts the `OnlineLeaderboardClient` next to the `LeaderboardMenu`, wired to the

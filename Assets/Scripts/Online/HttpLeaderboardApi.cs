@@ -89,7 +89,8 @@ namespace Match3.Online
         /// would just come back the same. A request can't be sent twice, so <paramref name="create"/>
         /// makes a new one for each try. <paramref name="onRetry"/> is called before the second.
         /// </summary>
-        private static IEnumerator Send<T>(Func<UnityWebRequest> create, string accessToken,
+        // Internal, so HttpPreferencesApi (the same server) sends its requests the same way.
+        internal static IEnumerator Send<T>(Func<UnityWebRequest> create, string accessToken,
             Func<string, T> parse, Action<ApiResult<T>> done, Action onRetry = null) where T : class
         {
             for (int attempt = 1; attempt <= 2; attempt++)
@@ -106,7 +107,7 @@ namespace Match3.Online
 
                     if (request.result == UnityWebRequest.Result.ConnectionError && attempt == 1)
                     {
-                        Debug.Log($"Global leaderboard: {request.method} {request.url} failed ({request.error}); retrying once.");
+                        Debug.Log($"Match-3 API: {request.method} {request.url} failed ({request.error}); retrying once.");
                         onRetry?.Invoke();
                         continue;
                     }
@@ -130,7 +131,7 @@ namespace Match3.Online
                     T value = parse(body);
                     return value != null
                         ? ApiResult<T>.Success(value)
-                        : ApiResult<T>.Failure("unexpected reply from the leaderboard server");
+                        : ApiResult<T>.Failure("unexpected reply from the server");
 
                 case UnityWebRequest.Result.ProtocolError:
                     // An HTTP error. If it came from our server, the body has an error code

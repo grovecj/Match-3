@@ -33,6 +33,12 @@ namespace Match3
 
         public SoundSet SoundSet => soundSet;
 
+        /// <summary>
+        /// Fired whenever <see cref="Volume"/> changes, so the Settings slider can follow a
+        /// change it didn't make itself (the volume arriving from the player's account).
+        /// </summary>
+        public event System.Action VolumeChanged;
+
         private void Awake()
         {
             audioSource = GetComponent<AudioSource>();
@@ -96,6 +102,7 @@ namespace Match3
             // AudioListener.volume is a static (global) setting: it scales everything the
             // listener hears, so one line sets the volume of every sound in the game.
             AudioListener.volume = Volume;
+            VolumeChanged?.Invoke();
         }
     }
 }
