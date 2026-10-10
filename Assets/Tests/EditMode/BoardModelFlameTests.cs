@@ -464,7 +464,7 @@ namespace Match3.Tests
         }
 
         [Test]
-        public void BlastHittingAnotherFlame_RemovesItWithoutSettingItOff()
+        public void BlastHittingAnotherFlame_SetsItOffInASecondWave()
         {
             BoardModel board = Grid(
                 "DEABC",
@@ -483,16 +483,24 @@ namespace Match3.Tests
 
             BoardModel.ClearResult result = ClearAll(board);
 
-            // Exactly the same hole as with one Flame: chain reactions are a later feature.
-            Assert.AreEqual(1, result.Detonations.Count);
+            // A chain reaction: the caught Flame goes off too, taking the 3x3 around (1,1) with
+            // it. More chains are in BoardModelChainTests.
             Assert.AreEqual(new[]
             {
                 "DEABC",
                 "B...A",
-                "E...D",
-                "C...B",
-                "ABCDE",
+                "....D",
+                "....B",
+                "...DE",
             }, grids.Rows(board));
+
+            // Two waves of one gem each: the matched Flame, then the one its blast caught.
+            Assert.AreEqual(2, result.Waves.Count);
+            Assert.AreEqual(Cell(2, 2), result.Waves[0][0].Cell);
+            // The caught Flame's own cell, (1,1), is listed among what the first blast cleared.
+            Assert.AreEqual("(1,1) (1,3) (2,1) (2,3) (3,1) (3,3)", Describe(result.Waves[0][0].Blasted));
+            Assert.AreEqual(Cell(1, 1), result.Waves[1][0].Cell);
+            Assert.AreEqual("(0,0) (0,1) (0,2) (1,0) (2,0)", Describe(result.Waves[1][0].Blasted));
             Assert.AreEqual(new[] { ".....", ".....", ".....", ".....", "....." }, grids.PowerRows(board));
         }
 

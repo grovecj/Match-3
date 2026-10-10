@@ -485,7 +485,7 @@ namespace Match3.Tests
                 }
                 created.Add((kind, cell));
             };
-            board.PowerGemDetonated += (kind, cell) => detonations++;
+            board.PowerGemDetonated += (kind, cell, wave) => detonations++;
 
             Assert.IsTrue(board.TrySwap(LineOfFourA, LineOfFourB));
             // Stop as soon as the swap's own step has been reported, before any cascade.
@@ -533,7 +533,7 @@ namespace Match3.Tests
             int runsWhenDetonated = -1;
             bool blastedGoneWhenDetonated = false;
             bool aboveHadNotMoved = false;
-            board.PowerGemDetonated += (kind, cell) =>
+            board.PowerGemDetonated += (kind, cell, wave) =>
             {
                 if (detonated.Count == 0)
                 {
@@ -594,7 +594,7 @@ namespace Match3.Tests
                 }
                 created.Add((kind, cell));
             };
-            board.PowerGemDetonated += (kind, cell) => detonations++;
+            board.PowerGemDetonated += (kind, cell, wave) => detonations++;
 
             Assert.IsTrue(board.TrySwap(TShapeA, TShapeB));
             // Stop as soon as the swap's own step has been reported, before any cascade.
@@ -647,7 +647,7 @@ namespace Match3.Tests
             // Anything wrong with the board at the moment the Star went off, as a message.
             string problem = null;
             var blasted = new List<Token>();
-            board.PowerGemDetonated += (kind, cell) =>
+            board.PowerGemDetonated += (kind, cell, wave) =>
             {
                 if (detonated.Count == 0)
                 {
@@ -789,7 +789,7 @@ namespace Match3.Tests
             int zapsWhenDetonated = -1;
             // Anything wrong with the board at the moment the cube went off, as a message.
             string problem = null;
-            board.PowerGemDetonated += (kind, cell) =>
+            board.PowerGemDetonated += (kind, cell, wave) =>
             {
                 if (detonated.Count == 0)
                 {
@@ -866,7 +866,7 @@ namespace Match3.Tests
             Token cubeA = board.GetToken(NoMatchA.x, NoMatchA.y);
             Token cubeB = board.GetToken(NoMatchB.x, NoMatchB.y);
             int detonations = 0;
-            board.PowerGemDetonated += (kind, cell) => detonations++;
+            board.PowerGemDetonated += (kind, cell, wave) => detonations++;
 
             Assert.IsTrue(board.TrySwap(NoMatchA, NoMatchB));
             yield return WaitUntilIdle();
@@ -878,6 +878,90 @@ namespace Match3.Tests
             Assert.AreEqual(PowerKind.Hypercube, cubeA.Power);
             Assert.AreEqual(PowerKind.Hypercube, cubeB.Power);
             AssertBoardIsFullAndSettled();
+        }
+
+        // ---------------------------------------------------------------- Chain reactions
+        //
+        // The rules are covered in Edit Mode (BoardModelChainTests). This checks the running
+        // Board: the waves are played one after another, a caught gem waits on the board for
+        // its turn, and nothing falls until the last wave is over.
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator FlameCaughtInABlast_GoesOffInItsOwnWave_BeforeAnythingFalls()
+        {
+            // The A at (0,0) is in the run of 3 that MatchA/MatchB make. As a Flame in the
+            // corner, its blast reaches (0,1) and (1,1). With (1,1) a Flame too, that one goes
+            // off next, and its 3x3 takes (0,2), (1,2), (2,1) and (2,2).
+            var firstCell = new Vector2Int(0, 0);
+            var secondCell = new Vector2Int(1, 1);
+            board.SetPowerForTests(firstCell, PowerKind.Flame);
+            board.SetPowerForTests(secondCell, PowerKind.Flame);
+            Token second = board.GetToken(1, 1);
+            Token blastedByFirst = board.GetToken(0, 1);
+            // In the second Flame's blast but not the first's.
+            Token blastedBySecond = board.GetToken(1, 2);
+            // Sits above both blasts. It will fall, but not until the whole chain is over.
+            Token above = board.GetToken(0, 3);
+
+            var detonated = new List<(PowerKind kind, Vector2Int cell, int wave)>();
+            int stepsWhenSecondWentOff = -1;
+            // Anything wrong with the board at the moment either Flame went off, as a message.
+            string problem = null;
+            board.PowerGemDetonated += (kind, cell, wave) =>
+            {
+                // Only the chain itself is checked: whatever a later cascade happens to set off
+                // is still recorded, but it's a different board by then.
+                if (detonated.Count == 0)
+                {
+                    if (board.GetToken(0, 1) != null)
+                    {
+                        problem = "The first blast's token at (0, 1) should be off the board once the Flame goes off.";
+                    }
+                    if (board.GetToken(1, 1) != second || !second.ShowsPowerOverlay)
+                    {
+                        problem = "The caught Flame should stay on the board, still a Flame, until its own wave.";
+                    }
+                    if (board.GetToken(1, 2) != blastedBySecond)
+                    {
+                        problem = "The second wave's tokens shouldn't be cleared during the first.";
+                    }
+                }
+                else if (detonated.Count == 1)
+                {
+                    stepsWhenSecondWentOff = clearSteps.Count;
+                    if (board.GetToken(1, 1) != null)
+                    {
+                        problem = "The second Flame's own token should go as it goes off.";
+                    }
+                    if (board.GetToken(0, 2) != null || board.GetToken(1, 2) != null ||
+                        board.GetToken(2, 1) != null || board.GetToken(2, 2) != null)
+                    {
+                        problem = "Everything in the second Flame's 3x3 should be off the board once it goes off.";
+                    }
+                }
+                if (detonated.Count < 2 &&
+                    (board.GetToken(0, 3) != above || above.transform.position != board.GridToWorld(0, 3)))
+                {
+                    problem = $"Something fell before wave {wave} went off.";
+                }
+                detonated.Add((kind, cell, wave));
+            };
+
+            Assert.IsTrue(board.TrySwap(MatchA, MatchB));
+            yield return WaitUntilIdle();
+
+            Assert.That(detonated.Count, Is.GreaterThanOrEqualTo(2), "Both Flames should have gone off.");
+            Assert.AreEqual((PowerKind.Flame, firstCell, 0), detonated[0], "The matched Flame is wave 0.");
+            Assert.AreEqual((PowerKind.Flame, secondCell, 1), detonated[1], "The Flame it caught is wave 1.");
+            Assert.IsNull(problem);
+            Assert.AreEqual(1, stepsWhenSecondWentOff, "The whole chain belongs to the swap's own clear step.");
+
+            Assert.IsTrue(second == null, "The second Flame went off but its token wasn't destroyed.");
+            Assert.IsTrue(blastedByFirst == null, "The token at (0, 1) was blasted but not destroyed.");
+            Assert.IsTrue(blastedBySecond == null, "The token at (1, 2) was blasted but not destroyed.");
+            AssertBoardIsFullAndSettled();
+            AssertNoMatchesLeft();
+            yield return WaitUntilNoBursts();
         }
 
         // ---------------------------------------------------------------- Hints

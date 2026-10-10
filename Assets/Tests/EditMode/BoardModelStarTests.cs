@@ -427,7 +427,7 @@ namespace Match3.Tests
         }
 
         [Test]
-        public void BeamHittingOtherPowerGems_RemovesThemWithoutSettingThemOff()
+        public void BeamHittingOtherPowerGems_SetsThemOffTogetherInASecondWave()
         {
             BoardModel board = Grid(
                 "DEABC",
@@ -446,16 +446,26 @@ namespace Match3.Tests
 
             BoardModel.ClearResult result = ClearAll(board);
 
-            // Exactly the same gaps as with one Star: chain reactions are a later feature.
-            Assert.AreEqual(1, result.Detonations.Count);
+            // A chain reaction: both caught gems go off too. The second Star takes column 0,
+            // and the Flame takes what's around (2,0).
             Assert.AreEqual(new[]
             {
-                "DE.BC",
-                "BC.EA",
+                ".E.BC",
+                ".C.EA",
                 ".....",
-                "CD.AB",
-                "AB.DE",
+                "....B",
+                "....E",
             }, grids.Rows(board));
+
+            // The matched Star is the first wave. Both gems its beam caught are the second,
+            // in the order the beam listed them (its row before its column).
+            Assert.AreEqual(2, result.Waves.Count);
+            Assert.AreEqual(1, result.Waves[0].Count);
+            Assert.AreEqual(2, result.Waves[1].Count);
+            Assert.AreEqual(PowerKind.Star, result.Waves[1][0].Kind);
+            Assert.AreEqual("(0,0) (0,1) (0,3) (0,4)", Describe(result.Waves[1][0].Blasted));
+            Assert.AreEqual(PowerKind.Flame, result.Waves[1][1].Kind);
+            Assert.AreEqual("(1,0) (1,1) (3,0) (3,1)", Describe(result.Waves[1][1].Blasted));
             Assert.AreEqual(new[] { ".....", ".....", ".....", ".....", "....." }, grids.PowerRows(board));
         }
 

@@ -8,7 +8,8 @@ namespace Match3.Tests
     /// Edit Mode tests for the Hypercube's rules in <see cref="BoardModel"/>: a line of 5 makes
     /// one, it never matches anything, swapping it with a coloured neighbour is always a valid
     /// move, and setting it off (<see cref="BoardModel.ActivateHypercube"/>) clears every gem
-    /// of that neighbour's colour and nothing else.
+    /// of that neighbour's colour. Nothing else goes, unless one of those gems is a Flame or
+    /// Star: that starts a chain reaction (more of those in BoardModelChainTests).
     ///
     /// A Hypercube has no colour, so it's drawn as '*' in the grids (and shows up as 'H' in
     /// <see cref="TestGrids.PowerRows"/>).
@@ -172,21 +173,29 @@ namespace Match3.Tests
         }
 
         [Test]
-        public void Hypercube_CaughtInAFlamesBlast_IsSimplyCleared()
+        public void Hypercube_CaughtInAFlamesBlast_GoesOffOnTheMostCommonColour()
         {
             BoardModel board = Grid(
-                "B*GB",
-                "RRRG");
+                "B*GBG",
+                "RRRBB");
             grids.SetPowers(board,
-                "....",
-                ".F..");
+                ".....",
+                ".F...");
 
             BoardModel.ClearResult result = ClearAll(board);
 
-            // The Flame at (1,0) takes the 3x3 around it, cube included. The cube doesn't go
-            // off in turn: the B and G in the last column are still there.
-            Assert.AreEqual(new[] { "...B", "...G" }, grids.Rows(board));
-            Assert.AreEqual("(0,1) (1,1) (2,1)", Describe(result.Detonations[0].Blasted));
+            // The Flame at (1,0) takes the 3x3 around it, cube included. That leaves three B's
+            // and a G in the last two columns. Nobody swapped the cube with anything, so it
+            // picks for itself: B, the colour there's most of.
+            Assert.AreEqual(new[] { "....G", "....." }, grids.Rows(board));
+            Assert.AreEqual(2, result.Waves.Count);
+            Assert.AreEqual("(0,1) (1,1) (2,1)", Describe(result.Waves[0][0].Blasted));
+
+            BoardModel.Detonation cube = result.Waves[1][0];
+            Assert.AreEqual(PowerKind.Hypercube, cube.Kind);
+            Assert.AreEqual(Cell(1, 1), cube.Cell);
+            Assert.AreEqual(grids.Type('B'), cube.Target);
+            Assert.AreEqual("(3,0) (3,1) (4,0)", Describe(cube.Blasted));
         }
 
         // ---------------------------------------------------------------- Which swaps are valid
@@ -269,7 +278,7 @@ namespace Match3.Tests
                 "G*RB",
                 "BRGG");
 
-            List<Vector2Int> cleared = board.ActivateHypercube(Cell(1, 1), grids.Type('R'));
+            BoardModel.ClearResult result = board.ActivateHypercube(Cell(1, 1), grids.Type('R'));
 
             Assert.AreEqual(new[]
             {
@@ -277,8 +286,19 @@ namespace Match3.Tests
                 "G..B",
                 "B.GG",
             }, grids.Rows(board));
+
+            // The cube is the only thing that went off: one wave, with one gem in it.
+            Assert.AreEqual(1, result.Waves.Count);
+            Assert.AreEqual(1, result.Detonations.Count);
+            BoardModel.Detonation cube = result.Detonations[0];
+            Assert.AreEqual(PowerKind.Hypercube, cube.Kind);
+            Assert.AreEqual(Cell(1, 1), cube.Cell);
+            Assert.AreEqual(grids.Type('R'), cube.Target);
             // Column by column from the left, each bottom to top. The cube's own cell isn't listed.
-            Assert.AreEqual("(0,2) (1,0) (2,1) (3,2)", Describe(cleared));
+            Assert.AreEqual("(0,2) (1,0) (2,1) (3,2)", Describe(cube.Blasted));
+            // It wasn't a match, so nothing counts as matched and no gem was made.
+            Assert.IsEmpty(result.Matched);
+            Assert.IsEmpty(result.Created);
         }
 
         [Test]
@@ -296,14 +316,15 @@ namespace Match3.Tests
             // the colour of the gem that's now where the cube was.
             board.Swap(cubeCell, gemCell);
             Assert.IsTrue(board.IsHypercubeSwap(cubeCell, gemCell), "It's still a Hypercube swap after the swap is made.");
-            List<Vector2Int> cleared = board.ActivateHypercube(gemCell, board.TypeAt(cubeCell));
+            BoardModel.ClearResult result = board.ActivateHypercube(gemCell, board.TypeAt(cubeCell));
 
             Assert.AreEqual(new[] { ".GB", "..G", "GB." }, grids.Rows(board));
-            Assert.AreEqual("(0,1) (0,2) (2,0)", Describe(cleared));
+            Assert.AreEqual(gemCell, result.Detonations[0].Cell);
+            Assert.AreEqual("(0,1) (0,2) (2,0)", Describe(result.Detonations[0].Blasted));
         }
 
         [Test]
-        public void ActivateHypercube_PowerGemOfTheColour_IsJustCleared_WithoutGoingOff()
+        public void ActivateHypercube_PowerGemOfTheColour_GoesOffInTheNextWave()
         {
             BoardModel board = Grid(
                 "GBG",
@@ -314,11 +335,17 @@ namespace Match3.Tests
                 ".F.",
                 "...");
 
-            List<Vector2Int> cleared = board.ActivateHypercube(Cell(1, 0), grids.Type('R'));
+            BoardModel.ClearResult result = board.ActivateHypercube(Cell(1, 0), grids.Type('R'));
 
-            // The Flame is gone, but the eight gems around it are untouched: no blast.
-            Assert.AreEqual(new[] { "GBG", "B.B", "G.G" }, grids.Rows(board));
-            Assert.AreEqual("(1,1)", Describe(cleared));
+            // The cube clears the one R, which is a Flame, so the Flame goes off: on this small
+            // board its 3x3 is everything that's left.
+            Assert.AreEqual(new[] { "...", "...", "..." }, grids.Rows(board));
+            Assert.AreEqual(2, result.Waves.Count);
+            Assert.AreEqual(PowerKind.Hypercube, result.Waves[0][0].Kind);
+            Assert.AreEqual("(1,1)", Describe(result.Waves[0][0].Blasted));
+            Assert.AreEqual(PowerKind.Flame, result.Waves[1][0].Kind);
+            Assert.AreEqual(Cell(1, 1), result.Waves[1][0].Cell);
+            Assert.AreEqual("(0,0) (0,1) (0,2) (1,2) (2,0) (2,1) (2,2)", Describe(result.Waves[1][0].Blasted));
         }
 
         [Test]
@@ -338,10 +365,11 @@ namespace Match3.Tests
             // a cube they're just cleared.
             BoardModel board = Grid("RRRR*");
 
-            List<Vector2Int> cleared = board.ActivateHypercube(Cell(4, 0), grids.Type('R'));
+            BoardModel.ClearResult result = board.ActivateHypercube(Cell(4, 0), grids.Type('R'));
 
             Assert.AreEqual(new[] { "....." }, grids.Rows(board));
-            Assert.AreEqual(4, cleared.Count);
+            Assert.AreEqual(4, result.Detonations[0].Blasted.Count);
+            Assert.IsEmpty(result.Created);
         }
 
         [Test]
