@@ -964,6 +964,114 @@ namespace Match3.Tests
             yield return WaitUntilNoBursts();
         }
 
+        // ---------------------------------------------------------------- Detonation hold
+        //
+        // The GameManager holds the round clock while Board.IsDetonating is true, so these
+        // check that it covers exactly the detonations: every wave, and nothing falling.
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator OrdinaryMatch_NeverSetsIsDetonating()
+        {
+            Assert.IsTrue(board.TrySwap(MatchA, MatchB));
+            bool everDetonating = false;
+            // Checked every frame, the way the GameManager asks.
+            while (board.IsResolving)
+            {
+                everDetonating |= board.IsDetonating;
+                yield return null;
+            }
+
+            Assert.IsFalse(everDetonating, "A match with no power gem shouldn't hold the clock.");
+            yield return WaitUntilNoBursts();
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator Chain_IsDetonatingForEveryWave_AndNothingFallsMeanwhile()
+        {
+            // The same two-Flame chain as FlameCaughtInABlast_GoesOffInItsOwnWave_BeforeAnythingFalls.
+            board.SetPowerForTests(new Vector2Int(0, 0), PowerKind.Flame);
+            board.SetPowerForTests(new Vector2Int(1, 1), PowerKind.Flame);
+            // Sits above both blasts. It falls once the chain is over.
+            Token above = board.GetToken(0, 3);
+            Vector3 aboveHome = board.GridToWorld(0, 3);
+
+            var detonatingWhenWentOff = new List<bool>();
+            board.PowerGemDetonated += (kind, cell, wave) => detonatingWhenWentOff.Add(board.IsDetonating);
+
+            Assert.IsTrue(board.TrySwap(MatchA, MatchB));
+            bool sawDetonating = false;
+            bool fellWhileDetonating = false;
+            while (board.IsResolving)
+            {
+                if (board.IsDetonating)
+                {
+                    sawDetonating = true;
+                    fellWhileDetonating |= above != null && above.transform.position != aboveHome;
+                }
+                yield return null;
+            }
+
+            Assert.IsTrue(sawDetonating, "IsDetonating should be true while the Flames go off.");
+            Assert.That(detonatingWhenWentOff.Count, Is.GreaterThanOrEqualTo(2), "Both Flames should have gone off.");
+            Assert.That(detonatingWhenWentOff, Is.All.True, "IsDetonating should already be true as each gem goes off.");
+            Assert.IsFalse(fellWhileDetonating, "Nothing should fall while IsDetonating is true: the clock runs again as tokens fall.");
+            Assert.IsFalse(board.IsDetonating, "IsDetonating should be false again once the board is idle.");
+            yield return WaitUntilNoBursts();
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator HypercubeSwap_IsDetonatingWhileItGoesOff()
+        {
+            board.SetPowerForTests(NoMatchA, PowerKind.Hypercube);
+            var detonatingWhenWentOff = new List<bool>();
+            board.PowerGemDetonated += (kind, cell, wave) => detonatingWhenWentOff.Add(board.IsDetonating);
+
+            Assert.IsTrue(board.TrySwap(NoMatchA, NoMatchB));
+            yield return WaitUntilIdle();
+
+            Assert.That(detonatingWhenWentOff, Is.Not.Empty, "The Hypercube should have gone off.");
+            Assert.That(detonatingWhenWentOff, Is.All.True);
+            Assert.IsFalse(board.IsDetonating);
+            yield return WaitUntilNoBursts();
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator PausingDuringADetonation_KeepsItHeld_UntilResumedAndFinished()
+        {
+            board.SetPowerForTests(new Vector2Int(0, 0), PowerKind.Flame);
+            Assert.IsTrue(board.TrySwap(MatchA, MatchB));
+            bool timedOut = false;
+            yield return new WaitUntil(() => board.IsDetonating,
+                System.TimeSpan.FromSeconds(ResolveTimeoutSeconds), () => timedOut = true);
+            Assert.IsFalse(timedOut, "The Flame never started going off.");
+
+            // Pause the way the GameManager does (see Pausing_FreezesThePopAndTheBursts).
+            Time.timeScale = 0f;
+            yield return null;
+            yield return new WaitForSecondsRealtime(0.3f);
+            Assert.IsTrue(board.IsDetonating, "A pause shouldn't end the detonation hold.");
+
+            Time.timeScale = 1f;
+            yield return WaitUntilIdle();
+            Assert.IsFalse(board.IsDetonating, "The hold should end once the detonation finishes after the resume.");
+            AssertBoardIsFullAndSettled();
+            yield return WaitUntilNoBursts();
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator Regenerate_DuringADetonation_ClearsIsDetonating()
+        {
+            board.SetPowerForTests(new Vector2Int(0, 0), PowerKind.Flame);
+            Assert.IsTrue(board.TrySwap(MatchA, MatchB));
+            yield return new WaitUntil(() => board.IsDetonating);
+
+            // A new round deals a fresh board, cancelling the turn in progress.
+            board.Regenerate();
+
+            Assert.IsFalse(board.IsDetonating, "A cancelled detonation would otherwise hold the next round's clock forever.");
+            yield return WaitUntilNoBursts();
+        }
+
         // ---------------------------------------------------------------- Hints
 
         [UnityTest, Timeout(TestTimeoutMs)]

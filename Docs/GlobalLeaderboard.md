@@ -28,6 +28,15 @@ The round token is the server's protection against made-up scores: it only accep
 for a round it saw start at least 55 seconds earlier, once per round, and no more than 10,000
 points per second of play. So a round must really be played to be posted.
 
+**Game time vs. wall-clock time:** the round clock is *game* time. It stops while the board
+reshuffles and while power gems detonate (see `RoundClock` and `Board.IsDetonating`), so a
+round that shows 60 seconds can take noticeably longer than a minute of real time. That's
+fine for the server: the 55-second check is a *lower* bound, and the only upper bound is the
+round token's expiry (`match3.rounds.expiry`, 1 hour in match-3-api's `application.yaml`).
+The score and swap caps are worked out from the configured round length (60 s), not from how
+long the round really took, so a longer round doesn't change them. If a new rule ever holds
+the clock for minutes at a time, that expiry is the number to check.
+
 Achievements ride on the same request: the score is posted with the round's stats (how many
 matches of each size, and so on), and the reply lists what the round unlocked. See
 [Achievements.md](Achievements.md).

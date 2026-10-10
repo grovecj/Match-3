@@ -37,6 +37,10 @@ namespace Match3
     ///
     /// It also plays the end-of-round countdown: a tick for each of the last few seconds and a
     /// horn when the clock hits 0:00.
+    ///
+    /// The clock (a <see cref="RoundClock"/>) counts game time, not wall-clock time: it is held
+    /// while the board reshuffles and while power gems go off, so a round can take longer than
+    /// a minute to play. The ticks and horn follow the game clock, so they wait out a hold too.
     /// </summary>
     public class GameManager : MonoBehaviour
     {
@@ -61,6 +65,8 @@ namespace Match3
         [SerializeField] private TMP_Text timerText;
         [SerializeField] private Color timerColor = Color.white;
         [SerializeField] private Color timerWarningColor = new Color(1f, 0.3f, 0.3f);
+        [Tooltip("The timer's color while the clock is held (power gems going off, or the board reshuffling), so the player sees that it stopped.")]
+        [SerializeField] private Color timerHeldColor = new Color(0.45f, 0.85f, 1f);
         [Tooltip("Shows \"Time's up! Final score: X\" when a round ends, and \"No more moves!\" while the board reshuffles. Hidden otherwise.")]
         [SerializeField] private TMP_Text messageText;
         [Tooltip("How long, in seconds, \"No more moves!\" stays up when the board reshuffles.")]
@@ -94,9 +100,9 @@ namespace Match3
         private enum GameState { Ready, Playing, Paused, RoundOver }
 
         private GameState state;
-        private float timeRemaining;
-        // The whole second the timer showed last frame, so we can tell when it changes.
-        private int lastSecondShown;
+        // The round's game time. `readonly` means this field always holds the same RoundClock;
+        // the clock itself still changes (Reset, Advance).
+        private readonly RoundClock clock = new RoundClock(CountdownFrom);
         // Seconds until the "No more moves!" message is hidden again. 0 when it isn't showing.
         private float noMovesMessageTimeLeft;
         private InputAction pauseAction;
@@ -224,17 +230,21 @@ namespace Match3
                 }
             }
 
-            // The clock stops while the board reshuffles: running out of moves is bad luck, and
-            // the player can't do anything until the tokens have settled again.
-            if (timeRemaining > 0f && !board.IsReshuffling)
+            if (!clock.HasRunOut)
             {
-                // Time.deltaTime is the number of seconds since the last frame. Subtracting it
-                // every frame makes the timer count real seconds whatever the frame rate is.
-                timeRemaining = Mathf.Max(0f, timeRemaining - Time.deltaTime);
-                ShowTime();
-                PlayCountdownCue();
+                // The clock is held while the board reshuffles (running out of moves is bad luck,
+                // and the player can't do anything until the tokens have settled again) and
+                // while power gems go off (a long chain should reward the player, not eat their
+                // time). That's separate from the Paused state: input is already locked while
+                // the board resolves, and Esc still pauses the game on top of a hold.
+                bool held = board.IsReshuffling || board.IsDetonating;
 
-                if (timeRemaining <= 0f)
+                // Time.deltaTime is the number of seconds since the last frame. Counting it off
+                // every frame makes the timer count real seconds whatever the frame rate is.
+                PlayCountdownCue(clock.Advance(Time.deltaTime, held));
+                ShowTime();
+
+                if (clock.HasRunOut)
                 {
                     // Time's up: no new swaps from here on.
                     SetInputEnabled(false);
@@ -243,7 +253,7 @@ namespace Match3
 
             // Once the clock hits 0, a cascade that's still playing out is allowed to finish
             // (and score) before the round really ends, so we wait for the board to settle.
-            if (timeRemaining <= 0f && !board.IsResolving)
+            if (clock.HasRunOut && !board.IsResolving)
             {
                 EnterRoundOver();
             }
@@ -254,10 +264,8 @@ namespace Match3
         {
             board.Regenerate();
             scoreKeeper.ResetScore();
-            timeRemaining = roundDuration;
+            clock.Reset(roundDuration);
             ShowTime();
-            // Start the countdown from the full clock, so last round's 0 isn't remembered.
-            lastSecondShown = SecondsShown();
 
             // SetActive shows or hides a whole GameObject, including its children (so hiding
             // the button also hides its label).
@@ -314,14 +322,14 @@ namespace Match3
 
             // If the clock had already hit 0 (we were only waiting for a cascade to finish),
             // swapping stays off.
-            SetInputEnabled(timeRemaining > 0f);
+            SetInputEnabled(!clock.HasRunOut);
         }
 
         private void EnterReady()
         {
             state = GameState.Ready;
             SetInputEnabled(false);
-            timeRemaining = roundDuration;
+            clock.Reset(roundDuration);
             ShowTime();
             messageText.gameObject.SetActive(false);
             ShowButton("Start Round");
@@ -360,7 +368,7 @@ namespace Match3
             // The board can also run dry on the cascade that ends the round. "Time's up!" is
             // about to replace the message then, so don't flash this one first. A duration of 0
             // means "no message": showing it would leave nothing counting down to hide it again.
-            if (state != GameState.Playing || timeRemaining <= 0f || noMovesMessageDuration <= 0f)
+            if (state != GameState.Playing || clock.HasRunOut || noMovesMessageDuration <= 0f)
             {
                 return;
             }
@@ -393,18 +401,14 @@ namespace Match3
             boardInput.enabled = inputEnabled;
         }
 
-        // Plays a tick or the horn if the timer display just changed to a second that has one.
-        // Because this only runs from UpdatePlaying, a pause simply stops it being called, and
-        // lastSecondShown is still there on resume: no tick is repeated or skipped.
-        private void PlayCountdownCue()
+        // Plays the tick or horn the clock asked for, if any. The clock only advances from
+        // UpdatePlaying, so a pause simply stops it being called, and a hold makes it stand
+        // still: either way no tick is repeated or skipped.
+        private void PlayCountdownCue(CountdownCue cue)
         {
-            int second = SecondsShown();
-            CountdownCue cue = GetCountdownCue(lastSecondShown, second, CountdownFrom);
-            lastSecondShown = second;
-
             if (cue == CountdownCue.Tick)
             {
-                audioManager.Play(SoundId.CountdownTick, second == 1 ? FinalTickPitch : 1f, TickVolume);
+                audioManager.Play(SoundId.CountdownTick, clock.SecondsShown == 1 ? FinalTickPitch : 1f, TickVolume);
             }
             else if (cue == CountdownCue.Horn)
             {
@@ -441,24 +445,30 @@ namespace Match3
             return currentSecond <= countdownFrom ? CountdownCue.Tick : CountdownCue.None;
         }
 
-        // Round up, so the display reads 1:00 for the whole first second and only shows 0:00
-        // once time has really run out.
-        private int SecondsShown()
-        {
-            return Mathf.CeilToInt(timeRemaining);
-        }
-
-        /// <summary>Displays the time left as m:ss, in red once it's down to the warning time.</summary>
+        /// <summary>
+        /// Displays the time left as m:ss: in red once it's down to the warning time, and in the
+        /// held color while the clock is held.
+        /// </summary>
         private void ShowTime()
         {
-            int totalSeconds = SecondsShown();
+            int totalSeconds = clock.SecondsShown;
             int minutes = totalSeconds / 60;
             int seconds = totalSeconds % 60;
             // ":00" pads the seconds to two digits, so 5 seconds shows as "0:05", not "0:5".
             timerText.text = $"{minutes}:{seconds:00}";
-            // Compare the real time left (not the rounded display) so fractional warning times
-            // work too. For whole seconds it's the same: 0:10 appears exactly when it turns red.
-            timerText.color = timeRemaining <= warningTime ? timerWarningColor : timerColor;
+            // The held color wins over red: in the last seconds it matters most that the player
+            // sees the clock has stopped.
+            // Otherwise, compare the real time left (not the rounded display) so fractional
+            // warning times work too. For whole seconds it's the same: 0:10 appears exactly when
+            // it turns red.
+            if (clock.IsHeld)
+            {
+                timerText.color = timerHeldColor;
+            }
+            else
+            {
+                timerText.color = clock.TimeRemaining <= warningTime ? timerWarningColor : timerColor;
+            }
         }
     }
 }
