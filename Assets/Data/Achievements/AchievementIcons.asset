@@ -1,0 +1,26 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 75f88c0180b44de8b9bc93cd680858e7, type: 3}
+  m_Name: AchievementIcons
+  m_EditorClassIdentifier: Match3::Match3.Achievements.AchievementIcons
+  entries:
+  - name: chain
+    sprite: {fileID: 21300000, guid: 7dcec378c124fdf4c81c73a6964ce885, type: 3}
+  - name: match
+    sprite: {fileID: 21300000, guid: 3ca4890eb1884ce478f8fb90917bf30a, type: 3}
+  - name: rounds
+    sprite: {fileID: 21300000, guid: 74a4931cf6934b74d99beeb6a6caeb0b, type: 3}
+  - name: score
+    sprite: {fileID: 21300000, guid: 52de7ff95bc7b814291a38327bf5c82e, type: 3}
+  - name: trophy
+    sprite: {fileID: 21300000, guid: f4c654927b5c0044bbfde05ff7ecc633, type: 3}
+  fallback: {fileID: 21300000, guid: f4c654927b5c0044bbfde05ff7ecc633, type: 3}
