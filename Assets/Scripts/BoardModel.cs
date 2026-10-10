@@ -100,9 +100,11 @@ namespace Match3
         }
 
         /// <summary>
-        /// A power gem that went off because it was part of a match. <see cref="Piece"/> is the
-        /// gem as it was (so its colour is still known after it's gone), <see cref="Cell"/> is
-        /// where it was, and <see cref="Blasted"/> lists the cells its blast emptied.
+        /// A power gem that went off: because it was part of a match, because the player
+        /// swapped it (a Hypercube), or because another gem's blast caught it.
+        /// <see cref="Piece"/> is the gem as it was (so its colour is still known after it's
+        /// gone), <see cref="Cell"/> is where it was, and <see cref="Blasted"/> lists the cells
+        /// its blast emptied.
         /// </summary>
         public readonly struct Detonation
         {
@@ -112,14 +114,21 @@ namespace Match3
             /// The cells this blast emptied, each one a piece that was NOT part of a match.
             /// Cells the match had already cleared aren't listed, and nor is a cell an earlier
             /// detonation in the same step got to first, so no cell is ever listed twice.
+            /// A power gem among them goes off in the next wave: see <see cref="ClearResult.Waves"/>.
             /// </summary>
             public readonly IReadOnlyList<Vector2Int> Blasted;
+            /// <summary>
+            /// The colour a Hypercube cleared. Null for a Flame or Star, whose blast is a shape
+            /// rather than a colour (and for a Hypercube that found no coloured gem to pick).
+            /// </summary>
+            public readonly TokenType Target;
 
-            public Detonation(Vector2Int cell, Piece piece, IReadOnlyList<Vector2Int> blasted)
+            public Detonation(Vector2Int cell, Piece piece, IReadOnlyList<Vector2Int> blasted, TokenType target = null)
             {
                 Cell = cell;
                 Piece = piece;
                 Blasted = blasted;
+                Target = target;
             }
 
             /// <summary>Which power gem went off: shorthand for <c>Piece.Power</c>.</summary>
@@ -129,7 +138,8 @@ namespace Match3
         /// <summary>
         /// Everything one clear step did to the board, split into the three things the
         /// <see cref="Board"/> shows separately: gems that matched, power gems that appeared, and
-        /// gems caught in a blast. <see cref="ClearMatches"/> makes these.
+        /// gems caught in a blast. <see cref="ClearMatches"/> and
+        /// <see cref="ActivateHypercube"/> make these.
         /// </summary>
         // The model does the whole step at once and hands back a description of it, the same way
         // Collapse hands back a list of Falls. The Board can then take as long as it likes
@@ -145,15 +155,56 @@ namespace Match3
             /// <summary>The power gems this step made, in the order of the matches that made them.</summary>
             public IReadOnlyList<Creation> Created { get; }
 
-            /// <summary>The power gems this step set off, with what each one's blast cleared.</summary>
+            /// <summary>
+            /// The power gems this step set off, grouped into the waves of the chain reaction.
+            /// The first wave is every gem the match (or the player's Hypercube swap) set off
+            /// directly. Each later wave is every gem caught in a blast of the wave before it.
+            /// Empty if nothing went off; never contains an empty wave.
+            /// </summary>
+            // A list of lists: the outer one is the waves in order, each inner one the
+            // detonations of that wave in the order they happened.
+            public IReadOnlyList<IReadOnlyList<Detonation>> Waves { get; }
+
+            /// <summary>
+            /// Every detonation of every wave as one flat list, in the order they happened. Handy
+            /// when only "what went off" matters and not "in which wave".
+            /// </summary>
             public IReadOnlyList<Detonation> Detonations { get; }
 
             public ClearResult(IReadOnlyList<Vector2Int> matched, IReadOnlyList<Creation> created,
-                IReadOnlyList<Detonation> detonations)
+                IReadOnlyList<IReadOnlyList<Detonation>> waves)
             {
                 Matched = matched;
                 Created = created;
+                Waves = waves;
+
+                var detonations = new List<Detonation>();
+                foreach (IReadOnlyList<Detonation> wave in waves)
+                {
+                    detonations.AddRange(wave);
+                }
                 Detonations = detonations;
+            }
+        }
+
+        /// <summary>
+        /// A power gem that has been set off but hasn't blasted anything yet: it's waiting for
+        /// its wave. <see cref="Target"/> is only for a Hypercube the player swapped, whose
+        /// colour was chosen by the swap; null means "work it out when the gem goes off".
+        /// </summary>
+        // `private`: only ResolveWaves and its callers need this. By the time a gem is pending
+        // it's already off the grid, which is why what it was has to be remembered here.
+        private readonly struct PendingGem
+        {
+            public readonly Vector2Int Cell;
+            public readonly Piece Piece;
+            public readonly TokenType Target;
+
+            public PendingGem(Vector2Int cell, Piece piece, TokenType target = null)
+            {
+                Cell = cell;
+                Piece = piece;
+                Target = target;
             }
         }
 
@@ -843,12 +894,12 @@ namespace Match3
         /// <summary>
         /// The cells a gem with <paramref name="power"/> blasts when it goes off in
         /// <paramref name="cell"/>: see <see cref="FlameBlastCells"/> and
-        /// <see cref="StarBlastCells"/>. Empty for a power that has no blast: a Hypercube isn't
-        /// set off by being matched, so it has none (see <see cref="ActivateHypercube"/>).
+        /// <see cref="StarBlastCells"/>. Empty for a Hypercube: what it clears depends on a
+        /// colour, not on where it is (see <see cref="CellsOfColour"/>).
         /// </summary>
-        // This is the one place that knows which power has which blast. ClearMatches asks here
-        // rather than checking for each kind of gem itself, so a new kind of blast is a new
-        // case here and nothing else in the clear step has to change.
+        // This is the one place that knows which power has which shape of blast. ResolveWaves
+        // asks here rather than checking for each kind of gem itself, so a new shape of blast is
+        // a new case here and nothing else in the clear step has to change.
         public List<Vector2Int> BlastCells(PowerKind power, Vector2Int cell)
         {
             switch (power)
@@ -860,6 +911,66 @@ namespace Match3
         }
 
         /// <summary>
+        /// Every cell holding a piece of <paramref name="colour"/>, power gems included: what a
+        /// Hypercube set off on that colour clears. Listed column by column from the left, each
+        /// bottom to top. Empty if <paramref name="colour"/> is null.
+        /// </summary>
+        public List<Vector2Int> CellsOfColour(TokenType colour)
+        {
+            var cells = new List<Vector2Int>();
+            if (colour == null)
+            {
+                return cells;
+            }
+
+            for (int x = 0; x < Width; x++)
+            {
+                for (int y = 0; y < Height; y++)
+                {
+                    // Colour, not Matches: there are no runs here, just "is it that colour?".
+                    if (grid[x, y].Colour == colour)
+                    {
+                        cells.Add(new Vector2Int(x, y));
+                    }
+                }
+            }
+            return cells;
+        }
+
+        /// <summary>
+        /// The colour most pieces on the board have right now, or null if no piece has a colour.
+        /// This is what a Hypercube caught in a blast goes off on: nobody swapped it with
+        /// anything, so it picks for itself. A tie goes to whichever of the tied colours comes
+        /// first in the board's list of token types, so the answer is never down to chance.
+        /// </summary>
+        public TokenType MostCommonColour()
+        {
+            var counts = new Dictionary<TokenType, int>();
+            foreach (Piece piece in grid)
+            {
+                if (piece.Colour != null)
+                {
+                    counts.TryGetValue(piece.Colour, out int soFar);
+                    counts[piece.Colour] = soFar + 1;
+                }
+            }
+
+            // Walking the types in their fixed order and only switching on a strictly bigger
+            // count is what breaks ties: the earliest type to reach the top count keeps it.
+            TokenType best = null;
+            int bestCount = 0;
+            foreach (TokenType type in tokenTypes)
+            {
+                if (counts.TryGetValue(type, out int count) && count > bestCount)
+                {
+                    best = type;
+                    bestCount = count;
+                }
+            }
+            return best;
+        }
+
+        /// <summary>
         /// One whole clear step, done in a fixed order:
         ///  1. every cell of every group in <paramref name="groups"/> is emptied, except that a
         ///     group whose shape makes a power gem (see <see cref="PowerMadeBy"/>) gets that gem
@@ -867,17 +978,20 @@ namespace Match3
         ///     has none;
         ///  2. every power gem that was among the matched cells then detonates, emptying the
         ///     cells its blast covers (see <see cref="BlastCells"/>): the 3x3 around a Flame, the
-        ///     row and column of a Star.
+        ///     row and column of a Star;
+        ///  3. every power gem one of those blasts caught detonates too, then every gem those
+        ///     blasts caught, and so on until a round of blasts catches no more: a chain
+        ///     reaction (see <see cref="ClearResult.Waves"/>).
         /// Gravity is not part of it: call <see cref="Collapse"/> afterwards, so nothing falls
-        /// between a match and its blast.
+        /// until the whole chain is over.
         ///
-        /// A gem made in step 1 is never touched by step 2: it wasn't on the board when the
-        /// match happened, so it neither goes off nor gets blasted away. That holds even when a
-        /// power gem is itself the anchor of a match that makes one: the old gem goes off and
-        /// the new one is left in its place.
+        /// A gem made in step 1 is never touched by steps 2 and 3: it wasn't on the board when
+        /// the match happened, so it neither goes off nor gets blasted away. That holds even
+        /// when a power gem is itself the anchor of a match that makes one: the old gem goes off
+        /// and the new one is left in its place.
         ///
-        /// A blast only removes what it hits. A power gem caught in one is simply cleared, it
-        /// doesn't go off in turn. That includes a Hypercube.
+        /// A Hypercube caught in a blast has no neighbour to take a colour from, so it goes off
+        /// on the <see cref="MostCommonColour"/> at that moment.
         /// </summary>
         /// <param name="groups">The matches to clear, as <see cref="FindMatchGroups"/> returned them.</param>
         public ClearResult ClearMatches(IReadOnlyList<MatchGroup> groups)
@@ -886,11 +1000,10 @@ namespace Match3
             var created = new List<Creation>();
             // Where this step's new gems are, so the blasts below can leave them alone.
             var createdCells = new HashSet<Vector2Int>();
-            // The power gems found among the matched cells, and what each one was. They're only
+            // The power gems found among the matched cells: the chain's first wave. They're only
             // noted here and set off after every group has been cleared, so the result doesn't
             // depend on which group happened to be looked at first.
-            var gemCells = new List<Vector2Int>();
-            var gemPieces = new List<Piece>();
+            var firstWave = new List<PendingGem>();
 
             // Two groups never share a cell (FindMatchGroups would have merged them), so each
             // matched cell is visited exactly once.
@@ -904,8 +1017,7 @@ namespace Match3
                     // here, because a piece with no colour is never part of a match.)
                     if (piece.Power != PowerKind.None)
                     {
-                        gemCells.Add(cell);
-                        gemPieces.Add(piece);
+                        firstWave.Add(new PendingGem(cell, piece));
                     }
 
                     if (made != PowerKind.None && cell == group.Anchor)
@@ -925,41 +1037,24 @@ namespace Match3
                 }
             }
 
-            var detonations = new List<Detonation>();
-            for (int i = 0; i < gemCells.Count; i++)
-            {
-                var blasted = new List<Vector2Int>();
-                foreach (Vector2Int cell in BlastCells(gemPieces[i].Power, gemCells[i]))
-                {
-                    // Already empty means the match (or an earlier blast) cleared it: there's
-                    // nothing left there for this blast to remove.
-                    if (grid[cell.x, cell.y].IsEmpty || createdCells.Contains(cell))
-                    {
-                        continue;
-                    }
-                    grid[cell.x, cell.y] = Piece.Empty;
-                    blasted.Add(cell);
-                }
-                detonations.Add(new Detonation(gemCells[i], gemPieces[i], blasted));
-            }
-
-            return new ClearResult(matched, created, detonations);
+            return new ClearResult(matched, created, ResolveWaves(firstWave, createdCells));
         }
 
         /// <summary>
         /// Sets off the Hypercube in <paramref name="cube"/> on <paramref name="colour"/>: the
         /// Hypercube itself and every piece of that colour, wherever it is on the board, are
-        /// emptied. Nothing else is touched. Returns the coloured cells that were cleared (not
-        /// <paramref name="cube"/>), column by column from the left, each bottom to top.
+        /// emptied. A Flame or Star of that colour goes off as it's cleared, and so does anything
+        /// its blast catches: the same chain reaction as in <see cref="ClearMatches"/>.
         ///
         /// This is a clear step of its own, in place of <see cref="ClearMatches"/>: no runs are
-        /// looked for, so no power gem is made, and a Flame or Star of the chosen colour is
-        /// simply cleared rather than going off. As after any clear step, call
-        /// <see cref="Collapse"/> next.
+        /// looked for, so nothing is matched and no power gem is made. The result's first wave
+        /// is the Hypercube alone, and its <see cref="Detonation.Blasted"/> lists the coloured
+        /// cells it cleared (not <paramref name="cube"/>), column by column from the left, each
+        /// bottom to top. As after any clear step, call <see cref="Collapse"/> next.
         /// </summary>
         /// <param name="cube">The cell the Hypercube is in now (after the swap, if it was swapped).</param>
         /// <param name="colour">The colour of the gem it was swapped with.</param>
-        public List<Vector2Int> ActivateHypercube(Vector2Int cube, TokenType colour)
+        public ClearResult ActivateHypercube(Vector2Int cube, TokenType colour)
         {
             // Throwing on a call that makes no sense is better than quietly clearing the wrong
             // thing: the mistake shows up where it was made.
@@ -972,22 +1067,84 @@ namespace Match3
                 throw new System.ArgumentNullException(nameof(colour), "A Hypercube needs a colour to clear.");
             }
 
-            var cleared = new List<Vector2Int>();
-            for (int x = 0; x < Width; x++)
-            {
-                for (int y = 0; y < Height; y++)
-                {
-                    // Colour, not Matches: there are no runs here, just "is it that colour?".
-                    if (grid[x, y].Colour == colour)
-                    {
-                        grid[x, y] = Piece.Empty;
-                        cleared.Add(new Vector2Int(x, y));
-                    }
-                }
-            }
-
+            // The cube comes off the board here, as a matched gem does in ClearMatches, and
+            // becomes a first wave of one. Unlike a cube caught in a blast, its colour is given.
             grid[cube.x, cube.y] = Piece.Empty;
-            return cleared;
+            var firstWave = new List<PendingGem> { new PendingGem(cube, Piece.Hypercube, colour) };
+
+            // No match, so nothing was matched or made, and no cell needs protecting.
+            return new ClearResult(new List<Vector2Int>(), new List<Creation>(),
+                ResolveWaves(firstWave, new HashSet<Vector2Int>()));
+        }
+
+        /// <summary>
+        /// Sets off the power gems in <paramref name="firstWave"/>, then every power gem their
+        /// blasts caught, then every gem those blasts caught, until a wave catches none. Returns
+        /// what went off, wave by wave. Cells in <paramref name="protectedCells"/> are never
+        /// blasted.
+        /// </summary>
+        // This is a "breadth-first" walk: everything one step away from the start is dealt with
+        // before anything two steps away. `current` is the queue of gems to set off now, and
+        // each gem they catch joins `next`, the queue for the wave after.
+        //
+        // Two things have to be true of a loop like this, or a board full of power gems would
+        // be trouble:
+        //  - No gem goes off twice. A walk like this normally keeps a "visited" set for that.
+        //    Here the grid itself does the job: a gem is taken off the board at the moment it's
+        //    caught, so a second blast reaching the same cell finds it empty and passes over it.
+        //  - It ends. Every pending gem came from a cell that is empty from then on, and nothing
+        //    refills a cell in here, so there can never be more detonations than there are cells.
+        private List<List<Detonation>> ResolveWaves(List<PendingGem> firstWave, HashSet<Vector2Int> protectedCells)
+        {
+            var waves = new List<List<Detonation>>();
+            List<PendingGem> current = firstWave;
+            while (current.Count > 0)
+            {
+                var wave = new List<Detonation>();
+                var next = new List<PendingGem>();
+                foreach (PendingGem gem in current)
+                {
+                    // A Hypercube clears a colour; a Flame or Star clears a shape around itself.
+                    TokenType target = null;
+                    List<Vector2Int> reach;
+                    if (gem.Piece.Power == PowerKind.Hypercube)
+                    {
+                        // `??` means "the left side, unless it's null, then the right side". The
+                        // colour is counted now, when the cube goes off, not when it was caught:
+                        // the gems that went off before it have changed what's left.
+                        target = gem.Target ?? MostCommonColour();
+                        reach = CellsOfColour(target);
+                    }
+                    else
+                    {
+                        reach = BlastCells(gem.Piece.Power, gem.Cell);
+                    }
+
+                    var blasted = new List<Vector2Int>();
+                    foreach (Vector2Int cell in reach)
+                    {
+                        Piece hit = grid[cell.x, cell.y];
+                        // Already empty means the match (or an earlier blast) cleared it: there's
+                        // nothing left there for this blast to remove.
+                        if (hit.IsEmpty || protectedCells.Contains(cell))
+                        {
+                            continue;
+                        }
+
+                        grid[cell.x, cell.y] = Piece.Empty;
+                        blasted.Add(cell);
+                        if (hit.Power != PowerKind.None)
+                        {
+                            next.Add(new PendingGem(cell, hit));
+                        }
+                    }
+                    wave.Add(new Detonation(gem.Cell, gem.Piece, blasted, target));
+                }
+
+                waves.Add(wave);
+                current = next;
+            }
+            return waves;
         }
 
         /// <summary>

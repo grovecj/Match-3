@@ -58,6 +58,8 @@ namespace Match3
         [SerializeField, Min(0.1f)] private float beamSpeed = 16f;
         [Tooltip("Pause, in seconds, between a Hypercube zapping one gem and the next. With a dozen gems of a colour on the board, the whole sweep takes a dozen times this.")]
         [SerializeField, Min(0f)] private float zapInterval = 0.05f;
+        [Tooltip("Extra pause, in seconds, between one wave of a chain reaction and the next, so the player can follow which gem set off which.")]
+        [SerializeField, Min(0f)] private float chainDelay = 0.1f;
 
         [Header("Reshuffling")]
         [Tooltip("Pause, in seconds, between running out of moves and the tokens shuffling, so the player sees why.")]
@@ -113,14 +115,20 @@ namespace Match3
         public event System.Action<PowerKind, Vector2Int> PowerGemCreated;
 
         /// <summary>
-        /// Fired when a power gem goes off, with which kind and the cell it was in. For a Flame
-        /// or Star that's the detonation phase: after its step's <see cref="ClearStepResolved"/>
-        /// and the matched tokens' pop, before anything falls. For a Hypercube it's as soon as
-        /// the swap that set it off has finished sliding, and it's the only event that step
-        /// fires: no run was cleared, so there's no <see cref="MatchCleared"/> or
-        /// <see cref="ClearStepResolved"/>.
+        /// Fired when a power gem goes off, with which kind, the cell it was in, and its wave
+        /// index within the chain reaction: 0 for a gem set off directly (by being matched, or
+        /// a Hypercube by being swapped), 1 for a gem caught in one of those blasts, 2 for a gem
+        /// caught in a wave-1 blast, and so on. Waves are played in order, so the indexes never
+        /// go down within a clear step.
+        ///
+        /// For a matched gem that's the detonation phase: after its step's
+        /// <see cref="ClearStepResolved"/> and the matched tokens' pop, before anything falls.
+        /// For a swapped Hypercube it's as soon as the swap has finished sliding, and that step
+        /// fires no <see cref="MatchCleared"/> or <see cref="ClearStepResolved"/>: no run was
+        /// cleared.
         /// </summary>
-        public event System.Action<PowerKind, Vector2Int> PowerGemDetonated;
+        // Action<PowerKind, Vector2Int, int>: a method taking those three things, in that order.
+        public event System.Action<PowerKind, Vector2Int, int> PowerGemDetonated;
 
         /// <summary>
         /// Fired when the player's swap starts animating, whether or not it will make a match.
@@ -749,8 +757,9 @@ namespace Match3
         /// <summary>
         /// One whole turn: swap, then either swap back (not a valid move) or clear -> detonate ->
         /// fall -> refill, repeating for as long as the falling tokens create new matches
-        /// (cascades). A Hypercube swap takes the place of the first clear: see
-        /// <see cref="ActivateHypercube"/>.
+        /// (cascades). "Detonate" can be several waves: a power gem caught in a blast goes off
+        /// too (see <see cref="PlayWaves"/>). A Hypercube swap takes the place of the first
+        /// clear: see <see cref="BoardModel.ActivateHypercube"/>.
         /// If the board ends up with no valid moves, it's reshuffled before the turn ends.
         /// </summary>
         private IEnumerator ResolveSwap(Vector2Int a, Vector2Int b)
@@ -775,7 +784,18 @@ namespace Match3
                 // Step 0 of this turn is the cube going off rather than a match. After it the
                 // board falls and refills exactly as after any clear, and whatever that lines up
                 // is an ordinary first cascade.
-                yield return StartCoroutine(ActivateHypercube(a, b));
+                // Work out which of the two cells is which. Exactly one holds the cube: that's
+                // what IsHypercubeSwap checked.
+                Vector2Int cube = model.PieceAt(a).Power == PowerKind.Hypercube ? a : b;
+                TokenType colour = model.TypeAt(cube == a ? b : a);
+
+                // As in the cascade loop below: the model clears everything right now (the
+                // colour, and whatever chain reaction that starts) and describes what it did.
+                // Zapped gems score nothing yet (that's the scoring issue), and there's no run
+                // to report, so no MatchCleared or ClearStepResolved here.
+                BoardModel.ClearResult zapped = model.ActivateHypercube(cube, colour);
+                // The cube wasn't matched, so unlike a matched gem its token is still there.
+                yield return StartCoroutine(PlayWaves(zapped.Waves, firstGemsOnBoard: true));
                 CollapseAndRefill();
                 yield return StartCoroutine(AnimateFalls());
                 groups = model.FindMatchGroups();
@@ -803,29 +823,29 @@ namespace Match3
             // up": it was declared above so the Hypercube branch could start it at 1.
             for (; groups.Count > 0; cascadeIndex++)
             {
-                // The model does the whole clear step right now, blasts included, and describes
-                // what it did. The rest of this pass plays that description back one phase at a
-                // time. Until the detonation phase below, the blasted tokens are still on screen
-                // (and in the view array) although the model has already emptied their cells.
+                // The model does the whole clear step right now, blasts and chain reactions
+                // included, and describes what it did. The rest of this pass plays that
+                // description back one phase at a time. Until the detonation phase below, the
+                // blasted tokens are still on screen (and in the view array) although the model
+                // has already emptied their cells.
                 BoardModel.ClearResult result = model.ClearMatches(groups);
 
                 // Phase 1: the matched tokens pop, and any new power gems appear.
                 List<Token> matched = RemoveMatched(groups, result, cascadeIndex);
                 yield return StartCoroutine(PopAndPause(matched));
 
-                // Phase 2: matched power gems go off. This is a phase of its own, after the
-                // match's pop and before gravity, so the player sees "match, then blast, then
-                // fall" as three beats. Adding a phase to a coroutine is just adding lines here:
-                // the code reads in the order things happen.
-                if (result.Detonations.Count > 0)
+                // Phase 2: matched power gems go off, and then any power gems they caught, wave
+                // after wave. This is a phase of its own, after the match's pop and before
+                // gravity, so the player sees "match, then blast, then fall" as three beats.
+                // Adding a phase to a coroutine is just adding lines here: the code reads in the
+                // order things happen.
+                if (result.Waves.Count > 0)
                 {
-                    // `out` hands back a second list alongside the returned one: how long each
-                    // blasted token waits before it pops (see Detonate).
-                    List<Token> blasted = Detonate(result.Detonations, out List<float> popDelays);
-                    yield return StartCoroutine(PopAndPause(blasted, popDelays));
+                    // The matched gems' own tokens popped with the match, in phase 1.
+                    yield return StartCoroutine(PlayWaves(result.Waves, firstGemsOnBoard: false));
                 }
 
-                // Phase 3: only now does anything fall.
+                // Phase 3: only now, with the whole chain over, does anything fall.
                 CollapseAndRefill();
                 yield return StartCoroutine(AnimateFalls());
 
@@ -1017,46 +1037,140 @@ namespace Match3
         }
 
         /// <summary>
-        /// Phase 2 of a clear step: for each power gem the model set off, shows its blast (one
-        /// big burst for a Flame, a beam along the row and column for a Star), takes the tokens
-        /// the blast cleared off the board, and reports it through
-        /// <see cref="PowerGemDetonated"/>. Returns the removed tokens, as
-        /// <see cref="RemoveMatched"/> does. The gem's own token isn't among them: it was part
-        /// of the match, so it has already popped.
+        /// Phase 2 of a clear step: plays a chain reaction, one wave of <paramref name="waves"/>
+        /// after another. Each wave's blasts are shown and its tokens popped before the next
+        /// wave starts, with <see cref="chainDelay"/> between them, so the player can follow
+        /// which gem set off which. Finishes once the last wave has popped; nothing has fallen.
         /// </summary>
+        /// <param name="waves">The waves, as <see cref="BoardModel.ClearResult.Waves"/> lists them.</param>
+        /// <param name="firstGemsOnBoard">
+        /// Whether the first wave's gems still have their tokens on the board. False after a
+        /// match (they popped with it), true for a swapped Hypercube.
+        /// </param>
+        // The model worked out the whole chain in one go, before any of this is shown. Pacing it
+        // is then just a loop with a `yield return` in it: show a wave, wait for it, show the
+        // next. Nothing here decides what goes off, only when the player sees it.
+        private IEnumerator PlayWaves(IReadOnlyList<IReadOnlyList<BoardModel.Detonation>> waves, bool firstGemsOnBoard)
+        {
+            for (int waveIndex = 0; waveIndex < waves.Count; waveIndex++)
+            {
+                bool isLastWave = waveIndex == waves.Count - 1;
+
+                // The power gems this wave's blasts catch: exactly the gems of the next wave.
+                // Their tokens stay on the board through this wave, so each is still sitting
+                // there, visibly a power gem, when its own turn comes.
+                var caught = new HashSet<Vector2Int>();
+                if (!isLastWave)
+                {
+                    foreach (BoardModel.Detonation next in waves[waveIndex + 1])
+                    {
+                        caught.Add(next.Cell);
+                    }
+                }
+
+                // From the second wave on, every gem going off is one that was left on the board
+                // by the wave before.
+                bool gemsOnBoard = waveIndex > 0 || firstGemsOnBoard;
+                // `out` hands back a second list alongside the returned one: how long each
+                // token waits before it pops (see Detonate).
+                List<Token> popping = Detonate(waves[waveIndex], waveIndex, gemsOnBoard, caught, out List<float> popDelays);
+                yield return StartCoroutine(PopAndPause(popping, popDelays));
+
+                if (!isLastWave && chainDelay > 0f)
+                {
+                    yield return new WaitForSeconds(chainDelay);
+                }
+            }
+        }
+
+        /// <summary>
+        /// One wave of a chain reaction: for each power gem in <paramref name="wave"/>, shows
+        /// its blast (one big burst for a Flame, a beam along the row and column for a Star, a
+        /// bolt to every gem of the colour for a Hypercube), takes the tokens the blast cleared
+        /// off the board, and reports it through <see cref="PowerGemDetonated"/>. Returns the
+        /// removed tokens, as <see cref="RemoveMatched"/> does.
+        /// </summary>
+        /// <param name="gemsOnBoard">
+        /// Whether the gems going off still have their own tokens on the board. If so those are
+        /// removed too; if not they have already popped (they were part of the match).
+        /// </param>
+        /// <param name="caught">
+        /// Cells of power gems this wave's blasts catch. Their tokens are left where they are:
+        /// they go off in the next wave.
+        /// </param>
         /// <param name="popDelays">
         /// For each returned token, in the same order, how many seconds to wait before popping
-        /// it (see <see cref="BlastDelay"/>).
+        /// it (see <see cref="BlastDelay"/> and <see cref="ZapDelay"/>).
         /// </param>
         // Blasted gems score nothing yet (that's the scoring issue), so no MatchCleared here.
-        private List<Token> Detonate(IReadOnlyList<BoardModel.Detonation> detonations, out List<float> popDelays)
+        private List<Token> Detonate(IReadOnlyList<BoardModel.Detonation> wave, int waveIndex, bool gemsOnBoard,
+            HashSet<Vector2Int> caught, out List<float> popDelays)
         {
             var removed = new List<Token>();
             popDelays = new List<float>();
-            foreach (BoardModel.Detonation detonation in detonations)
+            SpriteRenderer tokenRenderer = tokenPrefab.GetComponent<SpriteRenderer>();
+            foreach (BoardModel.Detonation detonation in wave)
             {
-                // The gem's token is gone by now, which is why the model hands back the piece it
-                // was: that's where the blast's colour comes from.
-                TokenType colour = detonation.Piece.Colour;
+                bool isCube = detonation.Kind == PowerKind.Hypercube;
+                // The gem's token may be gone by now, which is why the model hands back the
+                // piece it was: that's where the blast's colour comes from. A Hypercube has no
+                // colour of its own, so it flares in the colour it's about to destroy.
+                TokenType colour = isCube ? detonation.Target : detonation.Piece.Colour;
+                Color zapColor = Color.white;
                 if (detonation.Kind == PowerKind.Star)
                 {
                     // An ordinary-sized burst on the gem itself; the beam does the travelling.
                     SpawnExplosion(detonation.Cell, colour, BlastBurstRunLength);
                     SpawnBeam(detonation.Cell, colour);
                 }
+                else if (isCube)
+                {
+                    SpawnExplosion(detonation.Cell, colour, BlastBurstRunLength);
+                    TokenStyle style = CurrentTokenStyle;
+                    Color gemColor = style != null ? style.BurstColorFor(colour) : Color.white;
+                    zapColor = Color.Lerp(gemColor, Color.white, BeamWhiteness);
+                }
                 else
                 {
                     SpawnExplosion(detonation.Cell, colour, BlastBurstRunLength, BlastBurstScale);
                 }
 
-                // All the blasted tokens leave the board (the view array) right now, so it
-                // agrees with the model again. What's spread over time is only when each pops.
-                foreach (Vector2Int cell in detonation.Blasted)
+                for (int i = 0; i < detonation.Blasted.Count; i++)
                 {
+                    Vector2Int cell = detonation.Blasted[i];
+                    // One number per blasted gem: when the blast reaches it. A Hypercube zaps
+                    // its gems one after another, in the order the model listed them; its bolt
+                    // to each one is created now, already knowing when its turn is.
+                    float delay = isCube
+                        ? ZapDelay(i, zapInterval)
+                        : BlastDelay(detonation.Kind, detonation.Cell, cell, beamSpeed);
+                    if (isCube)
+                    {
+                        SpawnZap(detonation.Cell, cell, zapColor, delay, tokenRenderer);
+                    }
+
+                    // A power gem caught in this blast doesn't pop with the rest: it stays put
+                    // until the next wave, when it goes off itself.
+                    if (caught.Contains(cell))
+                    {
+                        continue;
+                    }
+
+                    // All the other blasted tokens leave the board (the view array) right now.
+                    // What's spread over time is only when each one pops.
                     removed.Add(TakeToken(cell));
-                    popDelays.Add(BlastDelay(detonation.Kind, detonation.Cell, cell, beamSpeed));
+                    popDelays.Add(delay);
                 }
-                PowerGemDetonated?.Invoke(detonation.Kind, detonation.Cell);
+
+                if (gemsOnBoard)
+                {
+                    // The gem itself goes as its blast starts. A Hypercube outlasts its last
+                    // target by one more beat, then goes too.
+                    removed.Add(TakeToken(detonation.Cell));
+                    popDelays.Add(isCube ? ZapDelay(detonation.Blasted.Count, zapInterval) : 0f);
+                }
+
+                PowerGemDetonated?.Invoke(detonation.Kind, detonation.Cell, waveIndex);
             }
             return removed;
         }
@@ -1082,59 +1196,6 @@ namespace Match3
             // the two differences gives its distance along the beam, in cells.
             int distance = Mathf.Abs(cell.x - gemCell.x) + Mathf.Abs(cell.y - gemCell.y);
             return distance / beamSpeed;
-        }
-
-        /// <summary>
-        /// A Hypercube swap, played as the turn's first clear step. The cube is in one of
-        /// <paramref name="a"/> and <paramref name="b"/> and the gem that names the colour in the
-        /// other (the swap has already been made). Every gem of that colour is zapped in turn,
-        /// one bolt each, <see cref="zapInterval"/> apart, and the cube itself goes last.
-        /// Reports the cube through <see cref="PowerGemDetonated"/>. Finishes once everything has
-        /// popped; nothing has fallen yet.
-        /// </summary>
-        // Zapped gems score nothing yet (that's the scoring issue), and there's no run to
-        // report, so no MatchCleared or ClearStepResolved here.
-        private IEnumerator ActivateHypercube(Vector2Int a, Vector2Int b)
-        {
-            // Work out which of the two cells is which. Exactly one holds the cube: that's what
-            // IsHypercubeSwap checked.
-            Vector2Int cube = model.PieceAt(a).Power == PowerKind.Hypercube ? a : b;
-            TokenType colour = model.TypeAt(cube == a ? b : a);
-
-            // As in the cascade loop: the model clears everything right now and describes what
-            // it did, and the rest of this method plays that back over time.
-            List<Vector2Int> cleared = model.ActivateHypercube(cube, colour);
-
-            TokenStyle style = CurrentTokenStyle;
-            Color gemColor = style != null ? style.BurstColorFor(colour) : Color.white;
-            Color zapColor = Color.Lerp(gemColor, Color.white, BeamWhiteness);
-            SpriteRenderer tokenRenderer = tokenPrefab.GetComponent<SpriteRenderer>();
-
-            // The cube flares in the colour it's about to destroy, so the player can read which
-            // one they picked before the gems start going.
-            SpawnExplosion(cube, colour, BlastBurstRunLength);
-
-            var popping = new List<Token>();
-            var popDelays = new List<float>();
-            for (int i = 0; i < cleared.Count; i++)
-            {
-                Vector2Int cell = cleared[i];
-                // One number per gem, used twice: its bolt appears then, and it starts to pop
-                // then. All the bolts are created now, each already knowing when its turn is.
-                float delay = ZapDelay(i, zapInterval);
-                SpawnZap(cube, cell, zapColor, delay, tokenRenderer);
-                // All of these leave the board (the view array) right now, so it agrees with the
-                // model again. What's spread over time is only when each one pops.
-                popping.Add(TakeToken(cell));
-                popDelays.Add(delay);
-            }
-
-            // The cube outlasts its last target by one more beat, then goes too.
-            popping.Add(TakeToken(cube));
-            popDelays.Add(ZapDelay(cleared.Count, zapInterval));
-
-            PowerGemDetonated?.Invoke(PowerKind.Hypercube, cube);
-            yield return StartCoroutine(PopAndPause(popping, popDelays));
         }
 
         /// <summary>
@@ -1421,7 +1482,7 @@ namespace Match3
             float swapDuration, float clearDelay, float fallSpeed,
             float popDuration = 0f, Explosion explosionPrefab = null, float springBackDuration = 0.01f,
             float noMovesDelay = 0f, float shuffleDuration = 0.01f, float beamSpeed = 1000f,
-            float zapInterval = 0f)
+            float zapInterval = 0f, float chainDelay = 0f)
         {
             this.width = width;
             this.height = height;
@@ -1441,6 +1502,7 @@ namespace Match3
             this.shuffleDuration = shuffleDuration;
             this.beamSpeed = beamSpeed;
             this.zapInterval = zapInterval;
+            this.chainDelay = chainDelay;
         }
 
         /// <summary>

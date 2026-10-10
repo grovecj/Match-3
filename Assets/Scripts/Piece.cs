@@ -17,7 +17,8 @@ namespace Match3
         /// <summary>
         /// Made by a line of 5 or more. The one power gem with no colour of its own: it is never
         /// matched, and goes off when the player swaps it with a coloured neighbour, clearing
-        /// every gem of that colour (see <see cref="BoardModel.ActivateHypercube"/>).
+        /// every gem of that colour (see <see cref="BoardModel.ActivateHypercube"/>). Caught in
+        /// another gem's blast it goes off too, on whichever colour there is most of.
         /// </summary>
         Hypercube,
     }
