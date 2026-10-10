@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using Match3.Achievements;
 using Match3.Online;
 using NUnit.Framework;
@@ -202,12 +203,14 @@ namespace Match3.Tests
         public IEnumerator ServerDown_SaysSoAndKeepsGoing()
         {
             api.Error = ApiResult<Achievement[]>.Failure("Cannot connect to destination host");
+            // The client is supposed to log why, as a warning (an error would fail the test by
+            // itself). Expecting it also checks that it does.
+            LogAssert.Expect(LogType.Warning, new Regex("couldn't load the list"));
 
             yield return CreateClient();
 
             Assert.That(client.Items, Is.Null);
             Assert.That(client.Message, Does.Contain("Couldn't reach"));
-            LogAssert.NoUnexpectedReceived();
         }
 
         [UnityTest]
