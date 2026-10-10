@@ -806,6 +806,8 @@ namespace Match3
             // Very rarely the tokens on the board can't be arranged into a playable layout at
             // all (say, nearly all of them are one type). Then deal new types instead. No tokens
             // are created or destroyed: each one just changes what it shows.
+            // The redeal makes every piece an ordinary one. That's fine while nothing creates
+            // power gems; once something does, this needs a redeal that keeps each piece's power.
             if (!model.FillWithValidMove())
             {
                 Debug.LogWarning($"Board: a {width}x{height} board with these token types has no valid moves.", this);

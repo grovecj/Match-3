@@ -199,8 +199,9 @@ namespace Match3
         // ------------------------------------------------------------ Starting fill
 
         /// <summary>
-        /// Puts a random type in every cell, avoiding any 3-in-a-row so the game doesn't start
-        /// with free matches. Needs at least 3 distinct token types.
+        /// Puts an ordinary piece of a random type in every cell, avoiding any 3-in-a-row so the
+        /// game doesn't start with free matches. Needs at least 3 distinct token types.
+        /// Whatever was on the board before is replaced, so any power gems are lost.
         /// </summary>
         public void FillWithoutMatches()
         {
