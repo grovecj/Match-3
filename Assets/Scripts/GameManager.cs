@@ -21,14 +21,18 @@ namespace Match3
     /// the player may swap, resets the board and score between rounds, and drives the timer,
     /// message, and Start/Play Again button in the side panel.
     ///
-    /// This is a state machine with four states:
-    ///   Ready     - the game just launched. The board is shown, input is off, and the
-    ///               "Start Round" button waits for a click.
-    ///   Playing   - the timer is counting down and the player can swap.
-    ///   Paused    - Esc or P was pressed mid-round, or the game lost focus. Time is frozen, the
-    ///               board is blurred, and a "Paused" overlay is shown. Esc, P, or the Resume
-    ///               button goes back to Playing.
-    ///   RoundOver - time ran out. The final score and a "Play Again" button are shown.
+    /// This is a state machine with five states:
+    ///   Ready      - the game just launched. The board is shown, input is off, and the
+    ///                "Start Round" button waits for a click.
+    ///   Playing    - the timer is counting down and the player can swap.
+    ///   LastHurrah - time ran out with power gems still on the board. A "Last Hurrah!" banner
+    ///                shows while the board sets them all off (and scores them); input stays
+    ///                off. Skipped when there are no power gems left.
+    ///   Paused     - Esc or P was pressed mid-round, or the game lost focus. Time is frozen, the
+    ///                board is blurred, and a "Paused" overlay is shown. Esc, P, or the Resume
+    ///                button goes back to where it was: Playing or LastHurrah.
+    ///   RoundOver  - time ran out and the board has settled. The final score and a "Play
+    ///                Again" button are shown.
     /// Clicking the button in Ready or RoundOver starts a new round (-> Playing).
     /// The Settings menu (gear button), the Leaderboard and the Account menu are only available
     /// in Ready and RoundOver. A RoundOver score that makes the top 10 is offered to the leaderboard, which
@@ -36,7 +40,7 @@ namespace Match3
     /// leaderboard.
     ///
     /// It also plays the end-of-round countdown: a tick for each of the last few seconds and a
-    /// horn when the clock hits 0:00.
+    /// horn when the clock hits 0:00 (so the horn comes before the Last Hurrah, not after).
     ///
     /// The clock (a <see cref="RoundClock"/>) counts game time, not wall-clock time: it is held
     /// while the board reshuffles and while power gems go off, so a round can take longer than
@@ -67,7 +71,7 @@ namespace Match3
         [SerializeField] private Color timerWarningColor = new Color(1f, 0.3f, 0.3f);
         [Tooltip("The timer's color while the clock is held (power gems going off, or the board reshuffling), so the player sees that it stopped.")]
         [SerializeField] private Color timerHeldColor = new Color(0.45f, 0.85f, 1f);
-        [Tooltip("Shows \"Time's up! Final score: X\" when a round ends, and \"No more moves!\" while the board reshuffles. Hidden otherwise.")]
+        [Tooltip("Shows \"Time's up! Final score: X\" when a round ends, \"Last Hurrah!\" while leftover power gems go off, and \"No more moves!\" while the board reshuffles. Hidden otherwise.")]
         [SerializeField] private TMP_Text messageText;
         [Tooltip("How long, in seconds, \"No more moves!\" stays up when the board reshuffles.")]
         [SerializeField, Min(0f)] private float noMovesMessageDuration = 1.5f;
@@ -97,9 +101,13 @@ namespace Match3
         [Tooltip("Shown between rounds only, like Settings. Optional: leave empty if the scene has no Achievements menu.")]
         [SerializeField] private AchievementsMenu achievementsMenu;
 
-        private enum GameState { Ready, Playing, Paused, RoundOver }
+        private enum GameState { Ready, Playing, LastHurrah, Paused, RoundOver }
 
         private GameState state;
+        // The state Pause() interrupted, so Resume() can go back to it. Before the Last Hurrah
+        // there was only one state to pause from, and Resume could just say "Playing"; with two,
+        // the state machine has to remember which.
+        private GameState pausedFrom;
         // The round's game time. `readonly` means this field always holds the same RoundClock;
         // the clock itself still changes (Reset, Advance).
         private readonly RoundClock clock = new RoundClock(CountdownFrom);
@@ -162,7 +170,7 @@ namespace Match3
         // switching tabs, or switching to another app.
         private void OnApplicationFocus(bool hasFocus)
         {
-            if (!hasFocus && state == GameState.Playing)
+            if (!hasFocus && CanPause)
             {
                 Pause();
             }
@@ -171,14 +179,18 @@ namespace Match3
         // Unity calls this with true when the app is suspended: minimized on some platforms,
         // sent to the background on mobile, or (in a browser) the tab being hidden. Focus loss
         // usually comes first, but not on every platform, so we handle both. Pause() is only
-        // called from Playing, so getting both events can't pause twice.
+        // called from a state that can pause, so getting both events can't pause twice.
         private void OnApplicationPause(bool pauseStatus)
         {
-            if (pauseStatus && state == GameState.Playing)
+            if (pauseStatus && CanPause)
             {
                 Pause();
             }
         }
+
+        // The two states in which a round is in progress. `=>` makes this a read-only property
+        // worked out each time it's asked for, so it can never be out of date.
+        private bool CanPause => state == GameState.Playing || state == GameState.LastHurrah;
 
         private void Update()
         {
@@ -205,6 +217,20 @@ namespace Match3
                     else
                     {
                         UpdatePlaying();
+                    }
+                    break;
+
+                case GameState.LastHurrah:
+                    if (pausePressed)
+                    {
+                        Pause();
+                    }
+                    // The Board does all the work (and pauses with everything else, since its
+                    // coroutines run on scaled time). All there is to do here is notice when
+                    // it has finished: it only goes idle once no power gem is left.
+                    else if (!board.IsResolving)
+                    {
+                        EnterRoundOver();
                     }
                     break;
 
@@ -255,7 +281,17 @@ namespace Match3
             // (and score) before the round really ends, so we wait for the board to settle.
             if (clock.HasRunOut && !board.IsResolving)
             {
-                EnterRoundOver();
+                // The Last Hurrah extends that rule: any power gems still on the board go off
+                // too. TryStartLastHurrah says no when there are none, and then the round ends
+                // exactly as it always did.
+                if (board.TryStartLastHurrah())
+                {
+                    EnterLastHurrah();
+                }
+                else
+                {
+                    EnterRoundOver();
+                }
             }
         }
 
@@ -287,6 +323,7 @@ namespace Match3
         /// <summary>Freezes the round: stops time, blocks input, and blurs the board.</summary>
         private void Pause()
         {
+            pausedFrom = state;
             state = GameState.Paused;
 
             // Time.timeScale is how fast game time passes: 1 is normal speed, 0 is stopped.
@@ -314,14 +351,14 @@ namespace Match3
                 return;
             }
 
-            state = GameState.Playing;
+            state = pausedFrom;
             Time.timeScale = 1f;
             AudioListener.pause = false;
             pauseOverlay.SetActive(false);
             boardBlur.Hide();
 
-            // If the clock had already hit 0 (we were only waiting for a cascade to finish),
-            // swapping stays off.
+            // If the clock had already hit 0 (we were only waiting for a cascade or the Last
+            // Hurrah to finish), swapping stays off.
             SetInputEnabled(!clock.HasRunOut);
         }
 
@@ -337,6 +374,18 @@ namespace Match3
             leaderboardMenu.SetAvailable(true);
             accountMenu.SetAvailable(true);
             SetAchievementsAvailable(true);
+        }
+
+        // Called on the same frame the Board started the hurrah. The Board waits a moment
+        // before the first gem goes off (its Last Hurrah Delay), so the banner is read first.
+        private void EnterLastHurrah()
+        {
+            state = GameState.LastHurrah;
+            SetInputEnabled(false);
+            // The banner takes over the message; don't let a "No more moves!" countdown hide it.
+            noMovesMessageTimeLeft = 0f;
+            messageText.text = "Last Hurrah!";
+            messageText.gameObject.SetActive(true);
         }
 
         private void EnterRoundOver()

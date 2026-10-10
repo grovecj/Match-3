@@ -1169,6 +1169,187 @@ namespace Match3.Tests
             yield return WaitUntilNoBursts();
         }
 
+        // ---------------------------------------------------------------- Last Hurrah
+        //
+        // When time runs out the GameManager calls Board.TryStartLastHurrah, which sets off
+        // every power gem still on the board. The order and the Hypercube's colour are covered
+        // in Edit Mode (BoardModelChainTests); these check the running Board.
+
+        // A starting board (match-free) where a Flame in the bottom-left corner sets up a
+        // cascade: its blast empties (0,0), (1,0), (0,1) and (1,1), the two A's at (0,2) and
+        // (1,2) fall into the bottom row, and with the A's at (2,0) and (3,0) that's a line of
+        // 4, which makes a new Flame.
+        private static readonly string[] HurrahCascadeLayout =
+        {
+            "CDEBC", // y = 4
+            "EBDCA",
+            "AACDB",
+            "DEBCE",
+            "BCAAD", // y = 0
+        };
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator LastHurrah_WithNoPowerGems_IsRefused_AndNothingHappens()
+        {
+            bool started = false;
+            board.LastHurrahStarted += () => started = true;
+            int steps = 0;
+            board.ClearStepScored += _ => steps++;
+            Token corner = board.GetToken(0, 0);
+
+            Assert.IsFalse(board.TryStartLastHurrah(), "With no power gems there is nothing to set off.");
+
+            Assert.IsFalse(board.IsResolving, "A refused hurrah must not lock the board: the round ends right away.");
+            yield return null;
+            Assert.IsFalse(started);
+            Assert.AreEqual(0, steps);
+            Assert.AreSame(corner, board.GetToken(0, 0));
+            AssertBoardIsFullAndSettled();
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator LastHurrah_SetsOffEveryPowerGem_FromTheBottomLeft()
+        {
+            // One of each, out of each other's blasts. Row by row from the bottom: the Flame in
+            // row 0, the Hypercube in row 2, the Star in row 3.
+            var flame = new Vector2Int(4, 0);
+            var cube = new Vector2Int(2, 2);
+            var star = new Vector2Int(0, 3);
+            board.SetPowerForTests(flame, PowerKind.Flame);
+            board.SetPowerForTests(cube, PowerKind.Hypercube);
+            board.SetPowerForTests(star, PowerKind.Star);
+
+            var events = new List<string>();
+            board.LastHurrahStarted += () => events.Add("started");
+            var detonated = new List<Vector2Int>();
+            board.PowerGemDetonated += (kind, cell, wave) =>
+            {
+                events.Add("detonated");
+                detonated.Add(cell);
+            };
+
+            Assert.IsTrue(board.TryStartLastHurrah());
+            Assert.IsTrue(board.IsResolving, "The board is locked from the call on, like a swap.");
+            Assert.IsFalse(board.TrySwap(MatchA, MatchB), "No swaps during the hurrah.");
+            Assert.IsFalse(board.TryStartLastHurrah(), "It can't be started twice.");
+            yield return WaitUntilIdle();
+
+            Assert.AreEqual("started", events[0], "LastHurrahStarted comes before the first gem goes off.");
+            Assert.AreEqual(1, events.FindAll(e => e == "started").Count);
+            // The first three to go off are the three that were there, in order. (The Hypercube
+            // picks its own colour; if that happens to be the Star's, the Star goes off in the
+            // cube's chain, which is still after the cube. Later cascades may add more.)
+            Assert.That(detonated.Count, Is.GreaterThanOrEqualTo(3));
+            Assert.AreEqual(new[] { flame, cube, star }, detonated.GetRange(0, 3).ToArray());
+            Assert.AreEqual(0, swapEvents.Count, "The hurrah isn't a swap.");
+            Assert.AreEqual(0, noMovesCount, "The hurrah never reshuffles: the round is over.");
+            AssertNoPowerGemsLeft();
+            AssertBoardIsFullAndSettled();
+            AssertNoMatchesLeft();
+            yield return WaitUntilNoBursts();
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator LastHurrah_AlsoSetsOffPowerGemsItsOwnCascadesMake_ThenStops()
+        {
+            board.LoadLayoutForTests(BuildLayout(HurrahCascadeLayout));
+            board.SetPowerForTests(new Vector2Int(0, 0), PowerKind.Flame);
+
+            int created = 0;
+            board.PowerGemCreated += (kind, cell) => created++;
+            int detonated = 0;
+            board.PowerGemDetonated += (kind, cell, wave) => detonated++;
+            var steps = new List<ClearStep>();
+            board.ClearStepScored += steps.Add;
+
+            Assert.IsTrue(board.TryStartLastHurrah());
+            // WaitUntilIdle fails the test if the board never settles, so this is also the
+            // check that the "repeat while power gems remain" loop ends.
+            yield return WaitUntilIdle();
+
+            Assert.That(created, Is.GreaterThanOrEqualTo(1), "The line of 4 in the bottom row should make a Flame.");
+            // Every gem that ever existed went off: the one we placed, and each one made since.
+            Assert.AreEqual(1 + created, detonated);
+            AssertNoPowerGemsLeft();
+
+            Assert.AreEqual(0, steps[0].CascadeIndex, "A gem set off by the hurrah is step 0.");
+            Assert.IsEmpty(steps[0].RunLengths);
+            Assert.AreEqual(3, steps[0].BlastedGems);
+            Assert.AreEqual(1, steps[1].CascadeIndex, "The cascade after it scores at x2, as after a swap.");
+            Assert.That(steps[1].RunLengths, Has.Member(4));
+            AssertBoardIsFullAndSettled();
+            AssertNoMatchesLeft();
+            yield return WaitUntilNoBursts();
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator LastHurrah_PointsAreInTheScore_AndInTheStatsThatCheckIt()
+        {
+            // The Flame's blast destroys the three gems around the corner.
+            board.SetPowerForTests(new Vector2Int(0, 0), PowerKind.Flame);
+
+            var keeperObject = new GameObject("Score Keeper");
+            keeperObject.SetActive(false);
+            ScoreKeeper keeper = keeperObject.AddComponent<ScoreKeeper>();
+            keeper.ConfigureForTests(board);
+            RoundStatsTracker tracker = keeperObject.AddComponent<RoundStatsTracker>();
+            tracker.ConfigureForTests(board);
+            keeperObject.SetActive(true);
+
+            var steps = new List<ClearStep>();
+            board.ClearStepScored += steps.Add;
+
+            Assert.IsTrue(board.TryStartLastHurrah());
+            yield return WaitUntilIdle();
+
+            Assert.AreEqual(3 * ScoreRules.PointsPerBlastedGem, steps[0].Points);
+            int expected = 0;
+            foreach (ClearStep step in steps)
+            {
+                expected += step.Points;
+            }
+            Assert.AreEqual(expected, keeper.Total, "Every hurrah step should be in the final score.");
+
+            // What's sent to the server still adds back up to that score.
+            RoundStats stats = tracker.Stats;
+            int fromStats = 0;
+            for (int i = 0; i < stats.basePointsAtMultiplier.Length; i++)
+            {
+                fromStats += stats.basePointsAtMultiplier[i] * (i + 1);
+            }
+            Assert.AreEqual(keeper.Total, fromStats);
+            Assert.That(stats.flamesDetonated, Is.GreaterThanOrEqualTo(1));
+            Assert.AreEqual(0, stats.swaps);
+            Assert.AreEqual(0, stats.mostGemsOneSwap, "No swap cleared these gems.");
+
+            Object.Destroy(keeperObject);
+            yield return WaitUntilNoBursts();
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator Pausing_FreezesTheLastHurrah_UntilResumed()
+        {
+            board.SetPowerForTests(new Vector2Int(0, 0), PowerKind.Flame);
+            Assert.IsTrue(board.TryStartLastHurrah());
+            bool timedOut = false;
+            yield return new WaitUntil(() => board.IsDetonating,
+                System.TimeSpan.FromSeconds(ResolveTimeoutSeconds), () => timedOut = true);
+            Assert.IsFalse(timedOut, "The Flame never started going off.");
+
+            // Pause the way the GameManager does (see Pausing_FreezesThePopAndTheBursts).
+            Time.timeScale = 0f;
+            yield return null;
+            yield return new WaitForSecondsRealtime(0.3f);
+            Assert.IsTrue(board.IsResolving, "The hurrah shouldn't carry on (or finish) while paused.");
+            Assert.IsTrue(board.IsDetonating);
+
+            Time.timeScale = 1f;
+            yield return WaitUntilIdle();
+            AssertNoPowerGemsLeft();
+            AssertBoardIsFullAndSettled();
+            yield return WaitUntilNoBursts();
+        }
+
         // ---------------------------------------------------------------- Hints
 
         [UnityTest, Timeout(TestTimeoutMs)]
@@ -1578,6 +1759,19 @@ namespace Match3.Tests
             Token[] sceneTokens = boardObject.GetComponentsInChildren<Token>();
             Assert.That(sceneTokens, Is.EquivalentTo(cellTokens),
                 "The tokens under the board should be exactly the ones in its cells, with no orphans.");
+        }
+
+        /// <summary>No token on the board is showing a power: every power gem has gone off.</summary>
+        private void AssertNoPowerGemsLeft()
+        {
+            for (int x = 0; x < board.Width; x++)
+            {
+                for (int y = 0; y < board.Height; y++)
+                {
+                    Assert.AreEqual(PowerKind.None, board.GetToken(x, y).Power,
+                        $"The token in cell ({x}, {y}) is still a power gem.");
+                }
+            }
         }
 
         /// <summary>

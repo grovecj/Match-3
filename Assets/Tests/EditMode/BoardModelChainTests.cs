@@ -474,5 +474,137 @@ namespace Match3.Tests
             Assert.AreEqual("(0,1) (1,0) (2,1)", Describe(board.CellsOfColour(grids.Type('R'))));
             Assert.IsEmpty(board.CellsOfColour(null), "No colour means nothing to clear, not \"every empty cell\".");
         }
+
+        // ---------------------------------------------------------------- Last Hurrah
+        //
+        // When time runs out, the Board sets off every power gem still on the board by asking
+        // the model two things in a loop: "is there one, and where?" (TryFindPowerGem) and "set
+        // that one off" (DetonatePowerGem). No match and no swap is involved.
+
+        // A board with no matches at all: each row is the one below it shifted two places.
+        private static readonly string[] NoMatchLayout =
+        {
+            "DEABC", // y = 4
+            "BCDEA",
+            "EABCD",
+            "CDEAB",
+            "ABCDE", // y = 0
+        };
+
+        [Test]
+        public void TryFindPowerGem_NoPowerGems_IsFalse()
+        {
+            Assert.IsFalse(Grid(NoMatchLayout).TryFindPowerGem(out _));
+        }
+
+        [Test]
+        public void LastHurrah_SetsGemsOffRowByRowFromTheBottomLeft()
+        {
+            BoardModel board = Grid(NoMatchLayout);
+            // Three gems out of each other's reach. The Star is further left than the bottom
+            // Flame, but one row up, so the Flame goes first: rows count before columns.
+            grids.SetPowers(board,
+                "....F",
+                ".....",
+                ".....",
+                "S....",
+                "...F.");
+
+            // The Board's loop, without the animations.
+            var order = new List<Vector2Int>();
+            while (board.TryFindPowerGem(out Vector2Int cell))
+            {
+                order.Add(cell);
+                BoardModel.ClearResult result = board.DetonatePowerGem(cell);
+                Assert.AreEqual(1, result.Waves.Count, "None of these gems can reach another.");
+            }
+
+            Assert.AreEqual("(3,0) (0,1) (4,4)", Describe(order));
+            Assert.AreEqual(new[] { ".....", ".....", ".....", ".....", "....." }, grids.PowerRows(board));
+        }
+
+        [Test]
+        public void DetonatePowerGem_IsAStepOfItsOwn_WithNothingMatchedOrMade()
+        {
+            BoardModel board = Grid(NoMatchLayout);
+            grids.SetPowers(board,
+                ".....",
+                ".....",
+                ".....",
+                ".F...",
+                ".....");
+
+            BoardModel.ClearResult result = board.DetonatePowerGem(Cell(1, 1));
+
+            // The Flame's 3x3, itself included.
+            Assert.AreEqual(new[]
+            {
+                "DEABC",
+                "BCDEA",
+                "...CD",
+                "...AB",
+                "...DE",
+            }, grids.Rows(board));
+            Assert.IsEmpty(result.Matched);
+            Assert.IsEmpty(result.Created);
+            Assert.AreEqual(1, result.Detonations.Count);
+            Assert.AreEqual(Cell(1, 1), result.Detonations[0].Cell);
+            Assert.AreEqual(8, result.Detonations[0].Blasted.Count);
+
+            // Scored like a swapped Hypercube's step: the blasted gems, and nothing for runs.
+            ClearStep step = ClearStep.From(result, new List<MatchGroup>(), cascadeIndex: 0);
+            Assert.AreEqual(8, step.BlastedGems);
+            Assert.AreEqual(9, step.GemsCleared, "The eight blasted gems and the Flame itself.");
+            Assert.AreEqual(8 * ScoreRules.PointsPerBlastedGem, step.Points);
+        }
+
+        [Test]
+        public void DetonatePowerGem_CatchesOtherGemsInItsChain_SoTheyAreNotFoundAgain()
+        {
+            BoardModel board = Grid(NoMatchLayout);
+            grids.SetPowers(board,
+                ".....",
+                ".....",
+                "..F..",
+                ".F...",
+                ".....");
+
+            Assert.IsTrue(board.TryFindPowerGem(out Vector2Int first));
+            Assert.AreEqual(Cell(1, 1), first);
+            BoardModel.ClearResult result = board.DetonatePowerGem(first);
+
+            Assert.AreEqual(2, result.Waves.Count, "The Flame at (2,2) is in the first one's blast.");
+            Assert.AreEqual(Cell(2, 2), result.Waves[1][0].Cell);
+            Assert.IsFalse(board.TryFindPowerGem(out _), "Both gems have gone off.");
+            AssertNothingHappenedTwice(result);
+        }
+
+        [Test]
+        public void DetonatePowerGem_Hypercube_GoesOffOnTheMostCommonColour()
+        {
+            // Four A's, three B's and one C: nobody swapped the cube, so it picks A itself.
+            BoardModel board = Grid(
+                "ABA",
+                "BAB",
+                "A*C");
+
+            BoardModel.ClearResult result = board.DetonatePowerGem(Cell(1, 0));
+
+            Assert.AreEqual(grids.Type('A'), result.Detonations[0].Target);
+            Assert.AreEqual(new[]
+            {
+                ".B.",
+                "B.B",
+                "..C",
+            }, grids.Rows(board));
+        }
+
+        [Test]
+        public void DetonatePowerGem_OnAnOrdinaryPiece_Throws()
+        {
+            BoardModel board = Grid(NoMatchLayout);
+
+            Assert.Throws<System.ArgumentException>(() => board.DetonatePowerGem(Cell(0, 0)));
+        }
     }
 }

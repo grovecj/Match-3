@@ -70,6 +70,8 @@ namespace Match3
         // sent: [NonSerialized] tells JsonUtility to leave a field out. (It would skip a private
         // field anyway; the attribute just says so where it can be seen.)
         [NonSerialized] private int gemsThisSwap;
+        // True once the Last Hurrah has started: what it clears isn't any swap's doing.
+        [NonSerialized] private bool inLastHurrah;
 
         /// <summary>Back to all zeros, for a new round.</summary>
         public void Reset()
@@ -91,6 +93,7 @@ namespace Match3
             hypercubesDetonated = 0;
             mostGemsOneSwap = 0;
             gemsThisSwap = 0;
+            inLastHurrah = false;
         }
 
         /// <summary>The player swapped two tokens (whether or not it made a match).</summary>
@@ -98,6 +101,17 @@ namespace Match3
         {
             swaps++;
             gemsThisSwap = 0;
+            inLastHurrah = false;
+        }
+
+        /// <summary>
+        /// Time ran out and the leftover power gems are about to go off (the Last Hurrah). What
+        /// they clear still counts towards the score and everything that checks it, but not
+        /// towards <see cref="mostGemsOneSwap"/>: no swap cleared those gems.
+        /// </summary>
+        public void LastHurrahStarted()
+        {
+            inLastHurrah = true;
         }
 
         /// <summary>
@@ -139,8 +153,11 @@ namespace Match3
             // Multiplier x1 goes in [0], x2 in [1], and so on.
             int slot = ScoreRules.Multiplier(step.CascadeIndex) - 1;
             basePointsAtMultiplier[slot] += ScoreRules.BasePoints(step.RunLengths, step.BlastedGems);
-            gemsThisSwap += step.GemsCleared;
-            mostGemsOneSwap = Math.Max(mostGemsOneSwap, gemsThisSwap);
+            if (!inLastHurrah)
+            {
+                gemsThisSwap += step.GemsCleared;
+                mostGemsOneSwap = Math.Max(mostGemsOneSwap, gemsThisSwap);
+            }
         }
 
         /// <summary>A match made a power gem of <paramref name="kind"/>.</summary>

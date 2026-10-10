@@ -37,6 +37,7 @@ namespace Match3
             // one ClearStep), it can be subscribed directly. The others pass more than the stats
             // need, so they go through small methods of our own.
             board.SwapStarted += stats.SwapStarted;
+            board.LastHurrahStarted += stats.LastHurrahStarted;
             board.MatchCleared += stats.RunCleared;
             board.ClearStepScored += stats.StepScored;
             board.PowerGemCreated += OnPowerGemCreated;
@@ -48,6 +49,7 @@ namespace Match3
             if (board != null)
             {
                 board.SwapStarted -= stats.SwapStarted;
+                board.LastHurrahStarted -= stats.LastHurrahStarted;
                 board.MatchCleared -= stats.RunCleared;
                 board.ClearStepScored -= stats.StepScored;
                 board.PowerGemCreated -= OnPowerGemCreated;

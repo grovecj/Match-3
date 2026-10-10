@@ -144,6 +144,24 @@ namespace Match3.Tests
         }
 
         [Test]
+        public void LastHurrahSteps_CountTowardsTheScore_ButNotTowardsMostGemsOneSwap()
+        {
+            var stats = new RoundStats();
+            stats.SwapStarted();
+            stats.StepScored(new ClearStep(0, new[] { 3 }, 0, gemsCleared: 3));
+
+            // Time runs out; a leftover power gem blasts eight gems. No swap did that.
+            stats.LastHurrahStarted();
+            stats.StepScored(new ClearStep(0, new int[0], blastedGems: 8, gemsCleared: 9));
+
+            Assert.AreEqual(3, stats.mostGemsOneSwap);
+            Assert.AreEqual(1, stats.swaps);
+            // The server adds the score up from these, so the hurrah has to be in them.
+            Assert.AreEqual(8, stats.blastedGems);
+            Assert.AreEqual(1000 + 8 * 250, stats.basePointsAtMultiplier[0]);
+        }
+
+        [Test]
         public void PowerGems_AreCountedByKind()
         {
             var stats = new RoundStats();
