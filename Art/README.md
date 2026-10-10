@@ -56,6 +56,14 @@ Every file is listed with its source, author and license in `CREDITS.md` at the 
 |----------|--------------------------------------|-----------------------------------------------|
 | `chimes` | soft, glassy UI chimes and clicks    | Kenney's Interface Sounds (CC0)               |
 
+The one exception is the round-end horn, `Assets/Audio/Chimes/horn.wav`. The pack has no horn,
+so `Audio/build_horn.py` synthesizes one (two notes a minor third apart, each a stack of
+harmonics) using only Python's standard library. To rebuild it after changing the script:
+
+```
+python Art/Audio/build_horn.py    # writes Assets/Audio/Chimes/horn.wav
+```
+
 ### Import settings
 
 Short sound effects all use the same import settings (select the clips in Unity to see them
