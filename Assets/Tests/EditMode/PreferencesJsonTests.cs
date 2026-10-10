@@ -93,5 +93,47 @@ namespace Match3.Tests
             Assert.That(a.Matches(new PreferenceValues { tokenStyle = "gems", boardTheme = "ocean", soundVolume = 0.5f }), Is.False);
             Assert.That(a.Matches(null), Is.False);
         }
+
+        [Test]
+        public void Matches_ComparesTheScreenShakeToo()
+        {
+            var on = new PreferenceValues { tokenStyle = "gems", screenShake = true };
+            Assert.That(on.Matches(new PreferenceValues { tokenStyle = "gems", screenShake = false }), Is.False);
+        }
+
+        [Test]
+        public void Parse_ReadsTheScreenShake()
+        {
+            SavedPreferences off = PreferencesJson.Parse("{\"data\":{\"screenShake\":false},\"version\":5}");
+            SavedPreferences on = PreferencesJson.Parse("{\"data\":{\"screenShake\":true},\"version\":5}");
+
+            Assert.That(off.data.hasScreenShake, Is.True);
+            Assert.That(off.data.screenShake, Is.False);
+            Assert.That(on.data.hasScreenShake, Is.True);
+            Assert.That(on.data.screenShake, Is.True);
+        }
+
+        [Test]
+        public void Parse_NoScreenShakeSaved_IsMissingNotOff()
+        {
+            // Saved before the setting existed. JsonUtility reads a missing bool as false, which
+            // would quietly turn shaking off; it should count as "nothing saved" instead.
+            SavedPreferences saved = PreferencesJson.Parse("{\"data\":{\"boardTheme\":\"ocean\"},\"version\":2}");
+
+            Assert.That(saved.data.hasScreenShake, Is.False);
+            Assert.That(saved.data.screenShake, Is.True);
+        }
+
+        [Test]
+        public void ToJson_SavesTheScreenShake()
+        {
+            var change = new SavedPreferences { data = new PreferenceValues { screenShake = false }, version = 1 };
+
+            string json = PreferencesJson.ToJson(change);
+
+            Assert.That(json, Does.Contain("\"screenShake\":false"));
+            Assert.That(json, Does.Not.Contain("hasScreenShake"), "Whether a reply had the setting isn't itself a setting.");
+            Assert.That(PreferencesJson.Parse(json).data.screenShake, Is.False);
+        }
     }
 }

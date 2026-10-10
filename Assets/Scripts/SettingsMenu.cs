@@ -9,7 +9,7 @@ namespace Match3
 {
     /// <summary>
     /// The Settings menu: a gear button that opens a modal panel where the player picks a token
-    /// style, a board theme and a sound set, and sets the sound volume. Choices apply immediately
+    /// style, a board theme and a sound set, sets the sound volume, and turns screen shake on or off. Choices apply immediately
     /// (the board behind the panel updates as you click) and are saved, so there's no Apply/Cancel.
     ///
     /// The options aren't laid out by hand. At startup this reads the ThemeManager's and
@@ -55,6 +55,10 @@ namespace Match3
         [Tooltip("Plays a sample sound at the current volume.")]
         [SerializeField] private Button testSoundButton;
 
+        [Header("Effects section")]
+        [Tooltip("On: the screen shakes when power gems go off. Optional, so a scene built before this setting existed still works (re-run Match3 > Build Settings Menu to add it).")]
+        [SerializeField] private Toggle screenShakeToggle;
+
         private readonly List<TokenStyleOption> tokenStyleOptions = new List<TokenStyleOption>();
         private readonly List<BoardThemeOption> boardThemeOptions = new List<BoardThemeOption>();
         private readonly List<SoundSetOption> soundSetOptions = new List<SoundSetOption>();
@@ -87,6 +91,11 @@ namespace Match3
             // takes a float directly.
             volumeSlider.onValueChanged.AddListener(OnVolumeSliderChanged);
             testSoundButton.onClick.AddListener(PlayTestSound);
+            if (screenShakeToggle != null)
+            {
+                // A Toggle's onValueChanged passes the new on/off state, like the slider's value.
+                screenShakeToggle.onValueChanged.AddListener(OnScreenShakeToggled);
+            }
 
             // "UI/Cancel" is the Esc (and gamepad B/East) action from the project-wide input
             // actions: the standard "back out of this menu" input.
@@ -102,6 +111,7 @@ namespace Match3
 
             // Start (not Awake) so the AudioManager's Awake has already loaded the saved volume.
             RefreshVolume();
+            RefreshScreenShake();
         }
 
         private void OnEnable()
@@ -115,10 +125,12 @@ namespace Match3
                 audioManager.VolumeChanged += RefreshVolume;
                 audioManager.SoundSetChanged += RefreshSelection;
             }
+            ScreenShakeSetting.Changed += RefreshScreenShake;
             // Catch up on anything that changed while we weren't listening (a no-op before Start
             // has built the options).
             RefreshSelection();
             RefreshVolume();
+            RefreshScreenShake();
         }
 
         private void OnDisable()
@@ -132,6 +144,7 @@ namespace Match3
                 audioManager.VolumeChanged -= RefreshVolume;
                 audioManager.SoundSetChanged -= RefreshSelection;
             }
+            ScreenShakeSetting.Changed -= RefreshScreenShake;
         }
 
         private void OnDestroy()
@@ -151,6 +164,10 @@ namespace Match3
             if (testSoundButton != null)
             {
                 testSoundButton.onClick.RemoveListener(PlayTestSound);
+            }
+            if (screenShakeToggle != null)
+            {
+                screenShakeToggle.onValueChanged.RemoveListener(OnScreenShakeToggled);
             }
         }
 
@@ -245,6 +262,21 @@ namespace Match3
         private void ShowVolume()
         {
             volumeValueText.text = $"{Mathf.RoundToInt(volumeSlider.value)}%";
+        }
+
+        private void OnScreenShakeToggled(bool on)
+        {
+            ScreenShakeSetting.Enabled = on;
+        }
+
+        /// <summary>Ticks or unticks the toggle to match the saved setting.</summary>
+        private void RefreshScreenShake()
+        {
+            if (screenShakeToggle != null)
+            {
+                // Like the slider: show the setting without counting it as a click.
+                screenShakeToggle.SetIsOnWithoutNotify(ScreenShakeSetting.Enabled);
+            }
         }
 
         private void PlayTestSound()

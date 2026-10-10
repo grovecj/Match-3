@@ -21,6 +21,15 @@ credit appreciated but not required). The pack's license is kept in
 | `error_008.ogg`                  | Invalid swap                | Interface Sounds | Kenney | CC0     |
 
 `horn.wav` (round-end horn) isn't third-party: it's synthesized by `Art/Audio/build_horn.py`.
+Neither are the four power gem sounds, synthesized by `Art/Audio/build_power_gems.py` and
+released under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/):
+
+| File (in `Assets/Audio/Chimes/`) | Used for (Chimes sound set) | Source                  | Author       | License |
+|----------------------------------|-----------------------------|-------------------------|--------------|---------|
+| `power_gem_created.wav`          | Power gem created           | `build_power_gems.py`   | This project | CC0     |
+| `flame_detonate.wav`             | Flame goes off              | `build_power_gems.py`   | This project | CC0     |
+| `star_detonate.wav`              | Star goes off               | `build_power_gems.py`   | This project | CC0     |
+| `hypercube_activate.wav`         | Hypercube goes off          | `build_power_gems.py`   | This project | CC0     |
 
 ### Arcade
 
@@ -40,3 +49,7 @@ presets to the files below.
 | `swap.wav`                       | Swap                        | `swap.json` preset        | This project | CC0     |
 | `invalid_swap.wav`               | Invalid swap                | `invalid_swap.json` preset | This project | CC0    |
 | `achievement.wav`                | Achievement unlocked        | `achievement.json` preset | This project | CC0     |
+| `power_gem_created.wav`          | Power gem created           | `power_gem_created.json` preset | This project | CC0 |
+| `flame_detonate.wav`             | Flame goes off              | `flame_detonate.json` preset | This project | CC0  |
+| `star_detonate.wav`              | Star goes off               | `star_detonate.json` preset | This project | CC0   |
+| `hypercube_activate.wav`         | Hypercube goes off          | `hypercube_activate.json` preset | This project | CC0 |

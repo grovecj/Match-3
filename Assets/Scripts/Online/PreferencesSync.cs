@@ -6,7 +6,7 @@ using UnityEngine;
 namespace Match3.Online
 {
     /// <summary>
-    /// Keeps the player's settings (token style, board theme, sound volume) the same on every
+    /// Keeps the player's settings (token style, board theme, sound volume, screen shake) the same on every
     /// device they sign in on, by keeping a copy on their account.
     ///
     /// PlayerPrefs stays the settings' home: the ThemeManager and AudioManager read and write
@@ -317,6 +317,7 @@ namespace Match3.Online
                 tokenStyle = themeManager.TokenStyle != null ? themeManager.TokenStyle.Id : "",
                 boardTheme = themeManager.BoardTheme != null ? themeManager.BoardTheme.Id : "",
                 soundVolume = audioManager.Volume,
+                screenShake = ScreenShakeSetting.Enabled,
             };
         }
 
@@ -342,6 +343,10 @@ namespace Match3.Online
             {
                 audioManager.SetVolume(values.soundVolume);
                 audioManager.SaveVolume();
+            }
+            if (values.hasScreenShake)
+            {
+                ScreenShakeSetting.Enabled = values.screenShake;
             }
             // If another account left a save pending here, it was for the settings we've just
             // replaced. Drop it: sent later, it would save this account's settings to theirs.

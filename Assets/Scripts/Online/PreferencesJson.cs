@@ -5,7 +5,7 @@ namespace Match3.Online
 {
     /// <summary>
     /// Reads and writes the <c>/me/preferences</c> JSON:
-    /// <code>{"data":{"tokenStyle":"gems","boardTheme":"ocean","soundVolume":0.8},"version":3}</code>
+    /// <code>{"data":{"tokenStyle":"gems","boardTheme":"ocean","soundVolume":0.8,"screenShake":true},"version":3}</code>
     ///
     /// The server doesn't look inside <c>data</c>; it stores whatever object the game sends. So
     /// a reply can be missing any of the settings (nothing saved yet, or saved by an older
@@ -35,6 +35,14 @@ namespace Match3.Online
             if (!Regex.IsMatch(json, "\"soundVolume\"\\s*:\\s*[0-9]"))
             {
                 saved.data.soundVolume = PreferenceValues.NoVolume;
+            }
+            // The same for the screen shake: a missing bool reads as false, which would turn
+            // shaking off for everyone whose account was saved before the setting existed.
+            // (Set either way: hasScreenShake isn't in the JSON, so the reader never sets it.)
+            saved.data.hasScreenShake = Regex.IsMatch(json, "\"screenShake\"\\s*:\\s*(true|false)");
+            if (!saved.data.hasScreenShake)
+            {
+                saved.data.screenShake = true;
             }
             return saved;
         }

@@ -33,12 +33,22 @@ namespace Match3
         /// </summary>
         public int GemsCleared { get; }
 
-        public ClearStep(int cascadeIndex, IReadOnlyList<int> runLengths, int blastedGems, int gemsCleared)
+        /// <summary>
+        /// The middle of every cell the step cleared, in cells: the average of their (x, y).
+        /// Can fall between cells. The score popup is shown here (see <see cref="ScorePopups"/>).
+        /// </summary>
+        public Vector2 CenterCell { get; }
+
+        // `Vector2 centerCell = default` is optional: leaving it out gives (0, 0), which is fine
+        // for anything that only cares about the score.
+        public ClearStep(int cascadeIndex, IReadOnlyList<int> runLengths, int blastedGems, int gemsCleared,
+            Vector2 centerCell = default)
         {
             CascadeIndex = cascadeIndex;
             RunLengths = runLengths;
             BlastedGems = blastedGems;
             GemsCleared = gemsCleared;
+            CenterCell = centerCell;
         }
 
         /// <summary>What the step is worth, multiplier included.</summary>
@@ -61,12 +71,23 @@ namespace Match3
                 }
             }
 
+            // Adds up every cleared cell's position, to average at the end.
+            Vector2 cellSum = Vector2.zero;
+            foreach (Vector2Int cell in result.Matched)
+            {
+                cellSum += (Vector2)cell;
+            }
+
             // The model never lists a cell twice across a step's blasts, so adding them up
             // counts every blasted gem exactly once.
             int blasted = 0;
             foreach (BoardModel.Detonation detonation in result.Detonations)
             {
                 blasted += detonation.Blasted.Count;
+                foreach (Vector2Int cell in detonation.Blasted)
+                {
+                    cellSum += (Vector2)cell;
+                }
             }
 
             // Every gem that went off left the board. Those in later waves were caught in a
@@ -83,12 +104,14 @@ namespace Match3
                     if (!matched.Contains(detonation.Cell))
                     {
                         wentOffUncounted++;
+                        cellSum += (Vector2)detonation.Cell;
                     }
                 }
             }
 
-            return new ClearStep(cascadeIndex, runLengths, blasted,
-                result.Matched.Count + blasted + wentOffUncounted);
+            int gemsCleared = result.Matched.Count + blasted + wentOffUncounted;
+            Vector2 center = gemsCleared > 0 ? cellSum / gemsCleared : Vector2.zero;
+            return new ClearStep(cascadeIndex, runLengths, blasted, gemsCleared, center);
         }
     }
 }

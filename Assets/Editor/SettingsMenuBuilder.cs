@@ -12,7 +12,7 @@ using static UIBuilder;
 /// <summary>
 /// Editor-only helper that builds the Settings menu UI (issues #17, #49 and #53): the three option
 /// prefabs, the gear button in the side panel, and the modal Settings panel (including the
-/// sound set picker and volume slider), with every Inspector reference wired up. Run it from the menu bar: Match3 > Build Settings Menu, then save the
+/// sound set picker, volume slider and screen shake toggle), with every Inspector reference wired up. Run it from the menu bar: Match3 > Build Settings Menu, then save the
 /// scene. It also adds the PreferencesSync (issue #70) that copies the settings to the player's
 /// account, if the scene has an AccountManager (Match3 > Build Account Menu makes one).
 ///
@@ -353,6 +353,7 @@ public static class SettingsMenuBuilder
         // The sound section's heading is called "SoundHeader" and its list "SoundSetList".
         RectTransform soundSetList = AddSection(window, "Sound", "Sounds", SoundSetOptionSize, "SoundSetList");
         AddVolumeRow(window, out Slider volumeSlider, out TMP_Text volumeValueText, out Button testSoundButton);
+        Toggle screenShakeToggle = AddToggleRow(window, "ScreenShake", "Screen shake when gems blast");
 
         // Close button, centered in its own row.
         GameObject closeRow = AddCenteredRow(window, "CloseRow", 90, 0);
@@ -373,6 +374,7 @@ public static class SettingsMenuBuilder
         SetReference(menu, "volumeSlider", volumeSlider);
         SetReference(menu, "volumeValueText", volumeValueText);
         SetReference(menu, "testSoundButton", testSoundButton);
+        SetReference(menu, "screenShakeToggle", screenShakeToggle);
 
         // Hidden until the gear is clicked.
         modal.SetActive(false);
@@ -416,6 +418,57 @@ public static class SettingsMenuBuilder
         valueText.gameObject.AddComponent<LayoutElement>().preferredWidth = 110;
 
         testButton = AddButton(row.transform, "TestSoundButton", "Test", 180, 70);
+    }
+
+    /// <summary>
+    /// Adds a row with a checkbox and a label after it, e.g. "[x] Screen shake when gems blast".
+    /// </summary>
+    private static Toggle AddToggleRow(GameObject window, string name, string label)
+    {
+        // DefaultControls.CreateToggle builds what GameObject > UI > Toggle makes: a Toggle with
+        // a Background box, a Checkmark inside it, and a Label.
+        var resources = new DefaultControls.Resources
+        {
+            standard = UISprite(),
+            checkmark = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/Checkmark.psd"),
+        };
+        GameObject go = DefaultControls.CreateToggle(resources);
+        go.name = name + "Toggle";
+        go.transform.SetParent(window.transform, false);
+        foreach (Transform part in go.GetComponentsInChildren<Transform>(true))
+        {
+            part.gameObject.layer = LayerMask.NameToLayer("UI");
+        }
+        PreferredHeight(go, 60);
+
+        // The default toggle is tiny (20 pixels) with legacy text. Make the box match the menu's
+        // scale, and swap the label for TextMeshPro like every other label here.
+        var background = (RectTransform)go.transform.Find("Background");
+        background.anchorMin = new Vector2(0f, 0.5f);
+        background.anchorMax = new Vector2(0f, 0.5f);
+        background.pivot = new Vector2(0f, 0.5f);
+        background.anchoredPosition = Vector2.zero;
+        background.sizeDelta = new Vector2(48, 48);
+        background.GetComponent<Image>().color = ButtonColor;
+        var checkmark = (RectTransform)background.Find("Checkmark");
+        Stretch(checkmark, 6);
+        checkmark.GetComponent<Image>().color = HighlightColor;
+
+        Object.DestroyImmediate(go.transform.Find("Label").gameObject);
+        TMP_Text text = AddText(go, "Label", label, 34);
+        text.alignment = TextAlignmentOptions.Left;
+        // AddText turns raycasts off; on here, so a click on the words reaches the Toggle (its
+        // parent) and ticks the box too.
+        text.raycastTarget = true;
+        RectTransform textRect = Rect(text.gameObject);
+        textRect.anchorMin = new Vector2(0f, 0f);
+        textRect.anchorMax = new Vector2(1f, 1f);
+        textRect.offsetMin = new Vector2(68, 0);
+        textRect.offsetMax = Vector2.zero;
+
+        var toggle = go.GetComponent<Toggle>();
+        toggle.isOn = true;
+        return toggle;
     }
 
     /// <summary>

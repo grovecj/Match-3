@@ -25,6 +25,16 @@ namespace Match3
         }
 
         /// <summary>
+        /// Starts slow and speeds up into the end: the mirror image of <see cref="OutCubic"/>.
+        /// Good for something being pulled in, like matched gems sucked into a new power gem.
+        /// </summary>
+        public static float InCubic(float t)
+        {
+            t = Mathf.Clamp01(t);
+            return t * t * t;
+        }
+
+        /// <summary>
         /// Like <see cref="OutCubic"/>, but goes a little past the end and settles back, like a
         /// spring. Values briefly go above 1 in the second half.
         /// </summary>

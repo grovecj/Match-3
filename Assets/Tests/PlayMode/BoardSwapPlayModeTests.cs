@@ -107,6 +107,11 @@ namespace Match3.Tests
         private GameObject explosionTemplates;
         private GameObject boardObject;
         private Board board;
+        // Draws the power gems' beams and bolts, as in the game. No particle prefabs: the
+        // tests only look at the beams and bolts, which are built in code.
+        private GameObject effectsObject;
+        // Every PowerGemBlastStarted, in order.
+        private List<PowerGemBlast> blasts;
 
         // Every run length reported through Board.MatchCleared, in order.
         private List<int> clearedRuns;
@@ -173,6 +178,11 @@ namespace Match3.Tests
                 springBackDuration: 0.25f);
             boardObject.SetActive(true);
 
+            effectsObject = new GameObject("Power Gem Effects");
+            effectsObject.SetActive(false);
+            effectsObject.AddComponent<PowerGemEffects>().ConfigureForTests(board, null, null, null, null);
+            effectsObject.SetActive(true);
+
             // Start runs just before the object's first frame; wait for it to deal its
             // (random) board, then swap in the known layout.
             yield return null;
@@ -203,6 +213,8 @@ namespace Match3.Tests
             board.NoMovesLeft += () => noMovesCount++;
             reshufflingWhenAnnounced = new List<bool>();
             board.NoMovesLeft += () => reshufflingWhenAnnounced.Add(board.IsReshuffling);
+            blasts = new List<PowerGemBlast>();
+            board.PowerGemBlastStarted += blasts.Add;
         }
 
         // Runs after every test, even a failing one. In Play Mode, Destroy is the normal way to
@@ -212,6 +224,7 @@ namespace Match3.Tests
         {
             // A test that pauses might fail before unpausing, and timeScale outlives the test.
             Time.timeScale = 1f;
+            Object.Destroy(effectsObject);
             Object.Destroy(boardObject);
             Object.Destroy(explosionTemplates);
             Object.Destroy(tokenTemplate);
@@ -751,6 +764,20 @@ namespace Match3.Tests
             Assert.AreEqual(1, stepsWhenDetonated, "The blast belongs to the swap's own step, after the match was reported.");
             Assert.AreEqual(1, runsWhenDetonated, "Blasted gems aren't runs: only the run of 3 should have been reported.");
             Assert.AreEqual(1, beamsWhenDetonated, "The Star should fire one beam as it goes off.");
+
+            // The blast the effects drew from: one per detonation, describing the Star, with a
+            // delay for every cell it hit, and those delays are the beam's travel times.
+            Assert.That(blasts, Is.Not.Empty, "PowerGemBlastStarted never fired.");
+            PowerGemBlast starBlast = blasts[0];
+            Assert.AreEqual(PowerKind.Star, starBlast.Kind);
+            Assert.AreEqual(starCell, starBlast.Cell);
+            Assert.AreEqual(0, starBlast.WaveIndex);
+            Assert.AreEqual(starBlast.Blasted.Count, starBlast.Delays.Count, "One delay per blasted cell.");
+            for (int i = 0; i < starBlast.Blasted.Count; i++)
+            {
+                Assert.AreEqual(Board.BlastDelay(PowerKind.Star, starCell, starBlast.Blasted[i], board.BeamSpeed),
+                    starBlast.Delays[i], 0.0001f);
+            }
             Assert.IsNull(problem, "The beam should clear exactly the Star's row and column, before anything falls.");
 
             // Row 0 has 5 cells and column 0 has 4 more; 3 of those 9 were the match itself.
@@ -893,6 +920,11 @@ namespace Match3.Tests
             Assert.AreEqual(0, stepsWhenDetonated, "The cube's own step isn't a match, so no clear step is reported for it.");
             Assert.AreEqual(0, runsWhenDetonated, "Zapped gems aren't runs: nothing should have been reported as one.");
             Assert.AreEqual(6, zapsWhenDetonated, "The cube should fire one bolt at each B.");
+            Assert.That(blasts, Is.Not.Empty, "PowerGemBlastStarted never fired.");
+            Assert.AreEqual(PowerKind.Hypercube, blasts[0].Kind);
+            Assert.AreEqual(colour, blasts[0].Colour, "A Hypercube's blast is drawn in the colour it destroys.");
+            Assert.AreEqual(6, blasts[0].Blasted.Count);
+            Assert.AreEqual(6, blasts[0].Delays.Count, "One delay per zapped gem.");
             Assert.IsNull(problem, "The cube should clear itself and exactly the B's, before anything falls.");
 
             // Whatever the refill lined up afterwards is a cascade, never "the swap's own match".
@@ -910,13 +942,17 @@ namespace Match3.Tests
             AssertNoMatchesLeft();
             yield return WaitUntilNoBursts();
 
-            // The bolts clean up after themselves, like the bursts and the Star's beam do.
+            // The bolts put themselves away when they've faded. (Zaps only finds the ones that
+            // are switched on: GetComponentsInChildren skips inactive GameObjects.)
             bool timedOut = false;
             yield return new WaitUntil(
                 () => Zaps().Length == 0,
                 System.TimeSpan.FromSeconds(ResolveTimeoutSeconds),
                 () => timedOut = true);
             Assert.IsFalse(timedOut, $"{Zaps().Length} bolts were still around after {ResolveTimeoutSeconds} seconds.");
+            // They aren't destroyed: all six wait in the pool for the next Hypercube.
+            Assert.That(effectsObject.GetComponent<PowerGemEffects>().PooledZapCountForTests, Is.GreaterThanOrEqualTo(6),
+                "The finished bolts should have gone back to their pool.");
         }
 
         [UnityTest, Timeout(TestTimeoutMs)]
@@ -1635,16 +1671,16 @@ namespace Match3.Tests
             return boardObject.GetComponentsInChildren<Explosion>();
         }
 
-        /// <summary>Every Star beam under the board right now.</summary>
+        /// <summary>Every Star beam the effects are showing right now.</summary>
         private StarBeam[] Beams()
         {
-            return boardObject.GetComponentsInChildren<StarBeam>();
+            return effectsObject.GetComponentsInChildren<StarBeam>();
         }
 
-        /// <summary>Every Hypercube bolt under the board right now.</summary>
+        /// <summary>Every Hypercube bolt the effects are showing right now.</summary>
         private HypercubeZap[] Zaps()
         {
-            return boardObject.GetComponentsInChildren<HypercubeZap>();
+            return effectsObject.GetComponentsInChildren<HypercubeZap>();
         }
 
         /// <summary>Waits until every burst has destroyed itself, failing the test if some never do.</summary>
