@@ -107,6 +107,14 @@ namespace Match3.Tests
             return set;
         }
 
+        /// <summary>Puts <paramref name="clip"/> in one of <paramref name="set"/>'s slots, named by its field (e.g. "match4").</summary>
+        private static void SetClip(SoundSet set, string slot, AudioClip clip)
+        {
+            var serialized = new SerializedObject(set);
+            serialized.FindProperty(slot).objectReferenceValue = clip;
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+        }
+
         /// <summary>
         /// Makes an AudioManager with <paramref name="set"/> selected in the "Inspector" and
         /// <paramref name="available"/> as the sets to choose from, and runs its Awake (where it
@@ -211,13 +219,29 @@ namespace Match3.Tests
         }
 
         [Test]
-        public void Preview_DoesNotSwitchSets()
+        public void Preview_PlaysFromTheGivenSetWithoutSwitching()
         {
+            // Chimes (the current set) only has a Match3 clip and Arcade only a Match4 clip, so
+            // which set a sound came from decides whether anything plays at all.
             SoundSet chimes = CreateSetWithId("chimes");
+            SetClip(chimes, "match3", CreateClip("chime"));
             SoundSet arcade = CreateSetWithId("arcade");
+            SetClip(arcade, "match4", CreateClip("blip"));
             AudioManager manager = CreateManager(chimes, chimes, arcade);
+            AudioSource effects = manager.GetComponents<AudioSource>()[0];
 
+            // An AudioSource can't be asked which one-shots it's playing, but playing a sound
+            // sets the source's pitch first, so a changed pitch shows that a sound reached it.
+            manager.Play(SoundId.Match3, pitch: 1.4f);
+            Assert.AreEqual(1.4f, effects.pitch, 0.0001f);
+
+            // Chimes has no Match4 clip: previewing it plays nothing and leaves the pitch alone.
+            manager.Preview(chimes, SoundId.Match4);
+            Assert.AreEqual(1.4f, effects.pitch, 0.0001f);
+
+            // Arcade has one, so this plays (at normal pitch) even though Chimes is current.
             manager.Preview(arcade, SoundId.Match4);
+            Assert.AreEqual(1f, effects.pitch, 0.0001f);
 
             Assert.AreSame(chimes, manager.SoundSet);
             Assert.IsFalse(PlayerPrefs.HasKey(AudioManager.SoundSetKey));
