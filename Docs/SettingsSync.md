@@ -1,6 +1,6 @@
 # Settings sync
 
-A signed-in player's settings (token style, board theme, sound volume) follow their account,
+A signed-in player's settings (token style, board theme, sound volume, screen shake) follow their account,
 so choosing a theme in the web build and then signing in on Windows shows the same theme
 there. Signed out, nothing changes: settings live in PlayerPrefs, as before.
 
@@ -9,7 +9,8 @@ The copy on the account is kept by the leaderboard server
 
 ## The rules
 
-PlayerPrefs (`Settings.TokenStyle`, `Settings.BoardTheme`, `Settings.SoundVolume`) is still
+PlayerPrefs (`Settings.TokenStyle`, `Settings.BoardTheme`, `Settings.SoundVolume`,
+`Settings.ScreenShake`) is still
 where the game reads its settings from. `PreferencesSync` only copies between PlayerPrefs and
 the server:
 
@@ -31,12 +32,15 @@ account's settings when it signs in or starts, not while it's open.
 ## What's sent
 
 ```json
-{ "data": { "tokenStyle": "gems", "boardTheme": "ocean", "soundVolume": 0.8 }, "version": 3 }
+{ "data": { "tokenStyle": "gems", "boardTheme": "ocean", "soundVolume": 0.8, "screenShake": true }, "version": 3 }
 ```
 
 Styles and themes are named by their asset's `Id`, the same strings PlayerPrefs holds. A
 setting that's missing, or an id this build doesn't have (saved by a newer version of the
-game, say), is skipped, and that setting stays as it is on this device.
+game, say), is skipped, and that setting stays as it is on this device. The server stores
+`data` as it gets it, so adding a setting (as `screenShake` was, for issue #86) needs no
+server change: an account saved before then just has no `screenShake`, which reads as
+"nothing saved" (shaking stays as it is), not as "off".
 
 ### Versions
 

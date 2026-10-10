@@ -22,3 +22,7 @@ MonoBehaviour:
   swap: {fileID: 8300000, guid: 45c3b607a78741b2b9e81b33e8898db4, type: 3}
   invalidSwap: {fileID: 8300000, guid: 6b1fb1cefc6c48d78238d32319de2b49, type: 3}
   achievementUnlocked: {fileID: 8300000, guid: 2d79bbd65e7f4b7d86aba8d8532e42f4, type: 3}
+  powerGemCreated: {fileID: 8300000, guid: 89f5f6592a8e4a30b63858a3026680ea, type: 3}
+  flameDetonate: {fileID: 8300000, guid: f885acac54084f2eb4e26247009046b1, type: 3}
+  starDetonate: {fileID: 8300000, guid: 07a28cdbc8c244d5bed4da32af38bc15, type: 3}
+  hypercubeActivate: {fileID: 8300000, guid: bec9a863ca264c67b47b9d3e4eaf2c5c, type: 3}

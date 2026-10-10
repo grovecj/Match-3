@@ -3,35 +3,47 @@ using UnityEngine;
 namespace Match3
 {
     /// <summary>
-    /// One bolt from a Hypercube to a gem it's destroying: a bar of light between the two that
-    /// appears all at once and then fades. The <see cref="Board"/> makes one per target gem and
-    /// gives each a later <c>delay</c> than the one before, so the gems are picked off one after
-    /// another instead of all vanishing together. Like <see cref="StarBeam"/>, it runs itself
-    /// and destroys its own GameObject when done.
+    /// One bolt from a Hypercube to a gem it's destroying: a jagged arc of light between the
+    /// two that crackles (its kinks jump about a few times while it's lit) and then fades.
+    /// <see cref="PowerGemEffects"/> makes one per target gem and gives each the delay the
+    /// <see cref="Board"/> pops that gem at (<see cref="Board.ZapDelay"/>), so the gems are
+    /// picked off one after another, each the moment its bolt lands. Like
+    /// <see cref="StarBeam"/>, it runs itself and destroys its own GameObject when done.
     ///
     /// It only draws. Which gems go is the model's business
-    /// (<see cref="BoardModel.ActivateHypercube"/>), and the Board pops each one at the same
-    /// delay its bolt is given here (<see cref="Board.ZapDelay"/>). That shared delay is what
-    /// keeps the bolts and the pops in step.
-    ///
-    /// A placeholder, like the other blasts: proper effects are a later issue.
+    /// (<see cref="BoardModel.ActivateHypercube"/>).
     /// </summary>
-    // RequireComponent adds the SpriteRenderer along with this script, so AddComponent on a
-    // bare GameObject gives a bolt that's ready to draw.
-    [RequireComponent(typeof(SpriteRenderer))]
     public class HypercubeZap : MonoBehaviour
     {
         /// <summary>How thick the bolt is, in cells. Thinner than a Star's beam: there can be a dozen at once.</summary>
-        public const float Thickness = 0.14f;
+        public const float Thickness = 0.12f;
 
         /// <summary>How long, in seconds, a bolt takes to fade out after it appears.</summary>
-        public const float FadeDuration = 0.18f;
+        public const float FadeDuration = 0.22f;
 
-        private SpriteRenderer spriteRenderer;
+        /// <summary>How many straight pieces the bolt is drawn with. More pieces, more kinks.</summary>
+        public const int SegmentCount = 6;
+
+        /// <summary>How far, at most, a kink sits off the straight line, in cells.</summary>
+        public const float Jitter = 0.22f;
+
+        // How often, in seconds, the kinks move. A few changes during the fade make it flicker
+        // like electricity; changing every frame would just look like noise.
+        private const float FlickerInterval = 0.05f;
+
+        // The bolt is drawn as a chain of short bars, each the same 1-by-1 bar the Star's beam
+        // is made of, stretched from one kink to the next.
+        private readonly Transform[] segments = new Transform[SegmentCount];
+        private readonly SpriteRenderer[] segmentRenderers = new SpriteRenderer[SegmentCount];
+        private Vector3 from;
+        private Vector3 to;
+        private float cellSize = 1f;
         private Color color = Color.white;
         // How long to stay invisible before appearing.
         private float delay;
         private float elapsed;
+        private float nextFlicker;
+        private System.Random random;
 
         /// <summary>
         /// Sets up a bolt from <paramref name="from"/> (the Hypercube) to <paramref name="to"/>
@@ -42,34 +54,68 @@ namespace Match3
         /// <param name="cellSize">The size of a board cell, in world units.</param>
         /// <param name="drawLike">A renderer to copy the material and sorting layer from, so the bolt is drawn the way tokens are.</param>
         /// <param name="sortingOrder">Where in that layer to draw. Higher is further forward.</param>
+        /// <param name="seed">Picks the bolt's kinks. Bolts with different seeds take different paths.</param>
         public void Play(Vector3 from, Vector3 to, Color color, float delay, float cellSize,
-            SpriteRenderer drawLike, int sortingOrder)
+            SpriteRenderer drawLike, int sortingOrder, int seed)
         {
+            this.from = from;
+            this.to = to;
             this.color = color;
             this.delay = delay;
+            this.cellSize = cellSize;
             elapsed = 0f;
+            nextFlicker = delay;
+            random = new System.Random(seed);
 
-            spriteRenderer = GetComponent<SpriteRenderer>();
-            // The same bar the Star's beam is made of: 1 unit long and 1 unit thick, with its
-            // pivot at one end. So putting it on the cube, turning it to face the gem and
-            // stretching it to the gem's distance draws a line between the two.
-            spriteRenderer.sprite = StarBeam.BeamSprite;
-            if (drawLike != null)
+            for (int i = 0; i < SegmentCount; i++)
             {
-                spriteRenderer.sharedMaterial = drawLike.sharedMaterial;
-                spriteRenderer.sortingLayerID = drawLike.sortingLayerID;
+                if (segments[i] == null)
+                {
+                    var segmentObject = new GameObject($"Segment {i}");
+                    segments[i] = segmentObject.transform;
+                    segments[i].SetParent(transform, false);
+                    segmentRenderers[i] = segmentObject.AddComponent<SpriteRenderer>();
+                    segmentRenderers[i].sprite = StarBeam.BeamSprite;
+                }
+                if (drawLike != null)
+                {
+                    segmentRenderers[i].sharedMaterial = drawLike.sharedMaterial;
+                    segmentRenderers[i].sortingLayerID = drawLike.sortingLayerID;
+                }
+                segmentRenderers[i].sortingOrder = sortingOrder;
             }
-            spriteRenderer.sortingOrder = sortingOrder;
 
-            Vector3 toTarget = to - from;
-            transform.position = from;
-            // Atan2 turns "this far across, this far up" into the angle of that direction.
-            // It answers in radians; Rad2Deg converts to the degrees that Euler angles want.
-            float angle = Mathf.Atan2(toTarget.y, toTarget.x) * Mathf.Rad2Deg;
-            transform.rotation = Quaternion.Euler(0f, 0f, angle);
-            transform.localScale = new Vector3(toTarget.magnitude, Thickness * cellSize, 1f);
-
+            Reshape();
             Redraw();
+        }
+
+        /// <summary>
+        /// The points a bolt from <paramref name="from"/> to <paramref name="to"/> passes
+        /// through: <paramref name="segmentCount"/> + 1 of them, the first and last exactly on
+        /// the two ends, the ones between spaced evenly along the line and pushed sideways by up
+        /// to <paramref name="jitter"/> (in world units), each by its own random amount.
+        /// </summary>
+        // `public static` so the Edit Mode tests can check it without a scene.
+        public static Vector3[] JaggedPoints(Vector3 from, Vector3 to, int segmentCount, float jitter, System.Random random)
+        {
+            var points = new Vector3[segmentCount + 1];
+            Vector3 along = to - from;
+            // "Sideways" is the line turned a quarter turn: (x, y) becomes (-y, x). Normalized
+            // makes it 1 unit long, so jitter is a distance.
+            Vector3 sideways = new Vector3(-along.y, along.x, 0f).normalized;
+            for (int i = 0; i <= segmentCount; i++)
+            {
+                float t = (float)i / segmentCount;
+                points[i] = from + along * t;
+                bool isEnd = i == 0 || i == segmentCount;
+                if (!isEnd)
+                {
+                    // NextDouble is between 0 and 1, so this is between -jitter and +jitter.
+                    float offset = (float)(random.NextDouble() * 2.0 - 1.0) * jitter;
+                    points[i] += sideways * offset;
+                }
+            }
+            return points;
         }
 
         /// <summary>
@@ -77,7 +123,6 @@ namespace Match3
         /// it was told to wait <paramref name="delay"/>: invisible until its turn comes, fully
         /// lit at that moment, then fading to nothing over <see cref="FadeDuration"/>.
         /// </summary>
-        // `public static` so the Edit Mode tests can check it without a scene.
         public static float Opacity(float elapsed, float delay)
         {
             if (elapsed < delay)
@@ -91,6 +136,11 @@ namespace Match3
         {
             // Time.deltaTime is scaled time, so the bolt freezes while the game is paused.
             elapsed += Time.deltaTime;
+            if (elapsed >= nextFlicker)
+            {
+                Reshape();
+                nextFlicker += FlickerInterval;
+            }
             Redraw();
 
             if (elapsed >= delay + FadeDuration)
@@ -99,16 +149,35 @@ namespace Match3
             }
         }
 
+        /// <summary>Picks new kinks and lays the segments along them.</summary>
+        private void Reshape()
+        {
+            Vector3[] points = JaggedPoints(from, to, SegmentCount, Jitter * cellSize, random);
+            for (int i = 0; i < SegmentCount; i++)
+            {
+                Vector3 start = points[i];
+                Vector3 step = points[i + 1] - start;
+                segments[i].position = start;
+                // Atan2 turns "this far across, this far up" into the angle of that direction.
+                // It answers in radians; Rad2Deg converts to the degrees that Euler angles want.
+                float angle = Mathf.Atan2(step.y, step.x) * Mathf.Rad2Deg;
+                segments[i].rotation = Quaternion.Euler(0f, 0f, angle);
+                // The bar is 1 unit long with its pivot at one end, so its x scale is its length.
+                segments[i].localScale = new Vector3(step.magnitude, Thickness * cellSize, 1f);
+            }
+        }
+
         private void Redraw()
         {
-            // Play hasn't run yet: there's nothing to draw with.
-            if (spriteRenderer == null)
-            {
-                return;
-            }
             Color faded = color;
             faded.a *= Opacity(elapsed, delay);
-            spriteRenderer.color = faded;
+            foreach (SpriteRenderer segment in segmentRenderers)
+            {
+                if (segment != null)
+                {
+                    segment.color = faded;
+                }
+            }
         }
     }
 }

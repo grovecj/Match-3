@@ -5,15 +5,14 @@ namespace Match3
     /// <summary>
     /// The beam a Star gem fires when it goes off: four bars of light that grow outward from
     /// the gem's cell (left, right, down and up) until they reach the edges of the board, then
-    /// fade away. The <see cref="Board"/> makes one per detonating Star and calls
+    /// fade away. <see cref="PowerGemEffects"/> makes one per detonating Star and calls
     /// <see cref="Play"/>; the beam then runs itself and destroys its own GameObject when done.
     ///
     /// It only draws. Which tokens the beam removes is the model's business
     /// (<see cref="BoardModel.StarBlastCells"/>), and the Board pops each of them as the beam
     /// gets to it (<see cref="Board.BlastDelay"/>), using the same speed as the beam is given
-    /// here. That shared speed is what keeps the picture and the pops in step.
-    ///
-    /// A placeholder, like the Flame's blast: proper effects are a later issue.
+    /// here (<see cref="Board.BeamSpeed"/>). That shared speed is what keeps the picture and
+    /// the pops in step.
     /// </summary>
     public class StarBeam : MonoBehaviour
     {

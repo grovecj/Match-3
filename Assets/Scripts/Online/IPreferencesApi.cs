@@ -62,6 +62,16 @@ namespace Match3.Online
 
         public bool HasSoundVolume => soundVolume >= 0f;
 
+        /// <summary>Whether the screen shakes when power gems go off (see <see cref="ScreenShakeSetting"/>).</summary>
+        public bool screenShake = true;
+
+        /// <summary>
+        /// False when a reply from the server had no <see cref="screenShake"/> (saved by a
+        /// version of the game from before the setting existed), so there's nothing to apply.
+        /// </summary>
+        // [NonSerialized] keeps it out of the JSON: it's about this copy, not a setting.
+        [NonSerialized] public bool hasScreenShake = true;
+
         /// <summary>True if <paramref name="other"/> holds the same settings.</summary>
         public bool Matches(PreferenceValues other)
         {
@@ -70,7 +80,8 @@ namespace Match3.Online
             return other != null
                 && tokenStyle == other.tokenStyle
                 && boardTheme == other.boardTheme
-                && Math.Abs(soundVolume - other.soundVolume) < 0.001f;
+                && Math.Abs(soundVolume - other.soundVolume) < 0.001f
+                && screenShake == other.screenShake;
         }
     }
 }

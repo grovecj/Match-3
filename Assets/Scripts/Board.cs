@@ -54,6 +54,8 @@ namespace Match3
         [SerializeField, Min(0f)] private float popDuration = 0.12f;
         [Tooltip("Particle burst spawned on every cleared cell. Optional: without one, tokens just pop.")]
         [SerializeField] private Explosion explosionPrefab;
+        [Tooltip("How long, in seconds, the gems of a match that makes a power gem take to slide into its cell before they pop. 0 skips the slide.")]
+        [SerializeField, Min(0f)] private float collapseDuration = 0.12f;
         [Tooltip("How fast a Star's beam travels along its row and column, in cells per second. Each token in its path pops as the beam reaches it.")]
         [SerializeField, Min(0.1f)] private float beamSpeed = 16f;
         [Tooltip("Pause, in seconds, between a Hypercube zapping one gem and the next. With a dozen gems of a colour on the board, the whole sweep takes a dozen times this.")]
@@ -74,17 +76,11 @@ namespace Match3
         // shrinking takes the rest, so it reads as a "pop" rather than a slow pulse.
         private const float PopPeakTime = 0.3f;
 
-        // A Flame's blast is drawn as one ordinary burst, made three cells wide so it covers the
-        // 3x3 it clears, and sized like a run of 5 so it gets the most shards and the white
-        // flash. A placeholder: proper blast effects and sounds are a later issue.
-        private const float BlastBurstScale = 3f;
-        private const int BlastBurstRunLength = 5;
-
-        // A Star's beam (and a Hypercube's bolts) are drawn this far in front of the tokens:
-        // above a picked-up token and its overlay, so nothing on the board covers them.
-        private const int BeamOrderOffset = 10;
-        // How much white is mixed into the gem's colour for its beam (0 = none, 1 = all white).
-        private const float BeamWhiteness = 0.6f;
+        // While a match's gems slide into a new power gem, they (and the gem's own token) shrink
+        // to this size, relative to normal. The gem then springs back up to full size over
+        // GemRevealDuration, which is the moment it "appears".
+        private const float CollapseEndScale = 0.55f;
+        private const float GemRevealDuration = 0.18f;
 
         /// <summary>
         /// Fired once for every run of matching tokens that gets cleared, with the run's length
@@ -143,6 +139,16 @@ namespace Match3
         /// </summary>
         // Action<PowerKind, Vector2Int, int>: a method taking those three things, in that order.
         public event System.Action<PowerKind, Vector2Int, int> PowerGemDetonated;
+
+        /// <summary>
+        /// Fired just before each <see cref="PowerGemDetonated"/>, with the whole blast described
+        /// (see <see cref="PowerGemBlast"/>): the cells it hits and when it hits each one. This is
+        /// what blast effects draw from. The Board itself draws nothing for a blast: it only pops
+        /// the tokens, at the delays it hands out here.
+        /// </summary>
+        // A second event rather than more arguments on PowerGemDetonated: most listeners (stats,
+        // sound) only care which gem went off, and stay as simple as they were.
+        public event System.Action<PowerGemBlast> PowerGemBlastStarted;
 
         /// <summary>
         /// Fired when the player's swap starts animating, whether or not it will make a match.
@@ -204,6 +210,21 @@ namespace Match3
         public int Width => width;
         public int Height => height;
         public float CellSize => cellSize;
+
+        /// <summary>How fast a Star's beam travels, in cells per second (see <see cref="BlastDelay"/>).</summary>
+        public float BeamSpeed => beamSpeed;
+
+        /// <summary>
+        /// How long, in seconds, after <see cref="PowerGemCreated"/> the new gem appears: the
+        /// matched gems slide into its cell first. 0 if they don't.
+        /// </summary>
+        public float CollapseDuration => collapseDuration;
+
+        /// <summary>
+        /// The renderer of the token prefab, i.e. how tokens are drawn (material, sorting layer
+        /// and order). Effects copy it so they're drawn the same way, just in front.
+        /// </summary>
+        public SpriteRenderer TokenRenderer => tokenPrefab != null ? tokenPrefab.GetComponent<SpriteRenderer>() : null;
 
         /// <summary>World-space size of the whole board.</summary>
         public Vector2 WorldSize => new Vector2(width * cellSize, height * cellSize);
@@ -412,6 +433,17 @@ namespace Match3
 
         /// <summary>The token style currently selected, or null if there's no ThemeManager.</summary>
         private TokenStyle CurrentTokenStyle => themeManager != null ? themeManager.TokenStyle : null;
+
+        /// <summary>
+        /// The colour effects should use for gems of <paramref name="type"/> in the current token
+        /// style (the same one their clear bursts use). White if there's no style, or no type
+        /// (a Hypercube has none).
+        /// </summary>
+        public Color GemColorFor(TokenType type)
+        {
+            TokenStyle style = CurrentTokenStyle;
+            return style != null && type != null ? style.BurstColorFor(type) : Color.white;
+        }
 
         /// <summary>
         /// Logs an error if the current token style is missing a sprite for any type this board
@@ -855,8 +887,11 @@ namespace Match3
                 // has already emptied their cells.
                 BoardModel.ClearResult result = model.ClearMatches(groups);
 
-                // Phase 1: the matched tokens pop, and any new power gems appear.
+                // Phase 1: the matched tokens pop, and any new power gems appear. A match that
+                // makes a power gem first slides its gems into the gem's cell, so the player sees
+                // where the new gem came from.
                 List<Token> matched = RemoveMatched(groups, result, cascadeIndex);
+                yield return StartCoroutine(CollapseIntoNewGems(matched, result, groups));
                 yield return StartCoroutine(PopAndPause(matched));
 
                 // Phase 2: matched power gems go off, and then any power gems they caught, wave
@@ -1065,6 +1100,132 @@ namespace Match3
         }
 
         /// <summary>
+        /// The "creation moment": every matched gem of a match that made a power gem slides into
+        /// the new gem's cell, shrinking as it goes, while the gem's own token shrinks too. Then
+        /// the gem springs back up to full size (in the background, while the matched gems pop
+        /// where they ended up). Does nothing if this step made no power gem, or if
+        /// <see cref="collapseDuration"/> is 0.
+        /// </summary>
+        /// <param name="matched">The tokens <see cref="RemoveMatched"/> took off, in the same order as <c>result.Matched</c>.</param>
+        // Only the picture moves here. The model, the view array and every event already say
+        // the gem exists (RemoveMatched did all that), so nothing waiting on them is held up.
+        private IEnumerator CollapseIntoNewGems(List<Token> matched, BoardModel.ClearResult result, List<MatchGroup> groups)
+        {
+            if (collapseDuration <= 0f || result.Created.Count == 0)
+            {
+                yield break;
+            }
+
+            var newGemCells = new List<Vector2Int>();
+            foreach (BoardModel.Creation creation in result.Created)
+            {
+                newGemCells.Add(creation.Cell);
+            }
+            Dictionary<Vector2Int, Vector2Int> targets = CollapseTargets(groups, newGemCells);
+
+            // Who moves, and from where to where. Gems from a match that made no power gem
+            // aren't in `targets`, and just pop where they are afterwards.
+            var movers = new List<Transform>();
+            var starts = new List<Vector3>();
+            var ends = new List<Vector3>();
+            for (int i = 0; i < matched.Count; i++)
+            {
+                if (targets.TryGetValue(result.Matched[i], out Vector2Int gemCell))
+                {
+                    movers.Add(matched[i].transform);
+                    starts.Add(matched[i].transform.position);
+                    ends.Add(GridToWorld(gemCell.x, gemCell.y));
+                }
+            }
+            var newGems = new List<Transform>();
+            foreach (Vector2Int cell in newGemCells)
+            {
+                newGems.Add(tokens[cell.x, cell.y].transform);
+            }
+
+            // InCubic starts slow and speeds up, so the gems look pulled in rather than pushed.
+            for (float elapsed = 0f; elapsed < collapseDuration; elapsed += Time.deltaTime)
+            {
+                float t = Easing.InCubic(elapsed / collapseDuration);
+                Vector3 size = Vector3.one * (cellSize * Mathf.Lerp(1f, CollapseEndScale, t));
+                for (int i = 0; i < movers.Count; i++)
+                {
+                    movers[i].position = Vector3.Lerp(starts[i], ends[i], t);
+                    movers[i].localScale = size;
+                }
+                foreach (Transform gem in newGems)
+                {
+                    gem.localScale = size;
+                }
+                yield return null;
+            }
+            for (int i = 0; i < movers.Count; i++)
+            {
+                movers[i].position = ends[i];
+            }
+
+            // Not waited for: the new gem grows back while the gems that fed it pop.
+            StartCoroutine(RevealNewGems(newGems));
+        }
+
+        /// <summary>
+        /// Springs the new power gems from <see cref="CollapseEndScale"/> back to full size,
+        /// overshooting a little (<see cref="Easing.OutBack"/>) so they land with a bounce.
+        /// </summary>
+        private IEnumerator RevealNewGems(List<Transform> newGems)
+        {
+            for (float elapsed = 0f; elapsed < GemRevealDuration; elapsed += Time.deltaTime)
+            {
+                float size = Mathf.LerpUnclamped(CollapseEndScale, 1f, Easing.OutBack(elapsed / GemRevealDuration));
+                foreach (Transform gem in newGems)
+                {
+                    // A gem can be blasted (and destroyed) while it's still growing.
+                    if (gem != null)
+                    {
+                        gem.localScale = Vector3.one * (cellSize * size);
+                    }
+                }
+                yield return null;
+            }
+            foreach (Transform gem in newGems)
+            {
+                if (gem != null)
+                {
+                    gem.localScale = Vector3.one * cellSize;
+                }
+            }
+        }
+
+        /// <summary>
+        /// For a clear step that made power gems in <paramref name="newGemCells"/>: which cell
+        /// each matched gem should slide into. Every cell of a match whose anchor is one of
+        /// those cells maps to that anchor (the anchor itself excepted: it's the new gem). Cells
+        /// of a match that made no gem aren't in the result.
+        /// </summary>
+        // `public static` so the Edit Mode tests can check it without a scene.
+        public static Dictionary<Vector2Int, Vector2Int> CollapseTargets(IReadOnlyList<MatchGroup> groups,
+            IReadOnlyList<Vector2Int> newGemCells)
+        {
+            var newGems = new HashSet<Vector2Int>(newGemCells);
+            var targets = new Dictionary<Vector2Int, Vector2Int>();
+            foreach (MatchGroup group in groups)
+            {
+                if (!newGems.Contains(group.Anchor))
+                {
+                    continue;
+                }
+                foreach (Vector2Int cell in group.Cells)
+                {
+                    if (cell != group.Anchor)
+                    {
+                        targets[cell] = group.Anchor;
+                    }
+                }
+            }
+            return targets;
+        }
+
+        /// <summary>
         /// Phase 2 of a clear step: plays a chain reaction, one wave of <paramref name="waves"/>
         /// after another. Each wave's blasts are shown and its tokens popped before the next
         /// wave starts, with <see cref="chainDelay"/> between them, so the player can follow
@@ -1129,11 +1290,11 @@ namespace Match3
         }
 
         /// <summary>
-        /// One wave of a chain reaction: for each power gem in <paramref name="wave"/>, shows
-        /// its blast (one big burst for a Flame, a beam along the row and column for a Star, a
-        /// bolt to every gem of the colour for a Hypercube), takes the tokens the blast cleared
-        /// off the board, and reports it through <see cref="PowerGemDetonated"/>. Returns the
-        /// removed tokens, as <see cref="RemoveMatched"/> does.
+        /// One wave of a chain reaction: for each power gem in <paramref name="wave"/>, works
+        /// out when its blast reaches each cell, takes the tokens the blast cleared off the
+        /// board, and reports it through <see cref="PowerGemBlastStarted"/> (for the effects)
+        /// and <see cref="PowerGemDetonated"/>. Returns the removed tokens, as
+        /// <see cref="RemoveMatched"/> does.
         /// </summary>
         /// <param name="gemsOnBoard">
         /// Whether the gems going off still have their own tokens on the board. If so those are
@@ -1159,7 +1320,6 @@ namespace Match3
             var removed = new List<Token>();
             popDelays = new List<float>();
             latestCatch = 0f;
-            SpriteRenderer tokenRenderer = tokenPrefab.GetComponent<SpriteRenderer>();
             foreach (BoardModel.Detonation detonation in wave)
             {
                 bool isCube = detonation.Kind == PowerKind.Hypercube;
@@ -1167,38 +1327,17 @@ namespace Match3
                 // piece it was: that's where the blast's colour comes from. A Hypercube has no
                 // colour of its own, so it flares in the colour it's about to destroy.
                 TokenType colour = isCube ? detonation.Target : detonation.Piece.Colour;
-                Color zapColor = Color.white;
-                if (detonation.Kind == PowerKind.Star)
-                {
-                    // An ordinary-sized burst on the gem itself; the beam does the travelling.
-                    SpawnExplosion(detonation.Cell, colour, BlastBurstRunLength);
-                    SpawnBeam(detonation.Cell, colour);
-                }
-                else if (isCube)
-                {
-                    SpawnExplosion(detonation.Cell, colour, BlastBurstRunLength);
-                    TokenStyle style = CurrentTokenStyle;
-                    Color gemColor = style != null ? style.BurstColorFor(colour) : Color.white;
-                    zapColor = Color.Lerp(gemColor, Color.white, BeamWhiteness);
-                }
-                else
-                {
-                    SpawnExplosion(detonation.Cell, colour, BlastBurstRunLength, BlastBurstScale);
-                }
 
+                // One number per blasted gem: when the blast reaches it. A Hypercube zaps its
+                // gems one after another, in the order the model listed them.
+                var delays = new List<float>(detonation.Blasted.Count);
                 for (int i = 0; i < detonation.Blasted.Count; i++)
                 {
                     Vector2Int cell = detonation.Blasted[i];
-                    // One number per blasted gem: when the blast reaches it. A Hypercube zaps
-                    // its gems one after another, in the order the model listed them; its bolt
-                    // to each one is created now, already knowing when its turn is.
                     float delay = isCube
                         ? ZapDelay(i, zapInterval)
                         : BlastDelay(detonation.Kind, detonation.Cell, cell, beamSpeed);
-                    if (isCube)
-                    {
-                        SpawnZap(detonation.Cell, cell, zapColor, delay, tokenRenderer);
-                    }
+                    delays.Add(delay);
 
                     // A power gem caught in this blast doesn't pop with the rest: it stays put
                     // until the next wave, when it goes off itself.
@@ -1222,6 +1361,10 @@ namespace Match3
                     popDelays.Add(isCube ? ZapDelay(detonation.Blasted.Count, zapInterval) : 0f);
                 }
 
+                // The pictures (the Flame's burst, the Star's beam, the Hypercube's bolts) and
+                // the sounds are all drawn by listeners, from the same delays the pops use.
+                PowerGemBlastStarted?.Invoke(new PowerGemBlast(detonation.Kind, detonation.Cell, waveIndex,
+                    colour, detonation.Blasted, delays));
                 PowerGemDetonated?.Invoke(detonation.Kind, detonation.Cell, waveIndex);
             }
             return removed;
@@ -1264,53 +1407,6 @@ namespace Match3
         }
 
         /// <summary>
-        /// Makes one bolt from the Hypercube in <paramref name="cube"/> to the gem in
-        /// <paramref name="target"/>, to show itself after <paramref name="delay"/> seconds. The
-        /// bolt runs and cleans up by itself (see <see cref="HypercubeZap"/>).
-        /// </summary>
-        private void SpawnZap(Vector2Int cube, Vector2Int target, Color color, float delay, SpriteRenderer tokenRenderer)
-        {
-            // Built in code like the Star's beam, and parented to the Board to keep the
-            // Hierarchy tidy.
-            var zapObject = new GameObject("Hypercube Zap");
-            zapObject.transform.SetParent(transform, false);
-            HypercubeZap zap = zapObject.AddComponent<HypercubeZap>();
-            zap.Play(GridToWorld(cube.x, cube.y), GridToWorld(target.x, target.y), color, delay, cellSize,
-                drawLike: tokenRenderer,
-                sortingOrder: tokenRenderer.sortingOrder + BeamOrderOffset);
-        }
-
-        /// <summary>
-        /// Fires a Star's beam from <paramref name="cell"/> to the four edges of the board, in a
-        /// pale version of <paramref name="type"/>'s colour. The beam runs and cleans up by
-        /// itself (see <see cref="StarBeam"/>).
-        /// </summary>
-        private void SpawnBeam(Vector2Int cell, TokenType type)
-        {
-            // Unlike the Explosion there's no prefab: the beam is simple enough to build in
-            // code. Parented to the Board, like the bursts, to keep the Hierarchy tidy.
-            var beamObject = new GameObject("Star Beam");
-            beamObject.transform.SetParent(transform, false);
-            beamObject.transform.position = GridToWorld(cell.x, cell.y);
-            StarBeam beam = beamObject.AddComponent<StarBeam>();
-
-            TokenStyle style = CurrentTokenStyle;
-            Color gemColor = style != null ? style.BurstColorFor(type) : Color.white;
-            // The token prefab's renderer says how tokens are drawn (material, sorting layer).
-            SpriteRenderer tokenRenderer = tokenPrefab.GetComponent<SpriteRenderer>();
-
-            // Each arm starts in the middle of the gem's cell, so it has half a cell to cross
-            // before it even leaves that cell, then one whole cell for each cell beyond it.
-            beam.Play(Color.Lerp(gemColor, Color.white, BeamWhiteness), cellSize, beamSpeed,
-                reachRight: width - cell.x - 0.5f,
-                reachUp: height - cell.y - 0.5f,
-                reachLeft: cell.x + 0.5f,
-                reachDown: cell.y + 0.5f,
-                drawLike: tokenRenderer,
-                sortingOrder: tokenRenderer.sortingOrder + BeamOrderOffset);
-        }
-
-        /// <summary>
         /// Takes the token in <paramref name="cell"/> out of the view array and returns it. It
         /// stays on screen (so it can pop) but no longer belongs to any cell.
         /// </summary>
@@ -1345,11 +1441,9 @@ namespace Match3
 
         /// <summary>
         /// Spawns a burst on <paramref name="cell"/> in <paramref name="type"/>'s color, sized for
-        /// a run of <paramref name="runLength"/>. <paramref name="scale"/> is how many cells
-        /// wide the whole effect is stretched: 1 for a single cleared token.
+        /// a run of <paramref name="runLength"/>.
         /// </summary>
-        // `float scale = 1f` is an optional parameter: callers that leave it out get 1.
-        private void SpawnExplosion(Vector2Int cell, TokenType type, int runLength, float scale = 1f)
+        private void SpawnExplosion(Vector2Int cell, TokenType type, int runLength)
         {
             if (explosionPrefab == null)
             {
@@ -1361,9 +1455,8 @@ namespace Match3
             // destroys itself when it's done (see Explosion).
             Explosion explosion = Instantiate(explosionPrefab, GridToWorld(cell.x, cell.y), Quaternion.identity, transform);
             // The prefab is built for a 1-unit cell; scaling it scales the whole burst with it.
-            explosion.transform.localScale = Vector3.one * (cellSize * scale);
-            TokenStyle style = CurrentTokenStyle;
-            explosion.Play(style != null ? style.BurstColorFor(type) : Color.white, runLength);
+            explosion.transform.localScale = Vector3.one * cellSize;
+            explosion.Play(GemColorFor(type), runLength);
         }
 
         /// <summary>
@@ -1502,6 +1595,19 @@ namespace Match3
         }
 
         /// <summary>
+        /// World position of a point given in cells, where (x, y) is the center of cell (x, y)
+        /// and in-between values are in between. Handy for the middle of a group of cells.
+        /// </summary>
+        public Vector3 GridToWorld(Vector2 cell)
+        {
+            Vector2 bottomLeft = (Vector2)transform.position - WorldSize / 2f;
+            return new Vector3(
+                bottomLeft.x + (cell.x + 0.5f) * cellSize,
+                bottomLeft.y + (cell.y + 0.5f) * cellSize,
+                transform.position.z);
+        }
+
+        /// <summary>
         /// Converts a world position to the grid cell containing it.
         /// Returns false if the position is outside the board.
         /// </summary>
@@ -1534,7 +1640,7 @@ namespace Match3
             float swapDuration, float clearDelay, float fallSpeed,
             float popDuration = 0f, Explosion explosionPrefab = null, float springBackDuration = 0.01f,
             float noMovesDelay = 0f, float shuffleDuration = 0.01f, float beamSpeed = 1000f,
-            float zapInterval = 0f, float chainDelay = 0f)
+            float zapInterval = 0f, float chainDelay = 0f, float collapseDuration = 0f)
         {
             this.width = width;
             this.height = height;
@@ -1555,6 +1661,7 @@ namespace Match3
             this.beamSpeed = beamSpeed;
             this.zapInterval = zapInterval;
             this.chainDelay = chainDelay;
+            this.collapseDuration = collapseDuration;
         }
 
         /// <summary>
