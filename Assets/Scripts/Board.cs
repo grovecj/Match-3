@@ -1073,8 +1073,21 @@ namespace Match3
                 bool gemsOnBoard = waveIndex > 0 || firstGemsOnBoard;
                 // `out` hands back a second list alongside the returned one: how long each
                 // token waits before it pops (see Detonate).
-                List<Token> popping = Detonate(waves[waveIndex], waveIndex, gemsOnBoard, caught, out List<float> popDelays);
+                // Time.time is the game clock, in seconds. It stops while the game is paused, the
+                // same as the pops and waits below, so the sums still work out across a pause.
+                float waveStarted = Time.time;
+                List<Token> popping = Detonate(waves[waveIndex], waveIndex, gemsOnBoard, caught,
+                    out List<float> popDelays, out float latestCatch);
                 yield return StartCoroutine(PopAndPause(popping, popDelays));
+
+                // PopAndPause only waits for tokens that pop, and a caught gem doesn't: it stays
+                // for the next wave. So if a Star's beam still has some way to go before it
+                // reaches one, wait for it here, or the gem would go off before anything hit it.
+                float stillToCome = latestCatch - (Time.time - waveStarted);
+                if (stillToCome > 0f)
+                {
+                    yield return new WaitForSeconds(stillToCome);
+                }
 
                 if (!isLastWave && chainDelay > 0f)
                 {
@@ -1102,12 +1115,17 @@ namespace Match3
         /// For each returned token, in the same order, how many seconds to wait before popping
         /// it (see <see cref="BlastDelay"/> and <see cref="ZapDelay"/>).
         /// </param>
+        /// <param name="latestCatch">
+        /// How many seconds into the wave the last of the <paramref name="caught"/> gems is
+        /// reached by the blast that caught it. 0 if none were caught.
+        /// </param>
         // Blasted gems score nothing yet (that's the scoring issue), so no MatchCleared here.
         private List<Token> Detonate(IReadOnlyList<BoardModel.Detonation> wave, int waveIndex, bool gemsOnBoard,
-            HashSet<Vector2Int> caught, out List<float> popDelays)
+            HashSet<Vector2Int> caught, out List<float> popDelays, out float latestCatch)
         {
             var removed = new List<Token>();
             popDelays = new List<float>();
+            latestCatch = 0f;
             SpriteRenderer tokenRenderer = tokenPrefab.GetComponent<SpriteRenderer>();
             foreach (BoardModel.Detonation detonation in wave)
             {
@@ -1153,6 +1171,7 @@ namespace Match3
                     // until the next wave, when it goes off itself.
                     if (caught.Contains(cell))
                     {
+                        latestCatch = Mathf.Max(latestCatch, delay);
                         continue;
                     }
 
