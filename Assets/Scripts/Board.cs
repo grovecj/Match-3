@@ -726,8 +726,10 @@ namespace Match3
             SwapStarted?.Invoke();
             yield return StartCoroutine(AnimateSwap(a, b));
 
-            List<List<Vector2Int>> runs = model.FindMatches();
-            if (runs.Count == 0)
+            // The swapped cells are passed along so each match the swap made is anchored on the
+            // token the player moved.
+            List<MatchGroup> groups = model.FindMatchGroups(a, b);
+            if (groups.Count == 0)
             {
                 // Not a valid move: put everything back exactly as it was.
                 Swap(a, b);
@@ -739,9 +741,9 @@ namespace Match3
             // whether the new layout made more matches. Skipped entirely for an invalid swap.
             // cascadeIndex counts the passes: 0 is the swap's own match, 1+ are cascades. It's
             // local to this turn, so every new swap starts counting from 0 again.
-            for (int cascadeIndex = 0; runs.Count > 0; cascadeIndex++)
+            for (int cascadeIndex = 0; groups.Count > 0; cascadeIndex++)
             {
-                List<Token> cleared = ClearMatches(runs, cascadeIndex);
+                List<Token> cleared = ClearMatches(groups, cascadeIndex);
                 // The pop is part of the clear delay, not extra time on top of it; waiting for it
                 // here also means every popped token is gone before anything falls.
                 yield return StartCoroutine(AnimatePops(cleared));
@@ -754,7 +756,8 @@ namespace Match3
                 CollapseAndRefill();
                 yield return StartCoroutine(AnimateFalls());
 
-                runs = model.FindMatches();
+                // A cascade has no swapped cells: nobody moved these tokens, they fell.
+                groups = model.FindMatchGroups();
             }
 
             // The board has settled. If that left the player with nothing to play, fix it
@@ -885,14 +888,23 @@ namespace Match3
         }
 
         /// <summary>
-        /// Empties every cell in <paramref name="runs"/> in the model and the view array, spawns
+        /// Empties every cell in <paramref name="groups"/> in the model and the view array, spawns
         /// a burst on each, and reports each run through <see cref="MatchCleared"/>, then the
         /// step as a whole through <see cref="ClearStepResolved"/>. Returns the tokens that were
         /// removed: they're no longer on the board, but they're still on screen, for
         /// <see cref="AnimatePops"/> to pop and then destroy.
         /// </summary>
-        private List<Token> ClearMatches(List<List<Vector2Int>> runs, int cascadeIndex)
+        private List<Token> ClearMatches(List<MatchGroup> groups, int cascadeIndex)
         {
+            // Clearing, bursts and both events still work run by run, exactly as they did before
+            // matches were grouped, so score and sound don't change. A group's shape and anchor
+            // aren't used yet: they're for the power gems to come.
+            var runs = new List<List<Vector2Int>>();
+            foreach (MatchGroup group in groups)
+            {
+                runs.AddRange(group.Runs);
+            }
+
             // Worked out before clearing, so each cell's burst can be sized by its run. A cell an
             // L or T shape's two runs share gets the longer one.
             Dictionary<Vector2Int, int> runLengths = BoardModel.LongestRunPerCell(runs);
