@@ -8,10 +8,11 @@ namespace Match3.Tests
 {
     /// <summary>
     /// Edit Mode tests for <see cref="SoundSet"/> (looking up a clip, empty slots) and
-    /// <see cref="AudioManager"/> (the saved master volume, and playing from an incomplete set).
+    /// <see cref="AudioManager"/> (the saved master volume, the saved sound set, and playing from
+    /// an incomplete set).
     ///
     /// PlayerPrefs and AudioListener.volume are shared with the real game in the Editor, so each
-    /// test backs up the player's saved volume first and puts both back afterwards.
+    /// test backs up the player's saved volume and sound set first and puts them back afterwards.
     /// </summary>
     public class AudioManagerTests
     {
@@ -19,6 +20,8 @@ namespace Match3.Tests
         private bool hadSavedVolume;
         private float savedVolume;
         private float listenerVolume;
+        private bool hadSavedSoundSet;
+        private string savedSoundSet;
 
         [SetUp]
         public void SetUp()
@@ -27,6 +30,10 @@ namespace Match3.Tests
             savedVolume = PlayerPrefs.GetFloat(AudioManager.SoundVolumeKey);
             listenerVolume = AudioListener.volume;
             PlayerPrefs.DeleteKey(AudioManager.SoundVolumeKey);
+
+            hadSavedSoundSet = PlayerPrefs.HasKey(AudioManager.SoundSetKey);
+            savedSoundSet = PlayerPrefs.GetString(AudioManager.SoundSetKey, "");
+            PlayerPrefs.DeleteKey(AudioManager.SoundSetKey);
         }
 
         [TearDown]
@@ -45,6 +52,14 @@ namespace Match3.Tests
             else
             {
                 PlayerPrefs.DeleteKey(AudioManager.SoundVolumeKey);
+            }
+            if (hadSavedSoundSet)
+            {
+                PlayerPrefs.SetString(AudioManager.SoundSetKey, savedSoundSet);
+            }
+            else
+            {
+                PlayerPrefs.DeleteKey(AudioManager.SoundSetKey);
             }
             PlayerPrefs.Save();
             AudioListener.volume = listenerVolume;
@@ -80,8 +95,25 @@ namespace Match3.Tests
             return set;
         }
 
-        /// <summary>Makes an AudioManager using <paramref name="set"/> and runs its Awake.</summary>
-        private AudioManager CreateManager(SoundSet set)
+        /// <summary>Makes an empty sound set with the given id, as the Settings menu would list it.</summary>
+        private SoundSet CreateSetWithId(string id)
+        {
+            var set = ScriptableObject.CreateInstance<SoundSet>();
+            set.name = id;
+            created.Add(set);
+            var serialized = new SerializedObject(set);
+            serialized.FindProperty("id").stringValue = id;
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+            return set;
+        }
+
+        /// <summary>
+        /// Makes an AudioManager with <paramref name="set"/> selected in the "Inspector" and
+        /// <paramref name="available"/> as the sets to choose from, and runs its Awake (where it
+        /// loads the saved choice).
+        /// </summary>
+        // `params` lets a caller list the sets as extra arguments, or leave them out entirely.
+        private AudioManager CreateManager(SoundSet set, params SoundSet[] available)
         {
             var go = new GameObject("AudioManager");
             created.Add(go);
@@ -90,6 +122,12 @@ namespace Match3.Tests
 
             var serialized = new SerializedObject(manager);
             serialized.FindProperty("soundSet").objectReferenceValue = set;
+            SerializedProperty list = serialized.FindProperty("soundSets");
+            list.arraySize = available.Length;
+            for (int i = 0; i < available.Length; i++)
+            {
+                list.GetArrayElementAtIndex(i).objectReferenceValue = available[i];
+            }
             serialized.ApplyModifiedPropertiesWithoutUndo();
 
             // In Edit Mode Unity doesn't call Awake on a component we add, so call it ourselves.
@@ -162,6 +200,97 @@ namespace Match3.Tests
             manager.Play(SoundId.RoundEndHorn, pitch: 0.9f);
             Assert.AreEqual(1.4f, effects.pitch, 0.0001f);
             Assert.AreEqual(0.9f, horn.pitch, 0.0001f);
+        }
+
+        [Test]
+        public void Preview_DoesNothingForAnEmptySlotOrNoSet()
+        {
+            AudioManager manager = CreateManager(null);
+            Assert.DoesNotThrow(() => manager.Preview(CreateSetWithId("empty"), SoundId.Match4));
+            Assert.DoesNotThrow(() => manager.Preview(null, SoundId.Match4));
+        }
+
+        [Test]
+        public void Preview_DoesNotSwitchSets()
+        {
+            SoundSet chimes = CreateSetWithId("chimes");
+            SoundSet arcade = CreateSetWithId("arcade");
+            AudioManager manager = CreateManager(chimes, chimes, arcade);
+
+            manager.Preview(arcade, SoundId.Match4);
+
+            Assert.AreSame(chimes, manager.SoundSet);
+            Assert.IsFalse(PlayerPrefs.HasKey(AudioManager.SoundSetKey));
+        }
+
+        [Test]
+        public void SoundSet_IsRestoredFromTheSavedId()
+        {
+            SoundSet chimes = CreateSetWithId("chimes");
+            SoundSet arcade = CreateSetWithId("arcade");
+            PlayerPrefs.SetString(AudioManager.SoundSetKey, "arcade");
+
+            AudioManager manager = CreateManager(chimes, chimes, arcade);
+
+            Assert.AreSame(arcade, manager.SoundSet);
+        }
+
+        [Test]
+        public void SoundSet_KeepsTheDefaultWhenTheSavedIdIsUnknown()
+        {
+            // E.g. a set that was saved last session and has since been deleted.
+            SoundSet chimes = CreateSetWithId("chimes");
+            SoundSet arcade = CreateSetWithId("arcade");
+            PlayerPrefs.SetString(AudioManager.SoundSetKey, "deleted-set");
+
+            AudioManager manager = CreateManager(arcade, chimes, arcade);
+
+            Assert.AreSame(arcade, manager.SoundSet);
+        }
+
+        [Test]
+        public void SoundSet_FallsBackToTheFirstAvailableWhenNoneIsSelected()
+        {
+            SoundSet chimes = CreateSetWithId("chimes");
+            SoundSet arcade = CreateSetWithId("arcade");
+            PlayerPrefs.SetString(AudioManager.SoundSetKey, "deleted-set");
+
+            // The leading null is what a deleted asset leaves behind in the Inspector's list.
+            AudioManager manager = CreateManager(null, null, chimes, arcade);
+
+            Assert.AreSame(chimes, manager.SoundSet);
+        }
+
+        [Test]
+        public void SetSoundSet_SwitchesSavesAndAnnouncesIt()
+        {
+            SoundSet chimes = CreateSetWithId("chimes");
+            SoundSet arcade = CreateSetWithId("arcade");
+            AudioManager manager = CreateManager(chimes, chimes, arcade);
+            int changes = 0;
+            manager.SoundSetChanged += () => changes++;
+
+            manager.SetSoundSet(arcade);
+
+            Assert.AreSame(arcade, manager.SoundSet);
+            Assert.AreEqual("arcade", PlayerPrefs.GetString(AudioManager.SoundSetKey));
+            Assert.AreEqual(1, changes);
+        }
+
+        [Test]
+        public void SetSoundSet_IgnoresNullAndTheCurrentSet()
+        {
+            SoundSet chimes = CreateSetWithId("chimes");
+            AudioManager manager = CreateManager(chimes, chimes);
+            int changes = 0;
+            manager.SoundSetChanged += () => changes++;
+
+            manager.SetSoundSet(null);
+            manager.SetSoundSet(chimes);
+
+            Assert.AreSame(chimes, manager.SoundSet);
+            Assert.AreEqual(0, changes);
+            Assert.IsFalse(PlayerPrefs.HasKey(AudioManager.SoundSetKey));
         }
 
         [Test]

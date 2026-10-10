@@ -6,12 +6,13 @@ namespace Match3
 {
     /// <summary>
     /// One clickable choice in the Settings menu: a button with a name label and a highlight
-    /// that shows when it's the current selection. <see cref="TokenStyleOption"/> and
-    /// <see cref="BoardThemeOption"/> build on this and add their own preview.
+    /// that shows when it's the current selection. <see cref="TokenStyleOption"/>,
+    /// <see cref="BoardThemeOption"/> and <see cref="SoundSetOption"/> build on this and add
+    /// their own preview.
     ///
     /// The option doesn't decide whether it's selected. The <see cref="SettingsMenu"/> asks the
-    /// ThemeManager what's in use and calls <see cref="SetSelected"/>, so the highlight can
-    /// never disagree with what the board actually shows.
+    /// ThemeManager (or AudioManager) what's in use and calls <see cref="SetSelected"/>, so the
+    /// highlight can never disagree with what the game actually shows and plays.
     /// </summary>
     public abstract class SettingsOption : MonoBehaviour
     {

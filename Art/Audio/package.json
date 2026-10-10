@@ -1,0 +1,8 @@
+{
+  "name": "match3-arcade-sounds",
+  "private": true,
+  "description": "Renders the Arcade sound set's jsfxr presets to WAV. See build_arcade.js.",
+  "dependencies": {
+    "jsfxr": "1.4.1"
+  }
+}
