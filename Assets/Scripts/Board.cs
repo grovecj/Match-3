@@ -88,7 +88,8 @@ namespace Match3
 
         /// <summary>
         /// Fired once for every run of matching tokens that gets cleared, with the run's length
-        /// (3, 4, 5...). Scoring can listen to this without the Board knowing about score.
+        /// (3, 4, 5...). The round stats count runs from this. (The score is worked out per
+        /// step instead: see <see cref="ClearStepScored"/>.)
         /// </summary>
         // An event is a list of callbacks other scripts can subscribe to with `+=` (and
         // unsubscribe from with `-=`). Action<int> means "a method taking one int and returning
@@ -106,6 +107,19 @@ namespace Match3
         // on top of itself. Listeners that care about "something was cleared" rather than "how
         // many runs" (like MatchSounds) want exactly one call per step, so they get their own event.
         public event System.Action<int, int> ClearStepResolved;
+
+        /// <summary>
+        /// Fired once per clear step, when it's completely over (its match has popped and its
+        /// chain reaction, if any, has played) and just before anything falls, with a
+        /// <see cref="ClearStep"/> describing it: its runs, how many gems its blasts destroyed,
+        /// and its cascade index. Scoring listens to this without the Board knowing about score.
+        ///
+        /// Unlike <see cref="ClearStepResolved"/>, a swapped Hypercube's step fires it too (with
+        /// no runs), because the gems it destroys are worth points.
+        /// </summary>
+        // One event per step rather than one per run or per blast: everything in a step shares
+        // one cascade multiplier, so the listener wants it all at once.
+        public event System.Action<ClearStep> ClearStepScored;
 
         /// <summary>
         /// Fired when a match leaves a power gem behind, with which kind and the cell it's in.
@@ -801,11 +815,12 @@ namespace Match3
 
                 // As in the cascade loop below: the model clears everything right now (the
                 // colour, and whatever chain reaction that starts) and describes what it did.
-                // Zapped gems score nothing yet (that's the scoring issue), and there's no run
-                // to report, so no MatchCleared or ClearStepResolved here.
+                // There's no run to report, so no MatchCleared or ClearStepResolved here, but
+                // the zapped gems are worth points, so the step is still scored.
                 BoardModel.ClearResult zapped = model.ActivateHypercube(cube, colour);
                 // The cube wasn't matched, so unlike a matched gem its token is still there.
                 yield return StartCoroutine(PlayWaves(zapped.Waves, firstGemsOnBoard: true));
+                ClearStepScored?.Invoke(ClearStep.From(zapped, new List<MatchGroup>(), cascadeIndex));
                 CollapseAndRefill();
                 yield return StartCoroutine(AnimateFalls());
                 groups = model.FindMatchGroups();
@@ -854,6 +869,9 @@ namespace Match3
                     // The matched gems' own tokens popped with the match, in phase 1.
                     yield return StartCoroutine(PlayWaves(result.Waves, firstGemsOnBoard: false));
                 }
+
+                // The step is over: score all of it at once, with the step's multiplier.
+                ClearStepScored?.Invoke(ClearStep.From(result, groups, cascadeIndex));
 
                 // Phase 3: only now, with the whole chain over, does anything fall.
                 CollapseAndRefill();
@@ -1005,7 +1023,7 @@ namespace Match3
         private List<Token> RemoveMatched(List<MatchGroup> groups, BoardModel.ClearResult result, int cascadeIndex)
         {
             // Bursts and both run events still work run by run, exactly as they did before
-            // matches were grouped, so score and sound don't change.
+            // matches were grouped, so stats and sound don't change.
             var runs = new List<List<Vector2Int>>();
             foreach (MatchGroup group in groups)
             {
@@ -1133,7 +1151,8 @@ namespace Match3
         /// How many seconds into the wave the last of the <paramref name="caught"/> gems is
         /// reached by the blast that caught it. 0 if none were caught.
         /// </param>
-        // Blasted gems score nothing yet (that's the scoring issue), so no MatchCleared here.
+        // Blasted gems aren't runs, so no MatchCleared here: they're scored with their whole
+        // step, through ClearStepScored.
         private List<Token> Detonate(IReadOnlyList<BoardModel.Detonation> wave, int waveIndex, bool gemsOnBoard,
             HashSet<Vector2Int> caught, out List<float> popDelays, out float latestCatch)
         {

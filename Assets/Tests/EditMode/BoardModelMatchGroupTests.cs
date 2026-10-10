@@ -387,9 +387,9 @@ namespace Match3.Tests
         [Test]
         public void RandomBoards_GroupsHoldExactlyTheRunsFindMatchesReports()
         {
-            // Board fires MatchCleared once per run in the groups, and scoring adds those up.
-            // So for the score to be what it always was, grouping must neither lose a run nor
-            // report one twice, whatever the board looks like.
+            // The score and the round stats count every run in the groups. So for them to be
+            // right, grouping must neither lose a run nor report one twice, whatever the board
+            // looks like.
             for (int seed = 0; seed < RandomBoardCount; seed++)
             {
                 BoardModel board = RandomBoard(seed);

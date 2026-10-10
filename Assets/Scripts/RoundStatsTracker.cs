@@ -33,12 +33,14 @@ namespace Match3
                 Debug.LogError("RoundStatsTracker: needs a Board assigned.", this);
                 return;
             }
-            // The RoundStats methods have the same shape as these events (no arguments, or one
-            // int), so they can be subscribed directly. ClearStepResolved passes two ints and we
-            // only want the second, so that one goes through a method of our own.
+            // Where a RoundStats method has the same shape as the event (no arguments, one int,
+            // one ClearStep), it can be subscribed directly. The others pass more than the stats
+            // need, so they go through small methods of our own.
             board.SwapStarted += stats.SwapStarted;
             board.MatchCleared += stats.RunCleared;
-            board.ClearStepResolved += OnClearStepResolved;
+            board.ClearStepScored += stats.StepScored;
+            board.PowerGemCreated += OnPowerGemCreated;
+            board.PowerGemDetonated += OnPowerGemDetonated;
         }
 
         private void OnDisable()
@@ -47,13 +49,22 @@ namespace Match3
             {
                 board.SwapStarted -= stats.SwapStarted;
                 board.MatchCleared -= stats.RunCleared;
-                board.ClearStepResolved -= OnClearStepResolved;
+                board.ClearStepScored -= stats.StepScored;
+                board.PowerGemCreated -= OnPowerGemCreated;
+                board.PowerGemDetonated -= OnPowerGemDetonated;
             }
         }
 
-        private void OnClearStepResolved(int longestRun, int cascadeIndex)
+        // The power gem events also say where the gem was (and which wave it went off in); the
+        // stats only need to know which kind.
+        private void OnPowerGemCreated(PowerKind kind, Vector2Int cell)
         {
-            stats.StepResolved(cascadeIndex);
+            stats.PowerGemCreated(kind);
+        }
+
+        private void OnPowerGemDetonated(PowerKind kind, Vector2Int cell, int wave)
+        {
+            stats.PowerGemDetonated(kind);
         }
 
         // ---- Test hooks -------------------------------------------------------------------

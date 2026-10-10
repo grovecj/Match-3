@@ -565,6 +565,67 @@ namespace Match3.Tests
             yield return WaitUntilNoBursts();
         }
 
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator ScoreKeeper_ScoresEachStepWithItsMultiplier_AndTheStatsAddUpToIt()
+        {
+            // The same Flame as above: its blast destroys the two gems at (0,1) and (1,1).
+            board.SetPowerForTests(new Vector2Int(0, 0), PowerKind.Flame);
+
+            var keeperObject = new GameObject("Score Keeper");
+            keeperObject.SetActive(false);
+            ScoreKeeper keeper = keeperObject.AddComponent<ScoreKeeper>();
+            keeper.ConfigureForTests(board);
+            RoundStatsTracker tracker = keeperObject.AddComponent<RoundStatsTracker>();
+            tracker.ConfigureForTests(board);
+            keeperObject.SetActive(true);
+
+            var steps = new List<ClearStep>();
+            board.ClearStepScored += steps.Add;
+            // What the multiplier was each time the score changed.
+            var multipliers = new List<int>();
+            keeper.Changed += _ => multipliers.Add(keeper.Multiplier);
+
+            Assert.IsTrue(board.TrySwap(MatchA, MatchB));
+            yield return WaitUntilIdle();
+
+            Assert.That(steps, Is.Not.Empty, "ClearStepScored never fired.");
+            Assert.AreEqual(0, steps[0].CascadeIndex);
+            Assert.AreEqual(new[] { 3 }, steps[0].RunLengths, "The swap's step is its run of 3.");
+            Assert.AreEqual(2, steps[0].BlastedGems, "The Flame's blast destroyed two gems that weren't matched.");
+            Assert.AreEqual(1000 + 2 * 250, steps[0].Points);
+
+            // Every step is scored, each at its own multiplier (cascades are random, so they're
+            // only checked to add up).
+            int expected = 0;
+            for (int i = 0; i < steps.Count; i++)
+            {
+                Assert.AreEqual(i, steps[i].CascadeIndex, $"Step {i} has the wrong cascade index.");
+                Assert.AreEqual(ScoreRules.Multiplier(i), multipliers[i], $"Step {i} was scored at the wrong multiplier.");
+                expected += steps[i].Points;
+            }
+            Assert.AreEqual(expected, keeper.Total);
+
+            // The stats sent to the server add back up to the same score.
+            RoundStats stats = tracker.Stats;
+            int fromStats = 0;
+            for (int i = 0; i < stats.basePointsAtMultiplier.Length; i++)
+            {
+                fromStats += stats.basePointsAtMultiplier[i] * (i + 1);
+            }
+            Assert.AreEqual(keeper.Total, fromStats);
+            Assert.That(stats.flamesDetonated, Is.GreaterThanOrEqualTo(1));
+            Assert.That(stats.mostGemsOneSwap, Is.GreaterThanOrEqualTo(5), "Three matched and two blasted.");
+
+            // The next swap (even one that's turned down) starts a new chain at x1.
+            board.LoadLayoutForTests(BuildLayout(Layout));
+            Assert.IsTrue(board.TrySwap(NoMatchA, NoMatchB));
+            Assert.AreEqual(1, keeper.Multiplier, "A new swap should reset the multiplier.");
+            yield return WaitUntilIdle();
+
+            Object.Destroy(keeperObject);
+            yield return WaitUntilNoBursts();
+        }
+
         // ---------------------------------------------------------------- Star gems
         //
         // As with the Flame, the rules are covered in Edit Mode (BoardModelStarTests). These

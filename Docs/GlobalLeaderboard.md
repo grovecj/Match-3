@@ -25,8 +25,9 @@ GameManager          LeaderboardMenu       OnlineLeaderboardClient            ma
 ```
 
 The round token is the server's protection against made-up scores: it only accepts a score
-for a round it saw start at least 55 seconds earlier, once per round, and no more than 10,000
-points per second of play. So a round must really be played to be posted.
+for a round it saw start at least 55 seconds earlier, once per round, and no more than a set
+number of points per second of play (see [Scoring.md](Scoring.md) for that limit and the
+other scoring checks). So a round must really be played to be posted.
 
 **Game time vs. wall-clock time:** the round clock is *game* time. It stops while the board
 reshuffles and while power gems detonate (see `RoundClock` and `Board.IsDetonating`), so a

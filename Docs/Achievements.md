@@ -27,10 +27,12 @@ AchievementToast <── Unlocked ── AchievementsClient <── ScorePosted 
 ```
 
 1. `RoundStatsTracker` listens to the `Board`'s events, like `ScoreKeeper` does, and keeps a
-   `RoundStats`: swaps, matches of 3 / 4 / 5+, the longest match, and the best chain (the most
-   clears one swap set off, cascades included).
+   `RoundStats`: swaps, matches of 3 / 4 / 5+, the longest match, the best chain (the most
+   clears one swap set off, cascades included), power gems made and set off by kind, the most
+   gems one swap cleared, and how the score was built up (see [Scoring.md](Scoring.md)).
 2. When the round ends, `OnlineLeaderboardClient` posts the stats with the score.
-3. The server checks that the stats fit together (the matches must add up to exactly the score),
+3. The server checks that the stats fit together (the matches and blasts, at their
+   multipliers, must add up to exactly the score: see [Scoring.md](Scoring.md)),
    stores the round, and compares the player's totals with every achievement's goal. Whatever is
    newly earned comes back in the reply as `unlocked`.
 4. `OnlineLeaderboardClient` raises `ScorePosted`; `AchievementsClient` raises `Unlocked` for
