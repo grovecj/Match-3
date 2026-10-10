@@ -40,6 +40,31 @@ namespace Match3.Tests
         }
 
         [Test]
+        public void GameScene_UsesEveryTokenType()
+        {
+            // A TokenType asset the Board doesn't list never appears in play, however much art
+            // it has. GetDependencies lists every asset a scene refers to without opening the
+            // scene, so this can't disturb whatever is open in the Editor.
+            string[] dependencies = AssetDatabase.GetDependencies("Assets/Scenes/Game.unity", recursive: true);
+            List<TokenType> types = LoadAll<TokenType>();
+            Assert.AreEqual(6, types.Count, "The game is balanced for six token types.");
+
+            foreach (TokenType type in types)
+            {
+                Assert.That(dependencies, Does.Contain(AssetDatabase.GetAssetPath(type)),
+                    $"The Game scene's Board doesn't list {type.name} in its Token Types.");
+            }
+        }
+
+        [Test]
+        public void TokenTypeIds_AreUnique()
+        {
+            List<string> ids = LoadAll<TokenType>().Select(type => type.Id).ToList();
+            Assert.That(ids, Is.Unique);
+            Assert.That(ids, Has.None.Null.And.None.Empty);
+        }
+
+        [Test]
         public void TokenStyleIds_AreUnique()
         {
             // The Settings menu saves the chosen style by id, so two styles sharing one would

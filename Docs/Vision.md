@@ -47,5 +47,7 @@ Use these to decide what goes in. A feature should clearly serve at least one an
   falls.
 - **The clock also pauses while the board reshuffles** (2026-10-10, #14). Running out of
   moves is luck, not a mistake, so it does not cost time.
-- **Five token types until power gems are playtested** (2026-10-10). A sixth colour is
-  ticketed as #88 and deferred.
+- **Six token types** (2026-10-10, #88). Five were kept until power gems had been played
+  with; the sixth (a pink cross) makes accidental matches scarcer, so a power gem is more
+  often something the player built (pillar 2). Every type has its own shape, so they can be
+  told apart without colour.

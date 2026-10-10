@@ -7041,6 +7041,7 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 04061a2df2164a508e33cfba4d2c28d4, type: 2}
   - {fileID: 11400000, guid: 04df1804484341038921ca2ed7494784, type: 2}
   - {fileID: 11400000, guid: 549100796bda41b0a3bd74dfa7b258b5, type: 2}
+  - {fileID: 11400000, guid: 2012b370614b41e9870f1d1b9e86fcc6, type: 2}
   swapDuration: 0.15
   springBackDuration: 0.2
   clearDelay: 0.25

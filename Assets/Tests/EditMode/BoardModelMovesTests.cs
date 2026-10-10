@@ -18,7 +18,7 @@ namespace Match3.Tests
 
         // A board with no valid moves and no matches. Each row is the one below it shifted two
         // places, so the same type never ends up close enough to itself for one swap to line
-        // three up. (8x8 with five types, like the real game.)
+        // three up. (8x8, like the real game, using five of its six types.)
         private static readonly string[] DeadBoard =
         {
             "EABCDEAB", // y = 7
