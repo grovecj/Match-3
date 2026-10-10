@@ -3,16 +3,16 @@ using UnityEngine;
 namespace Match3
 {
     /// <summary>
-    /// A single token (gem) on the board. It knows its <see cref="TokenType"/> (what it is) and
-    /// the <see cref="TokenStyle"/> to draw it with (how it looks); game rules (matching,
-    /// swapping) live elsewhere.
+    /// A single token (gem) on the board. It knows its <see cref="TokenType"/> and
+    /// <see cref="PowerKind"/> (what it is) and the <see cref="TokenStyle"/> to draw it with
+    /// (how it looks); game rules (matching, swapping) live elsewhere.
     /// </summary>
     // RequireComponent makes Unity add a SpriteRenderer automatically (and prevents removing it)
     // wherever this script is attached, so GetComponent below can't come back empty.
     [RequireComponent(typeof(SpriteRenderer))]
     public class Token : MonoBehaviour
     {
-        [Tooltip("Type shown when placed in a scene. At runtime the Board assigns this via SetType.")]
+        [Tooltip("Type shown when placed in a scene. At runtime the Board assigns this via SetPiece.")]
         [SerializeField] private TokenType type;
         [Tooltip("Style used to draw the type. At runtime the Board assigns this via SetStyle.")]
         [SerializeField] private TokenStyle style;
@@ -42,6 +42,9 @@ namespace Match3
             Hint,
         }
 
+        // Not a [SerializeField]: nothing is drawn for a power yet, so there's nothing to set up
+        // in the Inspector. The Board assigns it, with the type, via SetPiece.
+        private PowerKind power = PowerKind.None;
         private SpriteRenderer spriteRenderer;
         private Highlight highlight = Highlight.None;
         // 0 = resting, 1 = fully picked up. Eased toward the highlight's target every frame.
@@ -56,6 +59,9 @@ namespace Match3
         private bool highlightChanged;
 
         public TokenType Type => type;
+
+        /// <summary>The power this token carries. It doesn't change how the token looks yet.</summary>
+        public PowerKind Power => power;
 
         public Highlight CurrentHighlight => highlight;
 
@@ -151,10 +157,14 @@ namespace Match3
             ApplyVisuals();
         }
 
-        /// <summary>Changes this token's type and updates its visuals to match.</summary>
-        public void SetType(TokenType newType)
+        /// <summary>
+        /// Makes this token show <paramref name="piece"/>: takes its colour as the token's type
+        /// and its power, and updates the visuals to match.
+        /// </summary>
+        public void SetPiece(Piece piece)
         {
-            type = newType;
+            type = piece.Colour;
+            power = piece.Power;
             ApplyVisuals();
         }
 

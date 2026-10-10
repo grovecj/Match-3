@@ -77,6 +77,37 @@ namespace Match3.Tests
             Assert.IsNull(board.TypeAt(1, 1));
         }
 
+        [Test]
+        public void SetPowers_GivesThePieceAPowerAndKeepsItsColour()
+        {
+            BoardModel board = Grid(
+                "R*",
+                ".G");
+            grids.SetPowers(board,
+                "S.",
+                ".F");
+
+            Assert.AreEqual(grids.Type('R'), board.PieceAt(0, 1).Colour);
+            Assert.AreEqual(PowerKind.Star, board.PieceAt(0, 1).Power);
+            Assert.AreEqual(grids.Type('G'), board.PieceAt(1, 0).Colour);
+            Assert.AreEqual(PowerKind.Flame, board.PieceAt(1, 0).Power);
+            // Drawing the board back gives the same two pictures.
+            Assert.AreEqual(new[] { "R*", ".G" }, grids.Rows(board));
+            Assert.AreEqual(new[] { "SH", ".F" }, grids.PowerRows(board));
+        }
+
+        [Test]
+        public void Build_Asterisk_IsAHypercubeWithNoColourThatIsNotEmpty()
+        {
+            BoardModel board = Grid("*.");
+
+            Piece hypercube = board.PieceAt(0, 0);
+            Assert.IsNull(hypercube.Colour);
+            Assert.AreEqual(PowerKind.Hypercube, hypercube.Power);
+            Assert.IsFalse(hypercube.IsEmpty);
+            Assert.IsTrue(board.PieceAt(1, 0).IsEmpty);
+        }
+
         // ---------------------------------------------------------------- Horizontal runs
 
         [Test]
@@ -267,6 +298,57 @@ namespace Match3.Tests
                 "...");
 
             AssertMatches(board);
+        }
+
+        // ---------------------------------------------------------------- Power and colourless pieces
+
+        [Test]
+        public void FindMatches_PowerGemInARun_MatchesByItsColour()
+        {
+            BoardModel board = Grid(
+                "GBGB",
+                "BGBG",
+                "RRRG");
+            grids.SetPowers(board,
+                "....",
+                "....",
+                ".F..");
+
+            AssertMatches(board, Run((0, 0), (1, 0), (2, 0)));
+        }
+
+        [Test]
+        public void FindMatches_ColourlessPieces_NeverFormARun()
+        {
+            // Three Hypercubes in a row and in a column: all "the same", but with no colour to match on.
+            BoardModel board = Grid(
+                "*GB",
+                "*BG",
+                "***");
+
+            AssertMatches(board);
+        }
+
+        [Test]
+        public void FindMatches_ColourlessPieceInsideALine_BreaksTheRun()
+        {
+            BoardModel board = Grid("RR*RR");
+
+            AssertMatches(board);
+        }
+
+        [Test]
+        public void FindMatches_ColourlessPieceNextToARun_DoesNotExtendIt()
+        {
+            BoardModel board = Grid(
+                "*BGB",
+                "RGBG",
+                "RBGB",
+                "RRR*");
+
+            AssertMatches(board,
+                Run((0, 0), (1, 0), (2, 0)),
+                Run((0, 0), (0, 1), (0, 2)));
         }
     }
 }

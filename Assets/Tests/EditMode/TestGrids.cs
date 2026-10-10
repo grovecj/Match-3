@@ -16,6 +16,16 @@ namespace Match3.Tests
     /// empty cell. Rows are written top row first, the way the board looks on screen, even
     /// though y counts upward from the bottom.
     ///
+    /// Power gems are marked on a second drawing of the same board, so the first one stays as
+    /// easy to read as ever: 'F' makes the piece in that cell a Flame, 'S' a Star.
+    ///
+    ///     grids.SetPowers(board,
+    ///         "....",
+    ///         "....",
+    ///         ".F..");  // the second R of the bottom row is a Flame
+    ///
+    /// A Hypercube has no colour, so no letter fits it: draw it as '*' in the first drawing.
+    ///
     /// Create one per test (in [SetUp]) and <see cref="DestroyAll"/> in [TearDown], since the
     /// token types it makes are Unity objects that otherwise hang around in the Editor.
     /// </summary>
@@ -23,6 +33,8 @@ namespace Match3.Tests
     {
         /// <summary>The character that means "empty cell".</summary>
         public const char Empty = '.';
+        /// <summary>The character that means "Hypercube": a piece with a power but no colour.</summary>
+        public const char Hypercube = '*';
 
         private readonly Dictionary<char, TokenType> types = new Dictionary<char, TokenType>();
 
@@ -59,7 +71,7 @@ namespace Match3.Tests
                 }
                 foreach (char letter in row)
                 {
-                    if (letter != Empty)
+                    if (letter != Empty && letter != Hypercube)
                     {
                         Type(letter);
                     }
@@ -74,16 +86,77 @@ namespace Match3.Tests
                 for (int x = 0; x < width; x++)
                 {
                     char letter = rows[i][x];
-                    board.SetTypeAt(x, y, letter == Empty ? null : Type(letter));
+                    board.SetPieceAt(x, y, PieceFor(letter));
                 }
             }
             return board;
         }
 
+        private Piece PieceFor(char letter)
+        {
+            switch (letter)
+            {
+                case Empty: return Piece.Empty;
+                case Hypercube: return new Piece(null, PowerKind.Hypercube);
+                default: return new Piece(Type(letter));
+            }
+        }
+
+        /// <summary>
+        /// Gives pieces already on <paramref name="board"/> a power. <paramref name="rows"/> is
+        /// drawn like <see cref="Build"/>'s, top row first and the same size as the board: 'F' is
+        /// a Flame, 'S' is a Star, and '.' leaves the cell alone. Each piece keeps its colour.
+        /// </summary>
+        public void SetPowers(BoardModel board, params string[] rows)
+        {
+            if (rows.Length != board.Height)
+            {
+                throw new System.ArgumentException($"The board is {board.Height} tall, but {rows.Length} rows were given.");
+            }
+
+            for (int i = 0; i < rows.Length; i++)
+            {
+                if (rows[i].Length != board.Width)
+                {
+                    throw new System.ArgumentException($"Every row must be {board.Width} wide, but \"{rows[i]}\" is {rows[i].Length}.");
+                }
+
+                int y = board.Height - 1 - i;
+                for (int x = 0; x < board.Width; x++)
+                {
+                    char mark = rows[i][x];
+                    if (mark == Empty)
+                    {
+                        continue;
+                    }
+
+                    Piece piece = board.PieceAt(x, y);
+                    if (piece.Colour == null)
+                    {
+                        throw new System.ArgumentException($"'{mark}' at ({x},{y}) needs a coloured piece to give its power to.");
+                    }
+                    // A Piece can't be changed (it's readonly), so make a new one with the same
+                    // colour and put that in the cell instead.
+                    board.SetPieceAt(x, y, new Piece(piece.Colour, PowerFor(mark)));
+                }
+            }
+        }
+
+        private static PowerKind PowerFor(char mark)
+        {
+            switch (mark)
+            {
+                case 'F': return PowerKind.Flame;
+                case 'S': return PowerKind.Star;
+                default: throw new System.ArgumentException($"'{mark}' isn't a power: use 'F' (Flame), 'S' (Star) or '{Empty}'.");
+            }
+        }
+
         /// <summary>
         /// The reverse of <see cref="Build"/>: draws <paramref name="board"/> as strings, top row
         /// first, so a test can compare a whole board in one assert and get a readable diff when
-        /// it fails. Types this builder didn't create are drawn as '?'.
+        /// it fails. Types this builder didn't create are drawn as '?'. A Flame or Star is drawn
+        /// as its colour's letter, the same as an ordinary piece: see <see cref="PowerRows"/>.
         /// </summary>
         public string[] Rows(BoardModel board)
         {
@@ -94,22 +167,58 @@ namespace Match3.Tests
                 var row = new System.Text.StringBuilder();
                 for (int x = 0; x < board.Width; x++)
                 {
-                    row.Append(LetterFor(board.TypeAt(x, y)));
+                    row.Append(LetterFor(board.PieceAt(x, y)));
                 }
                 rows[i] = row.ToString();
             }
             return rows;
         }
 
-        private char LetterFor(TokenType type)
+        /// <summary>
+        /// The reverse of <see cref="SetPowers"/>: draws where <paramref name="board"/>'s power
+        /// gems are, top row first. 'F' is a Flame, 'S' a Star, 'H' a Hypercube, and '.' is
+        /// anything else (an ordinary piece or an empty cell).
+        /// </summary>
+        public string[] PowerRows(BoardModel board)
         {
-            if (type == null)
+            var rows = new string[board.Height];
+            for (int i = 0; i < board.Height; i++)
+            {
+                int y = board.Height - 1 - i;
+                var row = new System.Text.StringBuilder();
+                for (int x = 0; x < board.Width; x++)
+                {
+                    row.Append(MarkFor(board.PieceAt(x, y).Power));
+                }
+                rows[i] = row.ToString();
+            }
+            return rows;
+        }
+
+        private static char MarkFor(PowerKind power)
+        {
+            switch (power)
+            {
+                case PowerKind.Flame: return 'F';
+                case PowerKind.Star: return 'S';
+                case PowerKind.Hypercube: return 'H';
+                default: return Empty;
+            }
+        }
+
+        private char LetterFor(Piece piece)
+        {
+            if (piece.IsEmpty)
             {
                 return Empty;
             }
+            if (piece.Colour == null)
+            {
+                return Hypercube;
+            }
             foreach (KeyValuePair<char, TokenType> pair in types)
             {
-                if (pair.Value == type)
+                if (pair.Value == piece.Colour)
                 {
                     return pair.Key;
                 }

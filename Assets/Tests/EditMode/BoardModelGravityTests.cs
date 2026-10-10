@@ -232,6 +232,50 @@ namespace Match3.Tests
                 Describe(falls));
         }
 
+        [Test]
+        public void Collapse_PowerGemsKeepTheirPowerWhenTheyFall()
+        {
+            BoardModel board = Grid(
+                "R*",
+                "G.",
+                ".B",
+                "..");
+            grids.SetPowers(board,
+                "F.",
+                "..",
+                ".S",
+                "..");
+
+            List<BoardModel.Fall> falls = board.Collapse();
+
+            // The colours fall as usual...
+            AssertBoard(board,
+                "..",
+                "..",
+                "R*",
+                "GB");
+            // ...and each power is still on the piece it started on.
+            Assert.AreEqual(
+                new[]
+                {
+                    "..",
+                    "..",
+                    "FH",
+                    ".S",
+                },
+                grids.PowerRows(board));
+
+            // The Fall list says what each falling piece is, power included.
+            CollectionAssert.AreEqual(
+                new[] { "(0,2)->(0,0)", "(0,3)->(0,1)", "(1,1)->(1,0)", "(1,3)->(1,1)" },
+                Describe(falls));
+            Assert.AreEqual(PowerKind.None, falls[0].Piece.Power);
+            Assert.AreEqual(PowerKind.Flame, falls[1].Piece.Power);
+            Assert.AreEqual(grids.Type('R'), falls[1].Piece.Colour);
+            Assert.AreEqual(PowerKind.Star, falls[2].Piece.Power);
+            Assert.AreEqual(PowerKind.Hypercube, falls[3].Piece.Power);
+        }
+
         // ---------------------------------------------------------------- Gravity: properties
 
         [Test]
