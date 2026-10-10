@@ -74,8 +74,9 @@ namespace Match3
         public TokenType Type => type;
 
         /// <summary>
-        /// The power this token carries. A Flame shows it with a glow and a Star with a sparkle:
-        /// see <see cref="ShowsPowerOverlay"/>.
+        /// The power this token carries. A Flame shows it with a glow and a Star with a sparkle
+        /// (see <see cref="ShowsPowerOverlay"/>); a Hypercube has a sprite of its own instead
+        /// (see <see cref="HypercubeSprite"/>), and its <see cref="Type"/> is null.
         /// </summary>
         public PowerKind Power => power;
 
@@ -215,8 +216,17 @@ namespace Match3
                 spriteRenderer = GetComponent<SpriteRenderer>();
             }
 
-            // Before the early return below: the overlay doesn't depend on the type or style.
+            // Before the early returns below: the overlay doesn't depend on the type or style.
             ApplyPowerOverlay();
+
+            // A Hypercube has no colour, so no style has a sprite for it. It brings its own, the
+            // same in every style, and that's the whole of its look (no tint, no overlay).
+            if (power == PowerKind.Hypercube)
+            {
+                spriteRenderer.sprite = HypercubeSprite.Sprite;
+                spriteRenderer.color = Color.white;
+                return;
+            }
 
             // Without both a type and a style there's nothing sensible to draw.
             if (type == null || style == null)
@@ -242,7 +252,7 @@ namespace Match3
         // style is in use, and switching style can't lose it.
         private void ApplyPowerOverlay()
         {
-            // A Hypercube will get its look when it can be made.
+            // A Hypercube has no overlay: its own sprite is its look (see ApplyVisuals).
             bool show = power == PowerKind.Flame || power == PowerKind.Star;
             if (powerOverlay == null)
             {

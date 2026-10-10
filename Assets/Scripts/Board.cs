@@ -56,6 +56,8 @@ namespace Match3
         [SerializeField] private Explosion explosionPrefab;
         [Tooltip("How fast a Star's beam travels along its row and column, in cells per second. Each token in its path pops as the beam reaches it.")]
         [SerializeField, Min(0.1f)] private float beamSpeed = 16f;
+        [Tooltip("Pause, in seconds, between a Hypercube zapping one gem and the next. With a dozen gems of a colour on the board, the whole sweep takes a dozen times this.")]
+        [SerializeField, Min(0f)] private float zapInterval = 0.05f;
 
         [Header("Reshuffling")]
         [Tooltip("Pause, in seconds, between running out of moves and the tokens shuffling, so the player sees why.")]
@@ -76,8 +78,8 @@ namespace Match3
         private const float BlastBurstScale = 3f;
         private const int BlastBurstRunLength = 5;
 
-        // A Star's beam is drawn this far in front of the tokens: above a picked-up token and
-        // its overlay, so nothing on the board covers it.
+        // A Star's beam (and a Hypercube's bolts) are drawn this far in front of the tokens:
+        // above a picked-up token and its overlay, so nothing on the board covers them.
         private const int BeamOrderOffset = 10;
         // How much white is mixed into the gem's colour for its beam (0 = none, 1 = all white).
         private const float BeamWhiteness = 0.6f;
@@ -111,9 +113,12 @@ namespace Match3
         public event System.Action<PowerKind, Vector2Int> PowerGemCreated;
 
         /// <summary>
-        /// Fired when a power gem goes off, with which kind and the cell it was in. Comes in the
-        /// detonation phase: after its step's <see cref="ClearStepResolved"/> and the matched
-        /// tokens' pop, before anything falls.
+        /// Fired when a power gem goes off, with which kind and the cell it was in. For a Flame
+        /// or Star that's the detonation phase: after its step's <see cref="ClearStepResolved"/>
+        /// and the matched tokens' pop, before anything falls. For a Hypercube it's as soon as
+        /// the swap that set it off has finished sliding, and it's the only event that step
+        /// fires: no run was cleared, so there's no <see cref="MatchCleared"/> or
+        /// <see cref="ClearStepResolved"/>.
         /// </summary>
         public event System.Action<PowerKind, Vector2Int> PowerGemDetonated;
 
@@ -124,8 +129,8 @@ namespace Match3
         public event System.Action SwapStarted;
 
         /// <summary>
-        /// Fired when a swap made no match and the tokens start sliding back. Always comes
-        /// after a <see cref="SwapStarted"/>.
+        /// Fired when a swap wasn't a valid move (it made no match and set off no Hypercube) and
+        /// the tokens start sliding back. Always comes after a <see cref="SwapStarted"/>.
         /// </summary>
         public event System.Action SwapRejected;
 
@@ -690,8 +695,8 @@ namespace Match3
 
         /// <summary>
         /// Swaps the tokens in two orthogonally adjacent cells and resolves the result: if the
-        /// swap makes a match, matches are cleared and the board refills (with cascades);
-        /// otherwise the tokens swap back. Returns false (and does nothing) if the cells aren't
+        /// swap makes a match or sets off a Hypercube, tokens are cleared and the board refills
+        /// (with cascades); otherwise the tokens swap back. Returns false (and does nothing) if the cells aren't
         /// valid neighbors or the board is still resolving a previous swap.
         ///
         /// The tokens slide from wherever they are, so a swap can pick up where a drag left off.
@@ -742,8 +747,10 @@ namespace Match3
         // before continuing, which lets us write a sequence of animations top to bottom like
         // ordinary code instead of juggling timers or callbacks.
         /// <summary>
-        /// One whole turn: swap, then either swap back (no match) or clear -> detonate -> fall
-        /// -> refill, repeating for as long as the falling tokens create new matches (cascades).
+        /// One whole turn: swap, then either swap back (not a valid move) or clear -> detonate ->
+        /// fall -> refill, repeating for as long as the falling tokens create new matches
+        /// (cascades). A Hypercube swap takes the place of the first clear: see
+        /// <see cref="ActivateHypercube"/>.
         /// If the board ends up with no valid moves, it's reshuffled before the turn ends.
         /// </summary>
         private IEnumerator ResolveSwap(Vector2Int a, Vector2Int b)
@@ -754,23 +761,47 @@ namespace Match3
             SwapStarted?.Invoke();
             yield return StartCoroutine(AnimateSwap(a, b));
 
-            // The swapped cells are passed along so each match the swap made is anchored on the
-            // token the player moved.
-            List<MatchGroup> groups = model.FindMatchGroups(a, b);
-            if (groups.Count == 0)
+            // cascadeIndex counts the clear steps of this turn: 0 is the swap's own, 1+ are
+            // cascades. It's local to this turn, so every new swap starts counting from 0 again.
+            int cascadeIndex = 0;
+            List<MatchGroup> groups;
+
+            // There are two ways a swap can be a valid move, and the Hypercube's is asked about
+            // first. It has to be: the gem that changed places with the cube may also have
+            // landed in a run, and looking for runs first would clear just that run (maybe even
+            // leaving a new power gem) instead of every gem of the colour.
+            if (model.IsHypercubeSwap(a, b))
             {
-                // Not a valid move: put everything back exactly as it was.
-                Swap(a, b);
-                SwapRejected?.Invoke();
-                yield return StartCoroutine(AnimateSwap(a, b));
+                // Step 0 of this turn is the cube going off rather than a match. After it the
+                // board falls and refills exactly as after any clear, and whatever that lines up
+                // is an ordinary first cascade.
+                yield return StartCoroutine(ActivateHypercube(a, b));
+                CollapseAndRefill();
+                yield return StartCoroutine(AnimateFalls());
+                groups = model.FindMatchGroups();
+                cascadeIndex = 1;
+            }
+            else
+            {
+                // The swapped cells are passed along so each match the swap made is anchored on
+                // the token the player moved.
+                groups = model.FindMatchGroups(a, b);
+                if (groups.Count == 0)
+                {
+                    // Not a valid move: put everything back exactly as it was. That includes
+                    // swapping two Hypercubes, which does nothing yet.
+                    Swap(a, b);
+                    SwapRejected?.Invoke();
+                    yield return StartCoroutine(AnimateSwap(a, b));
+                }
             }
 
             // Cascade loop: clear the current matches, set off any power gems among them, let
             // tokens fall and refill, then check whether the new layout made more matches.
             // Skipped entirely for an invalid swap.
-            // cascadeIndex counts the passes: 0 is the swap's own match, 1+ are cascades. It's
-            // local to this turn, so every new swap starts counting from 0 again.
-            for (int cascadeIndex = 0; groups.Count > 0; cascadeIndex++)
+            // A `for` with nothing before its first `;` just means "the counter is already set
+            // up": it was declared above so the Hypercube branch could start it at 1.
+            for (; groups.Count > 0; cascadeIndex++)
             {
                 // The model does the whole clear step right now, blasts included, and describes
                 // what it did. The rest of this pass plays that description back one phase at a
@@ -965,7 +996,8 @@ namespace Match3
             }
 
             // A new power gem isn't a new token: the anchor's token stays where it is and just
-            // starts showing the power. It's the same colour, so only the overlay changes.
+            // starts showing the power. A Flame or Star is the same colour as before, so only
+            // the overlay changes; a Hypercube loses its colour and gets a sprite of its own.
             foreach (BoardModel.Creation creation in result.Created)
             {
                 tokens[creation.Cell.x, creation.Cell.y].SetPiece(creation.Piece);
@@ -1050,6 +1082,89 @@ namespace Match3
             // the two differences gives its distance along the beam, in cells.
             int distance = Mathf.Abs(cell.x - gemCell.x) + Mathf.Abs(cell.y - gemCell.y);
             return distance / beamSpeed;
+        }
+
+        /// <summary>
+        /// A Hypercube swap, played as the turn's first clear step. The cube is in one of
+        /// <paramref name="a"/> and <paramref name="b"/> and the gem that names the colour in the
+        /// other (the swap has already been made). Every gem of that colour is zapped in turn,
+        /// one bolt each, <see cref="zapInterval"/> apart, and the cube itself goes last.
+        /// Reports the cube through <see cref="PowerGemDetonated"/>. Finishes once everything has
+        /// popped; nothing has fallen yet.
+        /// </summary>
+        // Zapped gems score nothing yet (that's the scoring issue), and there's no run to
+        // report, so no MatchCleared or ClearStepResolved here.
+        private IEnumerator ActivateHypercube(Vector2Int a, Vector2Int b)
+        {
+            // Work out which of the two cells is which. Exactly one holds the cube: that's what
+            // IsHypercubeSwap checked.
+            Vector2Int cube = model.PieceAt(a).Power == PowerKind.Hypercube ? a : b;
+            TokenType colour = model.TypeAt(cube == a ? b : a);
+
+            // As in the cascade loop: the model clears everything right now and describes what
+            // it did, and the rest of this method plays that back over time.
+            List<Vector2Int> cleared = model.ActivateHypercube(cube, colour);
+
+            TokenStyle style = CurrentTokenStyle;
+            Color gemColor = style != null ? style.BurstColorFor(colour) : Color.white;
+            Color zapColor = Color.Lerp(gemColor, Color.white, BeamWhiteness);
+            SpriteRenderer tokenRenderer = tokenPrefab.GetComponent<SpriteRenderer>();
+
+            // The cube flares in the colour it's about to destroy, so the player can read which
+            // one they picked before the gems start going.
+            SpawnExplosion(cube, colour, BlastBurstRunLength);
+
+            var popping = new List<Token>();
+            var popDelays = new List<float>();
+            for (int i = 0; i < cleared.Count; i++)
+            {
+                Vector2Int cell = cleared[i];
+                // One number per gem, used twice: its bolt appears then, and it starts to pop
+                // then. All the bolts are created now, each already knowing when its turn is.
+                float delay = ZapDelay(i, zapInterval);
+                SpawnZap(cube, cell, zapColor, delay, tokenRenderer);
+                // All of these leave the board (the view array) right now, so it agrees with the
+                // model again. What's spread over time is only when each one pops.
+                popping.Add(TakeToken(cell));
+                popDelays.Add(delay);
+            }
+
+            // The cube outlasts its last target by one more beat, then goes too.
+            popping.Add(TakeToken(cube));
+            popDelays.Add(ZapDelay(cleared.Count, zapInterval));
+
+            PowerGemDetonated?.Invoke(PowerKind.Hypercube, cube);
+            yield return StartCoroutine(PopAndPause(popping, popDelays));
+        }
+
+        /// <summary>
+        /// How many seconds after a Hypercube goes off it zaps its <paramref name="index"/>th
+        /// gem (0 = the first): one <paramref name="zapInterval"/> later for each gem before it.
+        /// </summary>
+        // A Star's beam reaches cells in order of distance, so BlastDelay works from where a
+        // cell is. A Hypercube's gems are scattered anywhere, with no "path" between them, so
+        // the order is simply the order the model listed them in, and the delay comes from a
+        // gem's place in that list. `public static` so the Edit Mode tests can check it.
+        public static float ZapDelay(int index, float zapInterval)
+        {
+            return index * zapInterval;
+        }
+
+        /// <summary>
+        /// Makes one bolt from the Hypercube in <paramref name="cube"/> to the gem in
+        /// <paramref name="target"/>, to show itself after <paramref name="delay"/> seconds. The
+        /// bolt runs and cleans up by itself (see <see cref="HypercubeZap"/>).
+        /// </summary>
+        private void SpawnZap(Vector2Int cube, Vector2Int target, Color color, float delay, SpriteRenderer tokenRenderer)
+        {
+            // Built in code like the Star's beam, and parented to the Board to keep the
+            // Hierarchy tidy.
+            var zapObject = new GameObject("Hypercube Zap");
+            zapObject.transform.SetParent(transform, false);
+            HypercubeZap zap = zapObject.AddComponent<HypercubeZap>();
+            zap.Play(GridToWorld(cube.x, cube.y), GridToWorld(target.x, target.y), color, delay, cellSize,
+                drawLike: tokenRenderer,
+                sortingOrder: tokenRenderer.sortingOrder + BeamOrderOffset);
         }
 
         /// <summary>
@@ -1305,7 +1420,8 @@ namespace Match3
             ThemeManager themeManager, TokenType[] tokenTypes, int seed,
             float swapDuration, float clearDelay, float fallSpeed,
             float popDuration = 0f, Explosion explosionPrefab = null, float springBackDuration = 0.01f,
-            float noMovesDelay = 0f, float shuffleDuration = 0.01f, float beamSpeed = 1000f)
+            float noMovesDelay = 0f, float shuffleDuration = 0.01f, float beamSpeed = 1000f,
+            float zapInterval = 0f)
         {
             this.width = width;
             this.height = height;
@@ -1324,6 +1440,7 @@ namespace Match3
             this.noMovesDelay = noMovesDelay;
             this.shuffleDuration = shuffleDuration;
             this.beamSpeed = beamSpeed;
+            this.zapInterval = zapInterval;
         }
 
         /// <summary>
@@ -1357,12 +1474,13 @@ namespace Match3
         }
 
         /// <summary>
-        /// Gives the piece in <paramref name="cell"/> a power (keeping its colour), in the model
-        /// and on its token. Call it after <see cref="LoadLayoutForTests"/>.
+        /// Gives the piece in <paramref name="cell"/> a power, in the model and on its token. It
+        /// keeps its colour, unless the power is a Hypercube, which has none. Call it after
+        /// <see cref="LoadLayoutForTests"/>.
         /// </summary>
         internal void SetPowerForTests(Vector2Int cell, PowerKind power)
         {
-            var piece = new Piece(model.TypeAt(cell), power);
+            Piece piece = power == PowerKind.Hypercube ? Piece.Hypercube : new Piece(model.TypeAt(cell), power);
             model.SetPieceAt(cell.x, cell.y, piece);
             tokens[cell.x, cell.y].SetPiece(piece);
         }

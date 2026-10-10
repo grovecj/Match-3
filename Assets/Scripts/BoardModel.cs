@@ -556,7 +556,8 @@ namespace Match3
         // ------------------------------------------------------------ Valid moves
 
         /// <summary>
-        /// True if swapping some pair of neighboring tokens would make a match. Meant for a
+        /// True if some pair of neighboring tokens can be swapped: the swap would make a match,
+        /// or it would set off a Hypercube (see <see cref="IsHypercubeSwap"/>). Meant for a
         /// settled board (one with no matches on it already).
         /// </summary>
         public bool HasValidMove()
@@ -566,9 +567,9 @@ namespace Match3
         }
 
         /// <summary>
-        /// Looks for a swap that would make a match, and if there is one, returns true with the
-        /// two cells to swap in <paramref name="a"/> and <paramref name="b"/>. The board is left
-        /// exactly as it was.
+        /// Looks for a swap the player is allowed to make (one that makes a match or sets off a
+        /// Hypercube), and if there is one, returns true with the two cells to swap in
+        /// <paramref name="a"/> and <paramref name="b"/>. The board is left exactly as it was.
         /// </summary>
         // This is a "brute-force" search: rather than being clever about which swaps could
         // work, try every one of them. Each swap is a "what if": make it, ask FindMatches (the
@@ -586,7 +587,7 @@ namespace Match3
                     var cell = new Vector2Int(x, y);
                     foreach (Vector2Int direction in SwapDirections)
                     {
-                        if (SwapWouldMatch(cell, cell + direction))
+                        if (IsValidSwap(cell, cell + direction))
                         {
                             a = cell;
                             b = cell + direction;
@@ -603,19 +604,31 @@ namespace Match3
         }
 
         /// <summary>
-        /// True if swapping the tokens in <paramref name="a"/> and <paramref name="b"/> would
-        /// leave a match on the board. Nothing is changed.
+        /// True if the player may swap the tokens in <paramref name="a"/> and
+        /// <paramref name="b"/>: doing so would leave a match on the board, or it's a Hypercube
+        /// swap. Nothing is changed.
         /// </summary>
-        private bool SwapWouldMatch(Vector2Int a, Vector2Int b)
+        // The rule used to be just "a swap is valid only if it makes a run". The Hypercube breaks
+        // that, so the rule became "a run, OR a Hypercube swap", and it lives in this one method.
+        // Everything that asks "can the player move?" (hints, the no-moves check, shuffling) goes
+        // through here, so none of it had to change to learn about the new gem.
+        private bool IsValidSwap(Vector2Int a, Vector2Int b)
         {
             if (!IsInBounds(a) || !IsInBounds(b))
             {
                 return false;
             }
 
+            // Checked first: a Hypercube swap needs no run, so there's nothing to try out.
+            if (IsHypercubeSwap(a, b))
+            {
+                return true;
+            }
+
             Piece pieceA = PieceAt(a);
             Piece pieceB = PieceAt(b);
-            // An empty cell can't be swapped, and swapping two of the same colour changes nothing.
+            // An empty cell can't be swapped, and swapping two of the same colour changes
+            // nothing. (Two Hypercubes are "the same colour" here: neither has one.)
             if (pieceA.IsEmpty || pieceB.IsEmpty || pieceA.Colour == pieceB.Colour)
             {
                 return false;
@@ -625,6 +638,24 @@ namespace Match3
             bool matches = FindMatches().Count > 0;
             Swap(a, b);
             return matches;
+        }
+
+        /// <summary>
+        /// True if exactly one of cells <paramref name="a"/> and <paramref name="b"/> holds a
+        /// Hypercube and the other holds a coloured piece. Swapping those two is always a valid
+        /// move, even though it makes no run: it sets the Hypercube off (see
+        /// <see cref="ActivateHypercube"/>). Two Hypercubes don't count, and nor does an empty
+        /// cell. It doesn't matter which way round the cells are given, or whether the swap has
+        /// been made yet. Doesn't check that the cells are neighbors.
+        /// </summary>
+        public bool IsHypercubeSwap(Vector2Int a, Vector2Int b)
+        {
+            Piece pieceA = PieceAt(a);
+            Piece pieceB = PieceAt(b);
+            // A coloured piece can be an ordinary gem or a Flame or Star: all that matters is
+            // that it has a colour for the Hypercube to take.
+            return (pieceA.Power == PowerKind.Hypercube && pieceB.Colour != null)
+                || (pieceB.Power == PowerKind.Hypercube && pieceA.Colour != null);
         }
 
         // ------------------------------------------------------------ Shuffling
@@ -745,7 +776,8 @@ namespace Match3
         /// <summary>
         /// The power gem a match of <paramref name="shape"/> leaves behind at its anchor, or
         /// <see cref="PowerKind.None"/> if it leaves nothing. A line of exactly 4 makes a Flame,
-        /// and an L, T or + makes a Star.
+        /// an L, T or + makes a Star, and anything with a line of 5 or more in it makes a
+        /// Hypercube.
         /// </summary>
         public static PowerKind PowerMadeBy(MatchShape shape)
         {
@@ -755,6 +787,7 @@ namespace Match3
             {
                 case MatchShape.Line4: return PowerKind.Flame;
                 case MatchShape.Cross: return PowerKind.Star;
+                case MatchShape.Line5: return PowerKind.Hypercube;
                 default: return PowerKind.None;
             }
         }
@@ -810,7 +843,8 @@ namespace Match3
         /// <summary>
         /// The cells a gem with <paramref name="power"/> blasts when it goes off in
         /// <paramref name="cell"/>: see <see cref="FlameBlastCells"/> and
-        /// <see cref="StarBlastCells"/>. Empty for a power that has no blast.
+        /// <see cref="StarBlastCells"/>. Empty for a power that has no blast: a Hypercube isn't
+        /// set off by being matched, so it has none (see <see cref="ActivateHypercube"/>).
         /// </summary>
         // This is the one place that knows which power has which blast. ClearMatches asks here
         // rather than checking for each kind of gem itself, so a new kind of blast is a new
@@ -828,8 +862,9 @@ namespace Match3
         /// <summary>
         /// One whole clear step, done in a fixed order:
         ///  1. every cell of every group in <paramref name="groups"/> is emptied, except that a
-        ///     group whose shape makes a power gem (see <see cref="PowerMadeBy"/>) gets that gem,
-        ///     in the group's colour, in its anchor cell instead;
+        ///     group whose shape makes a power gem (see <see cref="PowerMadeBy"/>) gets that gem
+        ///     in its anchor cell instead: in the group's colour, unless it's a Hypercube, which
+        ///     has none;
         ///  2. every power gem that was among the matched cells then detonates, emptying the
         ///     cells its blast covers (see <see cref="BlastCells"/>): the 3x3 around a Flame, the
         ///     row and column of a Star.
@@ -842,7 +877,7 @@ namespace Match3
         /// the new one is left in its place.
         ///
         /// A blast only removes what it hits. A power gem caught in one is simply cleared, it
-        /// doesn't go off in turn.
+        /// doesn't go off in turn. That includes a Hypercube.
         /// </summary>
         /// <param name="groups">The matches to clear, as <see cref="FindMatchGroups"/> returned them.</param>
         public ClearResult ClearMatches(IReadOnlyList<MatchGroup> groups)
@@ -875,7 +910,9 @@ namespace Match3
 
                     if (made != PowerKind.None && cell == group.Anchor)
                     {
-                        var gem = new Piece(group.Colour, made);
+                        // A Flame or Star keeps the colour of the match that made it. A Hypercube
+                        // doesn't: the five gems are gone and what's left has no colour at all.
+                        Piece gem = made == PowerKind.Hypercube ? Piece.Hypercube : new Piece(group.Colour, made);
                         grid[cell.x, cell.y] = gem;
                         created.Add(new Creation(cell, gem));
                         createdCells.Add(cell);
@@ -907,6 +944,50 @@ namespace Match3
             }
 
             return new ClearResult(matched, created, detonations);
+        }
+
+        /// <summary>
+        /// Sets off the Hypercube in <paramref name="cube"/> on <paramref name="colour"/>: the
+        /// Hypercube itself and every piece of that colour, wherever it is on the board, are
+        /// emptied. Nothing else is touched. Returns the coloured cells that were cleared (not
+        /// <paramref name="cube"/>), column by column from the left, each bottom to top.
+        ///
+        /// This is a clear step of its own, in place of <see cref="ClearMatches"/>: no runs are
+        /// looked for, so no power gem is made, and a Flame or Star of the chosen colour is
+        /// simply cleared rather than going off. As after any clear step, call
+        /// <see cref="Collapse"/> next.
+        /// </summary>
+        /// <param name="cube">The cell the Hypercube is in now (after the swap, if it was swapped).</param>
+        /// <param name="colour">The colour of the gem it was swapped with.</param>
+        public List<Vector2Int> ActivateHypercube(Vector2Int cube, TokenType colour)
+        {
+            // Throwing on a call that makes no sense is better than quietly clearing the wrong
+            // thing: the mistake shows up where it was made.
+            if (PieceAt(cube).Power != PowerKind.Hypercube)
+            {
+                throw new System.ArgumentException($"There is no Hypercube in cell ({cube.x},{cube.y}).");
+            }
+            if (colour == null)
+            {
+                throw new System.ArgumentNullException(nameof(colour), "A Hypercube needs a colour to clear.");
+            }
+
+            var cleared = new List<Vector2Int>();
+            for (int x = 0; x < Width; x++)
+            {
+                for (int y = 0; y < Height; y++)
+                {
+                    // Colour, not Matches: there are no runs here, just "is it that colour?".
+                    if (grid[x, y].Colour == colour)
+                    {
+                        grid[x, y] = Piece.Empty;
+                        cleared.Add(new Vector2Int(x, y));
+                    }
+                }
+            }
+
+            grid[cube.x, cube.y] = Piece.Empty;
+            return cleared;
         }
 
         /// <summary>

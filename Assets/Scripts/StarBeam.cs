@@ -149,8 +149,12 @@ namespace Match3
             }
         }
 
-        /// <summary>The sprite every arm draws: a white bar, soft along its long edges, built in code.</summary>
-        private static Sprite BeamSprite
+        /// <summary>
+        /// The sprite every arm draws: a white bar, soft along its long edges, built in code.
+        /// It's 1 unit long and 1 unit thick with its pivot at one end, so anything that wants
+        /// a line of light can stretch it to fit (a Hypercube's bolts do: see <see cref="HypercubeZap"/>).
+        /// </summary>
+        public static Sprite BeamSprite
         {
             get
             {

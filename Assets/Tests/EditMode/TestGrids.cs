@@ -97,7 +97,7 @@ namespace Match3.Tests
             switch (letter)
             {
                 case Empty: return Piece.Empty;
-                case Hypercube: return new Piece(null, PowerKind.Hypercube);
+                case Hypercube: return Piece.Hypercube;
                 default: return new Piece(Type(letter));
             }
         }
