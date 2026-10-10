@@ -11,7 +11,8 @@ namespace Match3
     ///
     /// How Unity audio fits together:
     ///   AudioClip     - the sound data (a .wav/.ogg asset). Stored in the SoundSet.
-    ///   AudioSource   - a "speaker" component that plays clips. This object has one.
+    ///   AudioSource   - a "speaker" component that plays clips. This object has two: one
+    ///                   for the quick effects, and one just for the round-end horn.
     ///   AudioListener - the "microphone", on the Main Camera. Everything the game plays is
     ///                   heard through it, so its static volume/pause settings affect every sound.
     /// </summary>
@@ -27,6 +28,11 @@ namespace Match3
         [SerializeField] private SoundSet soundSet;
 
         private AudioSource audioSource;
+        // Pitch is a setting of the whole AudioSource, so a pitched-up cascade sound on the
+        // shared source would bend a long sound that's still playing there. The horn is long
+        // (over a second) and plays just as the last cascade settles, so it gets a source of
+        // its own that nothing else ever changes the pitch of.
+        private AudioSource hornSource;
 
         /// <summary>Master volume, from 0 (muted) to 1 (full).</summary>
         public float Volume { get; private set; } = DefaultVolume;
@@ -44,6 +50,12 @@ namespace Match3
             audioSource = GetComponent<AudioSource>();
             // This source only ever plays one-shots on request, never a clip of its own at startup.
             audioSource.playOnAwake = false;
+
+            // AddComponent creates the second source from code, so the scene doesn't need
+            // editing. It sends its sound to the same place as the first one.
+            hornSource = gameObject.AddComponent<AudioSource>();
+            hornSource.playOnAwake = false;
+            hornSource.outputAudioMixerGroup = audioSource.outputAudioMixerGroup;
 
             // GetFloat returns the second argument when nothing has been saved yet.
             ApplyVolume(PlayerPrefs.GetFloat(SoundVolumeKey, DefaultVolume));
@@ -70,10 +82,11 @@ namespace Match3
             // sound effects that can overlap (two matches in a row, a tick during a match...).
             //
             // Pitch belongs to the source, not to each one-shot, so changing it also bends any
-            // one-shot from this source that's still ringing out. That's fine for short effects;
-            // if it ever becomes audible, the fix is a few AudioSources to take turns with.
-            audioSource.pitch = pitch;
-            audioSource.PlayOneShot(clip, volumeScale);
+            // one-shot from this source that's still ringing out. That's fine for short effects.
+            // It was audible on the long horn, which is why the horn has its own source.
+            AudioSource source = sound == SoundId.RoundEndHorn ? hornSource : audioSource;
+            source.pitch = pitch;
+            source.PlayOneShot(clip, volumeScale);
         }
 
         /// <summary>

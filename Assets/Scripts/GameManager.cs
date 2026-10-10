@@ -7,6 +7,14 @@ using UnityEngine.UI;
 
 namespace Match3
 {
+    /// <summary>What the end-of-round countdown should sound like on a given frame.</summary>
+    public enum CountdownCue
+    {
+        None,
+        Tick,
+        Horn,
+    }
+
     /// <summary>
     /// Runs the round: a 60-second countdown that turns the board into a game. It decides when
     /// the player may swap, resets the board and score between rounds, and drives the timer,
@@ -25,13 +33,25 @@ namespace Match3
     /// in Ready and RoundOver. A RoundOver score that makes the top 10 is offered to the leaderboard, which
     /// asks for the player's initials. A signed-in player's rounds are also posted to the global
     /// leaderboard.
+    ///
+    /// It also plays the end-of-round countdown: a tick for each of the last few seconds and a
+    /// horn when the clock hits 0:00.
     /// </summary>
     public class GameManager : MonoBehaviour
     {
+        /// <summary>A tick plays as the timer changes to each second from this one down to 1.</summary>
+        public const int CountdownFrom = 5;
+
+        // The last tick (0:01) plays a little higher, as a final "get ready".
+        private const float FinalTickPitch = 1.1f;
+        // Ticks play below full volume so the horn, at full volume, is clearly the loudest.
+        private const float TickVolume = 0.6f;
+
         [Header("Gameplay")]
         [SerializeField] private Board board;
         [SerializeField] private BoardInput boardInput;
         [SerializeField] private ScoreKeeper scoreKeeper;
+        [SerializeField] private AudioManager audioManager;
         [SerializeField, Min(1f)] private float roundDuration = 60f;
         [Tooltip("When this many seconds (or fewer) are left, the timer turns red.")]
         [SerializeField, Min(0f)] private float warningTime = 10f;
@@ -68,11 +88,13 @@ namespace Match3
 
         private GameState state;
         private float timeRemaining;
+        // The whole second the timer showed last frame, so we can tell when it changes.
+        private int lastSecondShown;
         private InputAction pauseAction;
 
         private void Start()
         {
-            if (board == null || boardInput == null || scoreKeeper == null ||
+            if (board == null || boardInput == null || scoreKeeper == null || audioManager == null ||
                 timerText == null || messageText == null || roundButton == null || roundButtonLabel == null ||
                 pauseOverlay == null || resumeButton == null || boardBlur == null || settingsMenu == null ||
                 leaderboardMenu == null || accountMenu == null)
@@ -183,6 +205,7 @@ namespace Match3
                 // every frame makes the timer count real seconds whatever the frame rate is.
                 timeRemaining = Mathf.Max(0f, timeRemaining - Time.deltaTime);
                 ShowTime();
+                PlayCountdownCue();
 
                 if (timeRemaining <= 0f)
                 {
@@ -206,6 +229,8 @@ namespace Match3
             scoreKeeper.ResetScore();
             timeRemaining = roundDuration;
             ShowTime();
+            // Start the countdown from the full clock, so last round's 0 isn't remembered.
+            lastSecondShown = SecondsShown();
 
             // SetActive shows or hides a whole GameObject, including its children (so hiding
             // the button also hides its label).
@@ -306,12 +331,65 @@ namespace Match3
             boardInput.enabled = inputEnabled;
         }
 
+        // Plays a tick or the horn if the timer display just changed to a second that has one.
+        // Because this only runs from UpdatePlaying, a pause simply stops it being called, and
+        // lastSecondShown is still there on resume: no tick is repeated or skipped.
+        private void PlayCountdownCue()
+        {
+            int second = SecondsShown();
+            CountdownCue cue = GetCountdownCue(lastSecondShown, second, CountdownFrom);
+            lastSecondShown = second;
+
+            if (cue == CountdownCue.Tick)
+            {
+                audioManager.Play(SoundId.CountdownTick, second == 1 ? FinalTickPitch : 1f, TickVolume);
+            }
+            else if (cue == CountdownCue.Horn)
+            {
+                audioManager.Play(SoundId.RoundEndHorn);
+            }
+        }
+
+        /// <summary>
+        /// Which countdown sound (if any) to play when the timer display goes from
+        /// <paramref name="previousSecond"/> to <paramref name="currentSecond"/>: a tick on
+        /// reaching each second from <paramref name="countdownFrom"/> down to 1, the horn on
+        /// reaching 0.
+        /// </summary>
+        // This is "edge-triggered": it reacts to the value *changing*, not to the value itself.
+        // The timer shows 0:03 for about 60 frames in a row; asking "is it 3?" would tick on
+        // every one of them, while asking "did it just become 3?" ticks once.
+        //
+        // It's `static` and `public` (it uses nothing but its arguments) so the Edit Mode tests
+        // can check the timing rules with plain numbers, without running a round.
+        public static CountdownCue GetCountdownCue(int previousSecond, int currentSecond, int countdownFrom)
+        {
+            // Same second as last frame, or the clock went back up (a new round): nothing new.
+            if (currentSecond >= previousSecond)
+            {
+                return CountdownCue.None;
+            }
+            // Checked before the tick, so a slow frame that jumps straight from 0:02 to 0:00
+            // still sounds the horn. Only the *current* second is looked at, which is also why
+            // a frame that skips a second gives one cue, not one per second skipped.
+            if (currentSecond <= 0)
+            {
+                return CountdownCue.Horn;
+            }
+            return currentSecond <= countdownFrom ? CountdownCue.Tick : CountdownCue.None;
+        }
+
+        // Round up, so the display reads 1:00 for the whole first second and only shows 0:00
+        // once time has really run out.
+        private int SecondsShown()
+        {
+            return Mathf.CeilToInt(timeRemaining);
+        }
+
         /// <summary>Displays the time left as m:ss, in red once it's down to the warning time.</summary>
         private void ShowTime()
         {
-            // Round up, so the display reads 1:00 for the whole first second and only shows
-            // 0:00 once time has really run out.
-            int totalSeconds = Mathf.CeilToInt(timeRemaining);
+            int totalSeconds = SecondsShown();
             int minutes = totalSeconds / 60;
             int seconds = totalSeconds % 60;
             // ":00" pads the seconds to two digits, so 5 seconds shows as "0:05", not "0:5".

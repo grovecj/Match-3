@@ -120,6 +120,20 @@ namespace Match3.Tests
         }
 
         [Test]
+        public void Awake_AddsASecondSourceForTheHorn()
+        {
+            // One from RequireComponent for the quick effects, one added in Awake for the horn,
+            // so a pitched cascade sound can't bend the horn while it's playing.
+            AudioManager manager = CreateManager(null);
+            AudioSource[] sources = manager.GetComponents<AudioSource>();
+            Assert.AreEqual(2, sources.Length);
+            foreach (AudioSource source in sources)
+            {
+                Assert.IsFalse(source.playOnAwake);
+            }
+        }
+
+        [Test]
         public void Volume_DefaultsTo80PercentWhenNothingIsSaved()
         {
             AudioManager manager = CreateManager(null);

@@ -4,7 +4,7 @@ Third-party assets used in the game. Add a row for every new file taken from som
 
 ## Sounds
 
-All from **Interface Sounds** by Kenney (<https://kenney.nl/assets/interface-sounds>),
+All but the horn are from **Interface Sounds** by Kenney (<https://kenney.nl/assets/interface-sounds>),
 released under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) (public domain,
 credit appreciated but not required). The pack's license is kept in
 `Art/Audio/Chimes/License.txt`.
@@ -17,3 +17,5 @@ credit appreciated but not required). The pack's license is kept in
 | `tick_002.ogg`                   | Countdown tick              | Interface Sounds | Kenney | CC0     |
 | `drop_002.ogg`                   | Swap                        | Interface Sounds | Kenney | CC0     |
 | `error_008.ogg`                  | Invalid swap                | Interface Sounds | Kenney | CC0     |
+
+`horn.wav` (round-end horn) isn't third-party: it's synthesized by `Art/Audio/build_horn.py`.
