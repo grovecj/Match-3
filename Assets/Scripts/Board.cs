@@ -44,7 +44,7 @@ namespace Match3
         [SerializeField, Min(0.01f)] private float springBackDuration = 0.2f;
 
         [Header("Resolving")]
-        [Tooltip("Pause, in seconds, between matched tokens being cleared and the rest falling. The pop plays during it.")]
+        [Tooltip("Pause, in seconds, between matched tokens being cleared and the rest falling. The pop plays during it. A Flame's blast takes the same again.")]
         [SerializeField, Min(0f)] private float clearDelay = 0.25f;
         [Tooltip("How fast falling tokens move, in cells per second.")]
         [SerializeField, Min(0.1f)] private float fallSpeed = 10f;
@@ -68,6 +68,12 @@ namespace Match3
         // shrinking takes the rest, so it reads as a "pop" rather than a slow pulse.
         private const float PopPeakTime = 0.3f;
 
+        // A Flame's blast is drawn as one ordinary burst, made three cells wide so it covers the
+        // 3x3 it clears, and sized like a run of 5 so it gets the most shards and the white
+        // flash. A placeholder: proper blast effects and sounds are a later issue.
+        private const float BlastBurstScale = 3f;
+        private const int BlastBurstRunLength = 5;
+
         /// <summary>
         /// Fired once for every run of matching tokens that gets cleared, with the run's length
         /// (3, 4, 5...). Scoring can listen to this without the Board knowing about score.
@@ -88,6 +94,20 @@ namespace Match3
         // on top of itself. Listeners that care about "something was cleared" rather than "how
         // many runs" (like MatchSounds) want exactly one call per step, so they get their own event.
         public event System.Action<int, int> ClearStepResolved;
+
+        /// <summary>
+        /// Fired when a match leaves a power gem behind, with which kind and the cell it's in.
+        /// Comes during the clear step that made it, before that step's
+        /// <see cref="ClearStepResolved"/>.
+        /// </summary>
+        public event System.Action<PowerKind, Vector2Int> PowerGemCreated;
+
+        /// <summary>
+        /// Fired when a power gem goes off, with which kind and the cell it was in. Comes in the
+        /// detonation phase: after its step's <see cref="ClearStepResolved"/> and the matched
+        /// tokens' pop, before anything falls.
+        /// </summary>
+        public event System.Action<PowerKind, Vector2Int> PowerGemDetonated;
 
         /// <summary>
         /// Fired when the player's swap starts animating, whether or not it will make a match.
@@ -714,9 +734,9 @@ namespace Match3
         // before continuing, which lets us write a sequence of animations top to bottom like
         // ordinary code instead of juggling timers or callbacks.
         /// <summary>
-        /// One whole turn: swap, then either swap back (no match) or clear -> fall -> refill,
-        /// repeating for as long as the falling tokens create new matches (cascades). If the
-        /// board ends up with no valid moves, it's reshuffled before the turn ends.
+        /// One whole turn: swap, then either swap back (no match) or clear -> detonate -> fall
+        /// -> refill, repeating for as long as the falling tokens create new matches (cascades).
+        /// If the board ends up with no valid moves, it's reshuffled before the turn ends.
         /// </summary>
         private IEnumerator ResolveSwap(Vector2Int a, Vector2Int b)
         {
@@ -737,22 +757,34 @@ namespace Match3
                 yield return StartCoroutine(AnimateSwap(a, b));
             }
 
-            // Cascade loop: clear the current matches, let tokens fall and refill, then check
-            // whether the new layout made more matches. Skipped entirely for an invalid swap.
+            // Cascade loop: clear the current matches, set off any power gems among them, let
+            // tokens fall and refill, then check whether the new layout made more matches.
+            // Skipped entirely for an invalid swap.
             // cascadeIndex counts the passes: 0 is the swap's own match, 1+ are cascades. It's
             // local to this turn, so every new swap starts counting from 0 again.
             for (int cascadeIndex = 0; groups.Count > 0; cascadeIndex++)
             {
-                List<Token> cleared = ClearMatches(groups, cascadeIndex);
-                // The pop is part of the clear delay, not extra time on top of it; waiting for it
-                // here also means every popped token is gone before anything falls.
-                yield return StartCoroutine(AnimatePops(cleared));
-                float remainingDelay = clearDelay - popDuration;
-                if (remainingDelay > 0f)
+                // The model does the whole clear step right now, blasts included, and describes
+                // what it did. The rest of this pass plays that description back one phase at a
+                // time. Until the detonation phase below, the blasted tokens are still on screen
+                // (and in the view array) although the model has already emptied their cells.
+                BoardModel.ClearResult result = model.ClearMatches(groups);
+
+                // Phase 1: the matched tokens pop, and any new power gems appear.
+                List<Token> matched = RemoveMatched(groups, result, cascadeIndex);
+                yield return StartCoroutine(PopAndPause(matched));
+
+                // Phase 2: matched power gems go off. This is a phase of its own, after the
+                // match's pop and before gravity, so the player sees "match, then blast, then
+                // fall" as three beats. Adding a phase to a coroutine is just adding lines here:
+                // the code reads in the order things happen.
+                if (result.Detonations.Count > 0)
                 {
-                    yield return new WaitForSeconds(remainingDelay);
+                    List<Token> blasted = Detonate(result.Detonations);
+                    yield return StartCoroutine(PopAndPause(blasted));
                 }
 
+                // Phase 3: only now does anything fall.
                 CollapseAndRefill();
                 yield return StartCoroutine(AnimateFalls());
 
@@ -809,9 +841,10 @@ namespace Match3
             // Very rarely the tokens on the board can't be arranged into a playable layout at
             // all (say, nearly all of them are one type). Then deal new types instead. No tokens
             // are created or destroyed: each one just changes what it shows.
-            // The redeal makes every piece an ordinary one. That's fine while nothing creates
-            // power gems; once something does, this needs a redeal that keeps each piece's power.
-            if (!model.FillWithValidMove())
+            // The redeal only changes colours: a power gem is still a power gem afterwards, in
+            // the same cell. (FillWithValidMove would also work, but it makes every piece an
+            // ordinary one, silently deleting the player's Flames.)
+            if (!model.RedealKeepingPowers())
             {
                 Debug.LogWarning($"Board: a {width}x{height} board with these token types has no valid moves.", this);
             }
@@ -888,60 +921,121 @@ namespace Match3
         }
 
         /// <summary>
-        /// Empties every cell in <paramref name="groups"/> in the model and the view array, spawns
-        /// a burst on each, and reports each run through <see cref="MatchCleared"/>, then the
-        /// step as a whole through <see cref="ClearStepResolved"/>. Returns the tokens that were
-        /// removed: they're no longer on the board, but they're still on screen, for
-        /// <see cref="AnimatePops"/> to pop and then destroy.
+        /// Phase 1 of a clear step: takes the matched tokens off the board, spawning a burst on
+        /// each, and turns each match's anchor token into the power gem the model made there.
+        /// Reports each run through <see cref="MatchCleared"/>, each new gem through
+        /// <see cref="PowerGemCreated"/>, then the step as a whole through
+        /// <see cref="ClearStepResolved"/>. Returns the tokens that were removed: they're no
+        /// longer on the board, but they're still on screen, for <see cref="AnimatePops"/> to pop
+        /// and then destroy.
         /// </summary>
-        private List<Token> ClearMatches(List<MatchGroup> groups, int cascadeIndex)
+        /// <param name="groups">The matches that were cleared.</param>
+        /// <param name="result">What the model said clearing them did.</param>
+        private List<Token> RemoveMatched(List<MatchGroup> groups, BoardModel.ClearResult result, int cascadeIndex)
         {
-            // Clearing, bursts and both events still work run by run, exactly as they did before
-            // matches were grouped, so score and sound don't change. A group's shape and anchor
-            // aren't used yet: they're for the power gems to come.
+            // Bursts and both run events still work run by run, exactly as they did before
+            // matches were grouped, so score and sound don't change.
             var runs = new List<List<Vector2Int>>();
             foreach (MatchGroup group in groups)
             {
                 runs.AddRange(group.Runs);
             }
 
-            // Worked out before clearing, so each cell's burst can be sized by its run. A cell an
-            // L or T shape's two runs share gets the longer one.
+            // Each cell's burst is sized by its run. A cell an L or T shape's two runs share
+            // gets the longer one.
             Dictionary<Vector2Int, int> runLengths = BoardModel.LongestRunPerCell(runs);
-            var cleared = new List<Token>();
+            var removed = new List<Token>();
 
-            // The model hands back each cleared cell once, even where two runs share it, so no
-            // cell pops or bursts twice.
-            foreach (Vector2Int cell in model.Clear(runs))
+            // The model lists each matched cell once, even where two runs share it, so no cell
+            // pops or bursts twice.
+            foreach (Vector2Int cell in result.Matched)
             {
-                Token token = tokens[cell.x, cell.y];
-                SpawnExplosion(cell, token.Type, runLengths[cell]);
-                // The pop sets the token's scale from here on. Disabling the Token component
-                // stops its Update, so a token still shrinking back from being held can't fight it.
-                token.enabled = false;
-                cleared.Add(token);
-                // Null the view entry right away so it agrees with the model immediately; only
-                // the visuals linger for the pop.
-                tokens[cell.x, cell.y] = null;
+                SpawnExplosion(cell, tokens[cell.x, cell.y].Type, runLengths[cell]);
+                removed.Add(TakeToken(cell));
+            }
+
+            // A new power gem isn't a new token: the anchor's token stays where it is and just
+            // starts showing the power. It's the same colour, so only the overlay changes.
+            foreach (BoardModel.Creation creation in result.Created)
+            {
+                tokens[creation.Cell.x, creation.Cell.y].SetPiece(creation.Piece);
+                // ?.Invoke calls every subscriber, or does nothing if nobody has subscribed.
+                PowerGemCreated?.Invoke(creation.Kind, creation.Cell);
             }
 
             int longestRun = 0;
             foreach (List<Vector2Int> run in runs)
             {
-                // ?.Invoke calls every subscriber, or does nothing if nobody has subscribed.
                 MatchCleared?.Invoke(run.Count);
                 longestRun = Mathf.Max(longestRun, run.Count);
             }
 
             ClearStepResolved?.Invoke(longestRun, cascadeIndex);
-            return cleared;
+            return removed;
+        }
+
+        /// <summary>
+        /// Phase 2 of a clear step: for each power gem the model set off, spawns one big burst
+        /// on its cell, takes the tokens its blast cleared off the board, and reports it through
+        /// <see cref="PowerGemDetonated"/>. Returns the removed tokens, as
+        /// <see cref="RemoveMatched"/> does. The gem's own token isn't among them: it was part
+        /// of the match, so it has already popped.
+        /// </summary>
+        // Blasted gems score nothing yet (that's the scoring issue), so no MatchCleared here.
+        private List<Token> Detonate(IReadOnlyList<BoardModel.Detonation> detonations)
+        {
+            var removed = new List<Token>();
+            foreach (BoardModel.Detonation detonation in detonations)
+            {
+                // The gem's token is gone by now, which is why the model hands back the piece it
+                // was: that's where the blast's colour comes from.
+                SpawnExplosion(detonation.Cell, detonation.Piece.Colour, BlastBurstRunLength, BlastBurstScale);
+                foreach (Vector2Int cell in detonation.Blasted)
+                {
+                    removed.Add(TakeToken(cell));
+                }
+                PowerGemDetonated?.Invoke(detonation.Kind, detonation.Cell);
+            }
+            return removed;
+        }
+
+        /// <summary>
+        /// Takes the token in <paramref name="cell"/> out of the view array and returns it. It
+        /// stays on screen (so it can pop) but no longer belongs to any cell.
+        /// </summary>
+        private Token TakeToken(Vector2Int cell)
+        {
+            Token token = tokens[cell.x, cell.y];
+            // The pop sets the token's scale from here on. Disabling the Token component stops
+            // its Update, so a token still shrinking back from being held can't fight it.
+            token.enabled = false;
+            tokens[cell.x, cell.y] = null;
+            return token;
+        }
+
+        /// <summary>
+        /// Pops <paramref name="popping"/> and then waits out whatever is left of
+        /// <see cref="clearDelay"/>.
+        /// </summary>
+        private IEnumerator PopAndPause(List<Token> popping)
+        {
+            // The pop is part of the clear delay, not extra time on top of it; waiting for it
+            // here also means every popped token is gone before the next phase starts.
+            yield return StartCoroutine(AnimatePops(popping));
+            float remainingDelay = clearDelay - popDuration;
+            if (remainingDelay > 0f)
+            {
+                yield return new WaitForSeconds(remainingDelay);
+            }
         }
 
         /// <summary>
         /// Spawns a burst on <paramref name="cell"/> in <paramref name="type"/>'s color, sized for
-        /// a run of <paramref name="runLength"/>.
+        /// a run of <paramref name="runLength"/>. <paramref name="scale"/> is how many cells
+        /// wide the whole effect is stretched: 1 for a single cleared token.
         /// </summary>
-        private void SpawnExplosion(Vector2Int cell, TokenType type, int runLength)
+        // `float scale = 1f` is an optional parameter: callers that leave it out get 1.
+        private void SpawnExplosion(Vector2Int cell, TokenType type, int runLength, float scale = 1f)
         {
             if (explosionPrefab == null)
             {
@@ -953,7 +1047,7 @@ namespace Match3
             // destroys itself when it's done (see Explosion).
             Explosion explosion = Instantiate(explosionPrefab, GridToWorld(cell.x, cell.y), Quaternion.identity, transform);
             // The prefab is built for a 1-unit cell; scaling it scales the whole burst with it.
-            explosion.transform.localScale = Vector3.one * cellSize;
+            explosion.transform.localScale = Vector3.one * (cellSize * scale);
             TokenStyle style = CurrentTokenStyle;
             explosion.Play(style != null ? style.BurstColorFor(type) : Color.white, runLength);
         }
@@ -1150,6 +1244,17 @@ namespace Match3
                 }
             }
             SpawnTokenInEveryCell();
+        }
+
+        /// <summary>
+        /// Gives the piece in <paramref name="cell"/> a power (keeping its colour), in the model
+        /// and on its token. Call it after <see cref="LoadLayoutForTests"/>.
+        /// </summary>
+        internal void SetPowerForTests(Vector2Int cell, PowerKind power)
+        {
+            var piece = new Piece(model.TypeAt(cell), power);
+            model.SetPieceAt(cell.x, cell.y, piece);
+            tokens[cell.x, cell.y].SetPiece(piece);
         }
 
         // Gizmos are drawn only in the Scene view (not in the game). This outline lets you

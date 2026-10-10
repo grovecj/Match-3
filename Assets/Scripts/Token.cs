@@ -42,10 +42,19 @@ namespace Match3
             Hint,
         }
 
-        // Not a [SerializeField]: nothing is drawn for a power yet, so there's nothing to set up
-        // in the Inspector. The Board assigns it, with the type, via SetPiece.
+        // Sorting order decides what's drawn on top: higher numbers cover lower ones. A power
+        // overlay is one above its own token, and a picked-up token is two above a resting one,
+        // which puts it over its neighbors and their overlays too.
+        private const int OverlayOrderOffset = 1;
+        private const int LiftedOrderOffset = 2;
+
+        // Not a [SerializeField]: the power's overlay is built in code, so there's nothing to
+        // set up in the Inspector. The Board assigns it, with the type, via SetPiece.
         private PowerKind power = PowerKind.None;
         private SpriteRenderer spriteRenderer;
+        // The glow drawn over this token while it's a Flame. It's on a child GameObject that is
+        // only created the first time it's needed, so ordinary tokens never have one.
+        private SpriteRenderer powerOverlay;
         private Highlight highlight = Highlight.None;
         // 0 = resting, 1 = fully picked up. Eased toward the highlight's target every frame.
         private float lift;
@@ -60,8 +69,14 @@ namespace Match3
 
         public TokenType Type => type;
 
-        /// <summary>The power this token carries. It doesn't change how the token looks yet.</summary>
+        /// <summary>The power this token carries. A Flame shows it with a glow: see <see cref="ShowsPowerOverlay"/>.</summary>
         public PowerKind Power => power;
+
+        /// <summary>
+        /// True while this token is drawing a power overlay (the Flame's glow) on top of its
+        /// ordinary sprite.
+        /// </summary>
+        public bool ShowsPowerOverlay => powerOverlay != null && powerOverlay.gameObject.activeSelf;
 
         public Highlight CurrentHighlight => highlight;
 
@@ -106,7 +121,7 @@ namespace Match3
             {
                 // Draw above the neighbors, so a dragged token slides over the one it's swapping
                 // with instead of under it. Higher sorting orders are drawn on top.
-                spriteRenderer.sortingOrder = restSortingOrder + 1;
+                SetSortingOrder(restSortingOrder + LiftedOrderOffset);
             }
             highlight = newHighlight;
             highlightChanged = true;
@@ -146,7 +161,17 @@ namespace Match3
             // neighbor while it's still bigger than them.
             if (lift == 0f && highlight == Highlight.None)
             {
-                spriteRenderer.sortingOrder = restSortingOrder;
+                SetSortingOrder(restSortingOrder);
+            }
+        }
+
+        /// <summary>Sets how far forward this token is drawn, keeping its overlay just in front of it.</summary>
+        private void SetSortingOrder(int order)
+        {
+            spriteRenderer.sortingOrder = order;
+            if (powerOverlay != null)
+            {
+                powerOverlay.sortingOrder = order + OverlayOrderOffset;
             }
         }
 
@@ -183,6 +208,9 @@ namespace Match3
                 spriteRenderer = GetComponent<SpriteRenderer>();
             }
 
+            // Before the early return below: the overlay doesn't depend on the type or style.
+            ApplyPowerOverlay();
+
             // Without both a type and a style there's nothing sensible to draw.
             if (type == null || style == null)
             {
@@ -195,6 +223,47 @@ namespace Match3
             style.TryGetVisual(type, out Sprite sprite, out Color tint);
             spriteRenderer.sprite = sprite;
             spriteRenderer.color = tint;
+        }
+
+        /// <summary>
+        /// Shows the Flame's glow if this token is a Flame and hides it if not, creating the
+        /// glow's GameObject the first time it's needed.
+        /// </summary>
+        // An "overlay" is a second picture drawn on top of the first. The token's own sprite
+        // (which the style picks) isn't changed at all, so the glow never has to know which
+        // style is in use, and switching style can't lose it.
+        private void ApplyPowerOverlay()
+        {
+            // Only the Flame has a look so far. Star and Hypercube will get theirs when they
+            // can be made.
+            bool show = power == PowerKind.Flame;
+            if (powerOverlay == null)
+            {
+                if (!show)
+                {
+                    return;
+                }
+
+                // A child GameObject moves, scales and is destroyed with its parent, so the
+                // glow stays on the token while it falls, swaps, is picked up, or pops.
+                // SetParent's `false` means "keep my local position (0, 0, 0)" rather than
+                // "stay where I am in the world", which puts it exactly on the token.
+                var overlayObject = new GameObject("Flame Glow");
+                overlayObject.transform.SetParent(transform, false);
+                // FlameGlow's [RequireComponent] adds the SpriteRenderer too.
+                overlayObject.AddComponent<FlameGlow>();
+                powerOverlay = overlayObject.GetComponent<SpriteRenderer>();
+                powerOverlay.sprite = FlameGlow.GlowSprite;
+                powerOverlay.color = FlameGlow.RestColor;
+                // Draw it the same way, and in the same layer, as the token itself.
+                powerOverlay.sharedMaterial = spriteRenderer.sharedMaterial;
+                powerOverlay.sortingLayerID = spriteRenderer.sortingLayerID;
+                powerOverlay.sortingOrder = spriteRenderer.sortingOrder + OverlayOrderOffset;
+            }
+
+            // SetActive(false) hides a GameObject and stops its scripts, without destroying it,
+            // so a token that stops being a Flame can become one again later for free.
+            powerOverlay.gameObject.SetActive(show);
         }
     }
 }

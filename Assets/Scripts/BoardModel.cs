@@ -80,6 +80,83 @@ namespace Match3
             }
         }
 
+        /// <summary>
+        /// A power gem a match left behind: <see cref="Piece"/> now sits in <see cref="Cell"/>,
+        /// which was one of the matched cells (the match's anchor).
+        /// </summary>
+        public readonly struct Creation
+        {
+            public readonly Vector2Int Cell;
+            public readonly Piece Piece;
+
+            public Creation(Vector2Int cell, Piece piece)
+            {
+                Cell = cell;
+                Piece = piece;
+            }
+
+            /// <summary>Which power gem was made: shorthand for <c>Piece.Power</c>.</summary>
+            public PowerKind Kind => Piece.Power;
+        }
+
+        /// <summary>
+        /// A power gem that went off because it was part of a match. <see cref="Piece"/> is the
+        /// gem as it was (so its colour is still known after it's gone), <see cref="Cell"/> is
+        /// where it was, and <see cref="Blasted"/> lists the cells its blast emptied.
+        /// </summary>
+        public readonly struct Detonation
+        {
+            public readonly Vector2Int Cell;
+            public readonly Piece Piece;
+            /// <summary>
+            /// The cells this blast emptied, each one a piece that was NOT part of a match.
+            /// Cells the match had already cleared aren't listed, and nor is a cell an earlier
+            /// detonation in the same step got to first, so no cell is ever listed twice.
+            /// </summary>
+            public readonly IReadOnlyList<Vector2Int> Blasted;
+
+            public Detonation(Vector2Int cell, Piece piece, IReadOnlyList<Vector2Int> blasted)
+            {
+                Cell = cell;
+                Piece = piece;
+                Blasted = blasted;
+            }
+
+            /// <summary>Which power gem went off: shorthand for <c>Piece.Power</c>.</summary>
+            public PowerKind Kind => Piece.Power;
+        }
+
+        /// <summary>
+        /// Everything one clear step did to the board, split into the three things the
+        /// <see cref="Board"/> shows separately: gems that matched, power gems that appeared, and
+        /// gems caught in a blast. <see cref="ClearMatches"/> makes these.
+        /// </summary>
+        // The model does the whole step at once and hands back a description of it, the same way
+        // Collapse hands back a list of Falls. The Board can then take as long as it likes
+        // playing that description back, phase by phase, without asking the model anything else.
+        public class ClearResult
+        {
+            /// <summary>
+            /// The matched cells that were emptied, each listed once. A match's anchor is left
+            /// out when a power gem was made there: that cell is in <see cref="Created"/> instead.
+            /// </summary>
+            public IReadOnlyList<Vector2Int> Matched { get; }
+
+            /// <summary>The power gems this step made, in the order of the matches that made them.</summary>
+            public IReadOnlyList<Creation> Created { get; }
+
+            /// <summary>The power gems this step set off, with what each one's blast cleared.</summary>
+            public IReadOnlyList<Detonation> Detonations { get; }
+
+            public ClearResult(IReadOnlyList<Vector2Int> matched, IReadOnlyList<Creation> created,
+                IReadOnlyList<Detonation> detonations)
+            {
+                Matched = matched;
+                Created = created;
+                Detonations = detonations;
+            }
+        }
+
         // How many random boards FillWithValidMove and Shuffle try before giving up. A try
         // nearly always works on a normal board; the cap is there so a board that can't have a
         // valid move at all (a 2x2, say) ends in "false" rather than an endless loop.
@@ -201,7 +278,8 @@ namespace Match3
         /// <summary>
         /// Puts an ordinary piece of a random type in every cell, avoiding any 3-in-a-row so the
         /// game doesn't start with free matches. Needs at least 3 distinct token types.
-        /// Whatever was on the board before is replaced, so any power gems are lost.
+        /// Whatever was on the board before is replaced, so any power gems are lost: that's right
+        /// for a new round, and <see cref="RedealKeepingPowers"/> is the one to use mid-round.
         /// </summary>
         public void FillWithoutMatches()
         {
@@ -233,6 +311,51 @@ namespace Match3
             for (int attempt = 0; attempt < MaxAttempts; attempt++)
             {
                 FillWithoutMatches();
+                if (HasValidMove())
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Gives every piece on the board a new random colour while keeping its power, with no
+        /// 3-in-a-row and at least one valid move: a Flame is still a Flame in the same cell,
+        /// just maybe a different colour. A piece with a power but no colour stays colourless,
+        /// and an empty cell gets an ordinary piece. Needs at least 3 distinct token types.
+        ///
+        /// This is for the rare dead board whose pieces can't be rearranged into a playable one
+        /// (<see cref="Shuffle"/> returned null). Returns false if no playable board turned up
+        /// (only on boards too small to ever have a move); the board is still recoloured without
+        /// matches.
+        /// </summary>
+        public bool RedealKeepingPowers()
+        {
+            if (CountDistinctTypes(tokenTypes) < 3)
+            {
+                throw new System.InvalidOperationException("Redealing without matches needs at least 3 distinct token types.");
+            }
+
+            for (int attempt = 0; attempt < MaxAttempts; attempt++)
+            {
+                // The same column-by-column order as FillWithoutMatches, for the same reason: the
+                // cells PickTypeWithoutMatch looks at have already been given their new colour.
+                for (int x = 0; x < Width; x++)
+                {
+                    for (int y = 0; y < Height; y++)
+                    {
+                        Piece piece = grid[x, y];
+                        // A power with no colour: leave it exactly as it is. It can't be part of
+                        // a run, so it never needs to change to avoid one.
+                        if (piece.Colour == null && piece.Power != PowerKind.None)
+                        {
+                            continue;
+                        }
+                        grid[x, y] = new Piece(PickTypeWithoutMatch(x, y), piece.Power);
+                    }
+                }
+
                 if (HasValidMove())
                 {
                     return true;
@@ -620,23 +743,117 @@ namespace Match3
         }
 
         /// <summary>
-        /// Empties every cell in <paramref name="runs"/> and returns the set of cells cleared.
-        /// Runs can overlap (L/T shapes); a shared cell is only listed once.
+        /// The power gem a match of <paramref name="shape"/> leaves behind at its anchor, or
+        /// <see cref="PowerKind.None"/> if it leaves nothing. So far only a line of exactly 4
+        /// makes one (a Flame).
         /// </summary>
-        public HashSet<Vector2Int> Clear(List<List<Vector2Int>> runs)
+        public static PowerKind PowerMadeBy(MatchShape shape)
         {
-            // A HashSet ignores duplicates, which is exactly what overlapping runs need.
-            var cleared = new HashSet<Vector2Int>();
-            foreach (List<Vector2Int> run in runs)
+            return shape == MatchShape.Line4 ? PowerKind.Flame : PowerKind.None;
+        }
+
+        /// <summary>
+        /// The cells a Flame in <paramref name="centre"/> blasts: the 3x3 block around it,
+        /// including <paramref name="centre"/> itself, minus whatever falls off the edge of the
+        /// board. So 9 cells in the middle, 6 against an edge and 4 in a corner. Listed column by
+        /// column, bottom to top.
+        /// </summary>
+        public List<Vector2Int> FlameBlastCells(Vector2Int centre)
+        {
+            var cells = new List<Vector2Int>();
+            for (int x = centre.x - 1; x <= centre.x + 1; x++)
             {
-                cleared.UnionWith(run);
+                for (int y = centre.y - 1; y <= centre.y + 1; y++)
+                {
+                    var cell = new Vector2Int(x, y);
+                    if (IsInBounds(cell))
+                    {
+                        cells.Add(cell);
+                    }
+                }
+            }
+            return cells;
+        }
+
+        /// <summary>
+        /// One whole clear step, done in a fixed order:
+        ///  1. every cell of every group in <paramref name="groups"/> is emptied, except that a
+        ///     group whose shape makes a power gem (see <see cref="PowerMadeBy"/>) gets that gem,
+        ///     in the group's colour, in its anchor cell instead;
+        ///  2. every Flame that was among the matched cells then detonates, emptying the cells
+        ///     around it (see <see cref="FlameBlastCells"/>).
+        /// Gravity is not part of it: call <see cref="Collapse"/> afterwards, so nothing falls
+        /// between a match and its blast.
+        ///
+        /// A gem made in step 1 is never touched by step 2: it wasn't on the board when the
+        /// match happened, so it neither goes off nor gets blasted away. That holds even when a
+        /// Flame is itself the anchor of a line of 4: the old Flame goes off and a new one is
+        /// left in its place.
+        ///
+        /// A blast only removes what it hits. A power gem caught in one is simply cleared, it
+        /// doesn't go off in turn.
+        /// </summary>
+        /// <param name="groups">The matches to clear, as <see cref="FindMatchGroups"/> returned them.</param>
+        public ClearResult ClearMatches(IReadOnlyList<MatchGroup> groups)
+        {
+            var matched = new List<Vector2Int>();
+            var created = new List<Creation>();
+            // Where this step's new gems are, so the blasts below can leave them alone.
+            var createdCells = new HashSet<Vector2Int>();
+            // The Flames found among the matched cells. They're only noted here and set off
+            // after every group has been cleared, so the result doesn't depend on which group
+            // happened to be looked at first.
+            var flames = new List<Vector2Int>();
+            var flamePieces = new List<Piece>();
+
+            // Two groups never share a cell (FindMatchGroups would have merged them), so each
+            // matched cell is visited exactly once.
+            foreach (MatchGroup group in groups)
+            {
+                PowerKind made = PowerMadeBy(group.Shape);
+                foreach (Vector2Int cell in group.Cells)
+                {
+                    Piece piece = grid[cell.x, cell.y];
+                    if (piece.Power == PowerKind.Flame)
+                    {
+                        flames.Add(cell);
+                        flamePieces.Add(piece);
+                    }
+
+                    if (made != PowerKind.None && cell == group.Anchor)
+                    {
+                        var gem = new Piece(group.Colour, made);
+                        grid[cell.x, cell.y] = gem;
+                        created.Add(new Creation(cell, gem));
+                        createdCells.Add(cell);
+                    }
+                    else
+                    {
+                        grid[cell.x, cell.y] = Piece.Empty;
+                        matched.Add(cell);
+                    }
+                }
             }
 
-            foreach (Vector2Int cell in cleared)
+            var detonations = new List<Detonation>();
+            for (int i = 0; i < flames.Count; i++)
             {
-                grid[cell.x, cell.y] = Piece.Empty;
+                var blasted = new List<Vector2Int>();
+                foreach (Vector2Int cell in FlameBlastCells(flames[i]))
+                {
+                    // Already empty means the match (or an earlier blast) cleared it: there's
+                    // nothing left there for this blast to remove.
+                    if (grid[cell.x, cell.y].IsEmpty || createdCells.Contains(cell))
+                    {
+                        continue;
+                    }
+                    grid[cell.x, cell.y] = Piece.Empty;
+                    blasted.Add(cell);
+                }
+                detonations.Add(new Detonation(flames[i], flamePieces[i], blasted));
             }
-            return cleared;
+
+            return new ClearResult(matched, created, detonations);
         }
 
         /// <summary>

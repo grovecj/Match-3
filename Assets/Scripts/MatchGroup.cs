@@ -4,8 +4,8 @@ using UnityEngine;
 namespace Match3
 {
     /// <summary>
-    /// What kind of match a <see cref="MatchGroup"/> is. Later this decides which power gem the
-    /// match leaves behind; for now it is only worked out, not used.
+    /// What kind of match a <see cref="MatchGroup"/> is. This decides which power gem, if any,
+    /// the match leaves behind: see <see cref="BoardModel.PowerMadeBy"/>.
     /// </summary>
     // Listed weakest first, so a bigger number is a stronger shape.
     public enum MatchShape

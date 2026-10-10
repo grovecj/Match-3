@@ -72,6 +72,20 @@ namespace Match3.Tests
             "ABCDE", // y = 0
         };
 
+        // A fourth starting board (also match-free) for a line of 4: swapping (2,0) with (2,1)
+        // moves an A down into the bottom row, making AAAA along it. Nothing else lines up.
+        private static readonly string[] LineOfFourLayout =
+        {
+            "ABCDE", // y = 4
+            "CDEAB",
+            "EABCD",
+            "BCAEB",
+            "AABAD", // y = 0
+        };
+
+        private static readonly Vector2Int LineOfFourA = new Vector2Int(2, 0);
+        private static readonly Vector2Int LineOfFourB = new Vector2Int(2, 1);
+
         private readonly Dictionary<char, TokenType> types = new Dictionary<char, TokenType>();
         private GameObject themeObject;
         private GameObject cellTemplate;
@@ -425,6 +439,115 @@ namespace Match3.Tests
             }
             Assert.That(tokensAfter, Is.EquivalentTo(tokensBefore), "A reshuffle should move the existing tokens.");
             Assert.That(typesAfter, Is.Not.EqualTo(typesBefore), "The layout should have changed.");
+        }
+
+        // ---------------------------------------------------------------- Flame gems
+        //
+        // The rules (which match makes a Flame, what its blast clears) are covered by the Edit
+        // Mode BoardModelFlameTests. These check what only a running Board can show: that the
+        // token on screen changes, and that the blast happens in its own phase, in order.
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator LineOfFour_TurnsTheSwappedTokenIntoAFlame()
+        {
+            board.LoadLayoutForTests(BuildLayout(LineOfFourLayout));
+            // The A the player moves: it ends up at (2,0), the swapped cell inside the match.
+            Token moved = board.GetToken(LineOfFourB.x, LineOfFourB.y);
+            TokenType colour = moved.Type;
+
+            var created = new List<(PowerKind kind, Vector2Int cell)>();
+            bool tokenWasAFlame = false;
+            bool tokenShowedTheGlow = false;
+            int detonations = 0;
+            board.PowerGemCreated += (kind, cell) =>
+            {
+                // Only look at the first one: a cascade could, with luck, make another.
+                if (created.Count == 0)
+                {
+                    Token token = board.GetToken(cell.x, cell.y);
+                    tokenWasAFlame = token == moved && token.Power == PowerKind.Flame && token.Type == colour;
+                    tokenShowedTheGlow = token.ShowsPowerOverlay;
+                }
+                created.Add((kind, cell));
+            };
+            board.PowerGemDetonated += (kind, cell) => detonations++;
+
+            Assert.IsTrue(board.TrySwap(LineOfFourA, LineOfFourB));
+            // Stop as soon as the swap's own step has been reported, before any cascade.
+            yield return new WaitUntil(() => clearSteps.Count > 0);
+
+            Assert.AreEqual((4, 0), clearSteps[0], "The swap should make a run of 4.");
+            Assert.That(created, Is.Not.Empty, "PowerGemCreated never fired.");
+            Assert.AreEqual((PowerKind.Flame, LineOfFourA), created[0], "The Flame belongs at the swapped cell.");
+            Assert.IsTrue(tokenWasAFlame, "The token the player moved should itself become the Flame, in its own colour.");
+            Assert.IsTrue(tokenShowedTheGlow, "The new Flame should show its glow straight away.");
+            Assert.AreEqual(0, detonations, "A Flame mustn't go off in the step that made it.");
+            // The Flame is a survivor of the match: it's still on the board while the others pop.
+            Assert.IsTrue(moved != null && moved.enabled, "The Flame's token was cleared along with the rest of the run.");
+
+            yield return WaitUntilIdle();
+            AssertBoardIsFullAndSettled();
+            AssertNoMatchesLeft();
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator MatchedFlame_BlastsItsNeighborsAfterTheMatchAndBeforeAnythingFalls()
+        {
+            // The A at (0,0) is in the run of 3 that MatchA/MatchB make. As a Flame in the
+            // corner, its blast reaches (0,1) and (1,1); the rest of its 3x3 is the match itself
+            // or off the board.
+            var flameCell = new Vector2Int(0, 0);
+            board.SetPowerForTests(flameCell, PowerKind.Flame);
+            Assert.IsTrue(board.GetToken(0, 0).ShowsPowerOverlay);
+            Token blastedA = board.GetToken(0, 1);
+            Token blastedB = board.GetToken(1, 1);
+            // Sits right above the blast. It will fall, but not until the blast is over.
+            Token above = board.GetToken(0, 2);
+
+            bool blastedStillThereWhenMatchReported = false;
+            board.ClearStepResolved += (_, cascadeIndex) =>
+            {
+                if (cascadeIndex == 0)
+                {
+                    blastedStillThereWhenMatchReported = board.GetToken(0, 1) == blastedA && board.GetToken(1, 1) == blastedB;
+                }
+            };
+
+            var detonated = new List<(PowerKind kind, Vector2Int cell)>();
+            int stepsWhenDetonated = -1;
+            int runsWhenDetonated = -1;
+            bool blastedGoneWhenDetonated = false;
+            bool aboveHadNotMoved = false;
+            board.PowerGemDetonated += (kind, cell) =>
+            {
+                if (detonated.Count == 0)
+                {
+                    stepsWhenDetonated = clearSteps.Count;
+                    runsWhenDetonated = clearedRuns.Count;
+                    blastedGoneWhenDetonated = board.GetToken(0, 1) == null && board.GetToken(1, 1) == null;
+                    aboveHadNotMoved = board.GetToken(0, 2) == above &&
+                                       above.transform.position == board.GridToWorld(0, 2);
+                }
+                detonated.Add((kind, cell));
+            };
+
+            Assert.IsTrue(board.TrySwap(MatchA, MatchB));
+            yield return WaitUntilIdle();
+
+            Assert.That(detonated, Is.Not.Empty, "PowerGemDetonated never fired.");
+            Assert.AreEqual((PowerKind.Flame, flameCell), detonated[0]);
+            Assert.IsTrue(blastedStillThereWhenMatchReported,
+                "The blast is a later phase: its tokens should still be on the board while the match pops.");
+            Assert.AreEqual(1, stepsWhenDetonated, "The blast belongs to the swap's own step, after the match was reported.");
+            Assert.AreEqual(1, runsWhenDetonated, "Blasted gems aren't runs: only the run of 3 should have been reported.");
+            Assert.IsTrue(blastedGoneWhenDetonated, "The blasted tokens should be off the board once the Flame goes off.");
+            Assert.IsTrue(aboveHadNotMoved, "Nothing should fall between a match and its blast.");
+
+            Assert.IsTrue(blastedA == null, "The token at (0, 1) was blasted but not destroyed.");
+            Assert.IsTrue(blastedB == null, "The token at (1, 1) was blasted but not destroyed.");
+            AssertBoardIsFullAndSettled();
+            AssertNoMatchesLeft();
+            yield return WaitUntilNoBursts();
         }
 
         // ---------------------------------------------------------------- Hints
