@@ -1,5 +1,5 @@
 """
-Builds the five token shapes in Blender, in one or more *styles*, saves each style's scene to
+Builds the six token shapes in Blender, in one or more *styles*, saves each style's scene to
 Art/Gems/<style>.blend, and renders every token to a transparent 256x256 PNG sprite.
 
 Run from the repo root (Blender does not need to be open):
@@ -18,7 +18,7 @@ Styles
     glass  smooth, rounded tiles of clear glass -> Assets/Sprites/Glass/Glass<Name>.png
     flat   solid 2D shapes with a dark border   -> Assets/Sprites/Flat/Flat<Name>.png
 
-Every style uses the same five outlines (SHAPES), so a token is recognizable by its shape
+Every style uses the same six outlines (SHAPES), so a token is recognizable by its shape
 alone, whatever the style and even without color (colorblind-friendly). A style only decides
 how an outline is turned into a mesh and what material it gets.
 
@@ -88,6 +88,19 @@ def centered_triangle():
     return [(x, y - 0.12) for x, y in regular_polygon(3, radius=1.05)]
 
 
+def cross(reach=0.95, arm_half_width=0.34):
+    """A plus sign: four arms of equal length (12 points, CCW).
+
+    Unlike the other outlines this one is *concave*: it has corners that point inward (where
+    two arms meet). Everything built from an outline below still works, because every point of
+    a cross can be "seen" from its center, and that's all the gem cut relies on when it shrinks
+    rings toward the center and joins the girdle to a single bottom point.
+    """
+    r, a = reach, arm_half_width
+    return [(r, -a), (r, a), (a, a), (a, r), (-a, r), (-a, a),
+            (-r, a), (-r, -a), (-a, -a), (-a, -r), (a, -r), (a, -a)]
+
+
 # Colors are the same hues the placeholder tints used (see Assets/Data/TokenTypes), a little
 # deeper so the lighting has room to add highlights without washing out. Blender works in
 # linear color, so these look lighter once converted to the sRGB of the final PNG.
@@ -101,6 +114,7 @@ SHAPES = [
     ("diamond",  [(0, 1.05), (-0.72, 0), (0, -1.05), (0.72, 0)], (0.03, 0.62, 0.10)),  # emerald green
     ("triangle", centered_triangle(),                  (0.95, 0.62, 0.02)),   # topaz yellow
     ("hexagon",  regular_polygon(6, rotation_deg=90),  (0.42, 0.05, 0.80)),   # amethyst purple
+    ("cross",    cross(),                              (0.90, 0.07, 0.50)),   # tourmaline pink
 ]
 
 # --- Style: gems (faceted cut) ----------------------------------------------------------------

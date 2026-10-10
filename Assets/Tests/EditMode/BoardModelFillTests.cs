@@ -120,6 +120,74 @@ namespace Match3.Tests
             }
         }
 
+        // ---------------------------------------------------------------- Equal frequency
+
+        [Test]
+        public void FillWithoutMatches_ManySeeds_SixTypes_AppearEquallyOften()
+        {
+            var counts = new Dictionary<char, int>();
+            for (int seed = 0; seed < SeedCount; seed++)
+            {
+                CountLetters(FilledBoard(8, 8, 6, seed), counts);
+            }
+
+            AssertRoughlyEqualShares(counts, typeCount: 6);
+        }
+
+        [Test]
+        public void Refill_ManySeeds_SixTypes_AppearEquallyOften()
+        {
+            // A new BoardModel is empty, so Refill has all 64 cells to fill: the same random
+            // pick the game makes for every token that falls in from the top.
+            var counts = new Dictionary<char, int>();
+            for (int seed = 0; seed < SeedCount; seed++)
+            {
+                var board = new BoardModel(8, 8, Types(6), new System.Random(seed));
+                board.Refill();
+                CountLetters(board, counts);
+            }
+
+            AssertRoughlyEqualShares(counts, typeCount: 6);
+        }
+
+        /// <summary>Adds one to <paramref name="counts"/> for every token on <paramref name="board"/>.</summary>
+        private void CountLetters(BoardModel board, Dictionary<char, int> counts)
+        {
+            foreach (string row in grids.Rows(board))
+            {
+                foreach (char letter in row)
+                {
+                    counts.TryGetValue(letter, out int soFar);
+                    counts[letter] = soFar + 1;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Fails unless <paramref name="counts"/> holds exactly <paramref name="typeCount"/>
+        /// types, each within 5% of an even share of the total.
+        /// </summary>
+        private static void AssertRoughlyEqualShares(Dictionary<char, int> counts, int typeCount)
+        {
+            Assert.AreEqual(typeCount, counts.Count, "Every type should have appeared, and nothing else.");
+
+            int total = 0;
+            foreach (int count in counts.Values)
+            {
+                total += count;
+            }
+
+            // Random picks never come out exactly even. With 64,000 tokens an even share is
+            // about 10,667 and chance alone moves it by about 100 either way, so a 5% margin
+            // (about 530) only fails if one type really is favoured.
+            double evenShare = (double)total / typeCount;
+            foreach (KeyValuePair<char, int> pair in counts)
+            {
+                Assert.That(pair.Value, Is.EqualTo(evenShare).Within(5).Percent,
+                    $"Type {pair.Key} appeared {pair.Value} times out of {total}.");
+            }
+        }
+
         [Test]
         public void FillWithoutMatches_FewerThanThreeDistinctTypes_Throws()
         {

@@ -92,6 +92,46 @@ chain at x5 is tens of thousands of points on its own), and the exact check abov
 stops a made-up mix of stats. The cap is only there to turn away the absurd, so it's set
 generously. Revisit it once real version-2 rounds are on the board.
 
+## Six token types (#88)
+
+The board went from five token types to six on 2026-10-10. No scoring rule or number changed,
+so `ScoreRules.Version` stays at 2 and the server's checks are untouched. What changed is how
+often things happen. To put numbers on it, a bot played 40,000 random valid swaps on each
+board through `BoardModel` and `ScoreRules` (no clock, no skill, and it never saves a power
+gem for later, so read these as ratios, not as what a player scores):
+
+| Per swap (random bot) | Five types | Six types |
+|---|---|---|
+| Points | 5,590 | 2,930 |
+| ... of which from cascades, not the swap's own match | 74% | 57% |
+| Clear steps | 1.83 | 1.47 |
+| Power gems made per 100 swaps | 26 | 12 |
+| ... of which by the swap's own match | 33% | 45% |
+| Valid moves to choose from | 15.6 | 9.4 |
+| Boards left with no move (reshuffles) per 1,000 swaps | 0 | 1 |
+
+So scores roughly halve for the same play, and nearly all of the loss is points the board
+used to hand out by itself: the swap's own match is worth about the same (1,450 against
+1,250). That is what the sixth type is for (see `Docs/Vision.md`, pillar 2).
+
+**Point values: unchanged (proposed).** The values set what a play is worth relative to
+another play, and that hasn't changed; only the size of the totals has. Scaling every number
+up to get the old totals back would need a new scoring version and a server release for no
+change in how the game plays. Tune them from real rounds instead, with the rest of #85's
+starting values.
+
+**Server cap: unchanged.** `maxScore` is a ceiling, and six types only lowers what can be
+scored under it, so the limits below still hold. They can be tightened once real six-type
+rounds are in.
+
+**Old scores: keep them (proposed).** The scores on the global leaderboard were set with five
+types but under version 1 (runs only, no multiplier, nothing for blasted gems). For the same
+bot, five types under version 1 pay about 2,500 a swap and six types under version 2 about
+2,930, so the old scores are still not inflated and the decision at the bottom of this page
+stands. The one exception is a local leaderboard holding version-2 rounds played on five
+types (between #85 and #88): those were set on an easier board. They're on the player's own
+machine only, so they're left alone; delete the local leaderboard file to start level.
+
 ## Releasing a rule change
 
 1. Change the rule in `ScoreRules` and raise `ScoreRules.Version`.

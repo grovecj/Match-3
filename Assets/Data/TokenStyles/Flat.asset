@@ -35,3 +35,7 @@ MonoBehaviour:
     sprite: {fileID: 21300000, guid: 20c6f763212da874c954d9f77d1c83f9, type: 3}
     tint: {r: 1, g: 1, b: 1, a: 1}
     burstColor: {r: 0.98, g: 0.82, b: 0.2, a: 1}
+  - tokenType: {fileID: 11400000, guid: 2012b370614b41e9870f1d1b9e86fcc6, type: 2}
+    sprite: {fileID: 21300000, guid: 1e488967bdef47d8b9abb51fb64cd50c, type: 3}
+    tint: {r: 1, g: 1, b: 1, a: 1}
+    burstColor: {r: 0.95, g: 0.34, b: 0.72, a: 1}

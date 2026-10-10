@@ -168,10 +168,10 @@ public static class SettingsMenuBuilder
 
         WireOption(option, label, highlight);
         SetReference(option, "previewRow", Rect(previewRow));
-        // Five 40-pixel icons with 10 between them are 240 wide, which just fits the 242 the
+        // Six 32-pixel icons with 10 between them are 242 wide, which exactly fits the 242 the
         // row has (the option's width minus 10 of margin each side).
         var serialized = new SerializedObject(option);
-        serialized.FindProperty("iconSize").floatValue = 40;
+        serialized.FindProperty("iconSize").floatValue = 32;
         serialized.ApplyModifiedPropertiesWithoutUndo();
         return SavePrefab(root, TokenStyleOptionPath).GetComponent<TokenStyleOption>();
     }

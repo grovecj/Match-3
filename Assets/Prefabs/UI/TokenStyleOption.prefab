@@ -194,7 +194,7 @@ MonoBehaviour:
   label: {fileID: 7650205291211029613}
   selectedHighlight: {fileID: 8875301046650630348}
   previewRow: {fileID: 2734757681624014424}
-  iconSize: 40
+  iconSize: 32
 --- !u!114 &585710434075535886
 MonoBehaviour:
   m_ObjectHideFlags: 0
