@@ -87,6 +87,9 @@ namespace Match3.Online
         private Func<Action<string>, IEnumerator> getAccessToken;
         // The round's stats so far, or null to post without any.
         private Func<RoundStats> getRoundStats;
+        // The signed-in account's id (null when signed out), to notice the player changing
+        // while a score is on its way.
+        private Func<string> getUserId;
 
         // Counts rounds. Each request remembers which round it was for, and an answer that
         // arrives after the next round has started is ignored instead of mixing the two up.
@@ -115,6 +118,7 @@ namespace Match3.Online
             // A method name without "()" is a delegate: a reference to the method itself, to
             // call later. GetAccessToken's shape (takes a callback, returns a coroutine) matches.
             getAccessToken = accountManager.GetAccessToken;
+            getUserId = () => accountManager.UserId;
             if (roundStats != null)
             {
                 getRoundStats = () => roundStats.Stats;
@@ -213,6 +217,10 @@ namespace Match3.Online
 
         private IEnumerator PostScore(int thisRound, int score, RoundStats stats)
         {
+            // Whose round this is. The Account menu opens as soon as the round ends, so the
+            // player can sign out (or someone else sign in) before the server has answered.
+            string postedBy = getUserId?.Invoke();
+
             LastPost = PostState.Posting;
             PostMessage = "Posting your score...";
             Changed?.Invoke();
@@ -258,7 +266,13 @@ namespace Match3.Online
                 LastStanding = result.Value;
                 PostMessage = $"Posted! Your best: {Format(result.Value.best)}, #{result.Value.rank}";
                 Changed?.Invoke();
-                ScorePosted?.Invoke(result.Value.unlocked);
+                // The unlocks belong to whoever played the round. If that's no longer who is
+                // signed in, announcing them would show one player's achievements to another
+                // (or to nobody), so keep quiet: they'll be in that player's list next time.
+                if (getUserId?.Invoke() == postedBy)
+                {
+                    ScorePosted?.Invoke(result.Value.unlocked);
+                }
                 // The board has (maybe) just changed, so load it again for when it's next shown.
                 RefreshBoard();
             }
@@ -345,12 +359,14 @@ namespace Match3.Online
         /// still inactive, before Awake runs.
         /// </summary>
         internal void ConfigureForTests(ILeaderboardApi api, Func<bool> isSignedIn,
-            Func<Action<string>, IEnumerator> getAccessToken, Func<RoundStats> getRoundStats = null)
+            Func<Action<string>, IEnumerator> getAccessToken, Func<RoundStats> getRoundStats = null,
+            Func<string> getUserId = null)
         {
             this.api = api;
             this.isSignedIn = isSignedIn;
             this.getAccessToken = getAccessToken;
             this.getRoundStats = getRoundStats;
+            this.getUserId = getUserId;
         }
     }
 }
