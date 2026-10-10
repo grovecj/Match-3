@@ -1,4 +1,6 @@
 using Match3;
+using Match3.Accounts;
+using Match3.Online;
 using TMPro;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -10,7 +12,8 @@ using static UIBuilder;
 /// Editor-only helper that builds the Settings menu UI (issues #17 and #49): the two option
 /// prefabs, the gear button in the side panel, and the modal Settings panel (including the
 /// sound volume slider), with every Inspector reference wired up. Run it from the menu bar: Match3 > Build Settings Menu, then save the
-/// scene.
+/// scene. It also adds the PreferencesSync (issue #70) that copies the settings to the player's
+/// account, if the scene has an AccountManager (Match3 > Build Account Menu makes one).
 ///
 /// Scripts in a folder named "Editor" are compiled only for the Unity Editor and never ship in
 /// a build, so they're the place for tools like this. It's written as code (rather than
@@ -56,11 +59,31 @@ public static class SettingsMenuBuilder
             tokenStyleOptionPrefab, boardThemeOptionPrefab, out SettingsMenu settingsMenu);
 
         SetReference(gameManager, "settingsMenu", settingsMenu);
+        AddPreferencesSync(settingsMenu, themeManager, audioManager);
 
         // Tell Unity the scene has unsaved changes (the * in the Hierarchy) so Ctrl+S saves them.
         EditorSceneManager.MarkSceneDirty(canvas.gameObject.scene);
         Selection.activeGameObject = settingsMenu.gameObject;
         Debug.Log("Settings menu built. Save the scene (Ctrl+S) to keep it.");
+    }
+
+    /// <summary>
+    /// Puts the PreferencesSync next to the SettingsMenu. That object is always active, so the
+    /// sync's coroutines keep running while the panel is hidden.
+    /// </summary>
+    private static void AddPreferencesSync(SettingsMenu settingsMenu, ThemeManager themeManager, AudioManager audioManager)
+    {
+        var accountManager = Object.FindAnyObjectByType<AccountManager>();
+        if (accountManager == null)
+        {
+            Debug.LogWarning("Build Settings Menu: the scene has no AccountManager, so settings won't sync to accounts. Run Match3 > Build Account Menu, then this again.");
+            return;
+        }
+        var sync = settingsMenu.gameObject.AddComponent<PreferencesSync>();
+        SetReference(sync, "accountManager", accountManager);
+        SetReference(sync, "themeManager", themeManager);
+        SetReference(sync, "audioManager", audioManager);
+        SetReference(sync, "settingsMenu", settingsMenu);
     }
 
     // ---- Assets ---------------------------------------------------------------------------

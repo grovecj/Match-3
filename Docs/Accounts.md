@@ -38,7 +38,8 @@ Everything lives in `Assets/Scripts/Accounts/` (namespace `Match3.Accounts`):
 | `AccountMenu` | The Account button and window (with Cancel while waiting for the browser). Built by **Match3 > Build Account Menu** (`Assets/Editor/AccountMenuBuilder.cs`). |
 
 Other code that needs to call our servers as the player (the global leaderboard, #25; see
-[GlobalLeaderboard.md](GlobalLeaderboard.md)) asks the
+[GlobalLeaderboard.md](GlobalLeaderboard.md), and settings sync, #70; see
+[SettingsSync.md](SettingsSync.md)) asks the
 `AccountManager` for a token:
 
 ```csharp

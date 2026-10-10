@@ -7,8 +7,8 @@ well-explained code over polish. Explain Unity concepts when introducing them.
 - Repo root is the Unity project root. Source art goes in `Art/`, game assets in `Assets/`.
 - Tasks are tracked in GitHub Issues (`gh issue list -R grovecj/Match-3`).
 - Unity must be closed before moving/renaming files outside the Editor; always move `.meta` files with their assets.
-- Editor-only tools (e.g. `Match3 > Build Settings Menu`, which regenerates the Settings UI and
-  its option prefabs, `Match3 > Build Leaderboard Menu` (Local/Global tabs and the
+- Editor-only tools (e.g. `Match3 > Build Settings Menu`, which regenerates the Settings UI,
+  its option prefabs and the PreferencesSync (see `Docs/SettingsSync.md`), `Match3 > Build Leaderboard Menu` (Local/Global tabs and the
   OnlineLeaderboardClient; see `Docs/GlobalLeaderboard.md`), `Match3 > Build Account Menu` (the
   Account button/window and the AccountManager; see `Docs/Accounts.md`), and
   `Match3 > Build Explosion Prefab`, which builds the clear-effect particle prefab) live in
