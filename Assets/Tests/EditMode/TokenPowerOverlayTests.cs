@@ -7,7 +7,8 @@ namespace Match3.Tests
     /// Edit Mode tests for how a <see cref="Token"/> shows its power: the Flame's glow
     /// (<see cref="FlameGlow"/>) and the Star's sparkle (<see cref="StarSparkle"/>) are an
     /// overlay on a child object, separate from the token's own sprite, so they don't depend on
-    /// which <see cref="TokenStyle"/> is in use.
+    /// which <see cref="TokenStyle"/> is in use. A Hypercube has no colour to draw over, so it
+    /// replaces the token's sprite instead (<see cref="HypercubeSprite"/>).
     /// </summary>
     public class TokenPowerOverlayTests
     {
@@ -189,12 +190,100 @@ namespace Match3.Tests
             Assert.IsFalse(overlay.GetComponent<StarSparkle>().enabled);
         }
 
+        // ---------------------------------------------------------------- The Hypercube's sprite
+
         [Test]
-        public void HypercubeToken_HasNoOverlayYet()
+        public void HypercubeToken_DrawsItsOwnSprite_WithNoOverlay()
         {
-            token.SetPiece(new Piece(null, PowerKind.Hypercube));
+            token.SetPiece(Piece.Hypercube);
+
+            Assert.AreEqual(PowerKind.Hypercube, token.Power);
+            Assert.IsNull(token.Type, "A Hypercube has no colour.");
+            // Unlike a Flame or Star, there's no gem underneath to draw over: the cube's own
+            // picture is the token's sprite.
+            Assert.IsFalse(token.ShowsPowerOverlay);
+            var tokenRenderer = tokenObject.GetComponent<SpriteRenderer>();
+            Assert.AreEqual(HypercubeSprite.Sprite, tokenRenderer.sprite);
+            Assert.AreEqual(Color.white, tokenRenderer.color, "A tint would discolour the sprite's own colours.");
+        }
+
+        [Test]
+        public void HypercubeToken_LooksTheSameInEveryStyle()
+        {
+            token.SetPiece(Piece.Hypercube);
+            var tokenRenderer = tokenObject.GetComponent<SpriteRenderer>();
+
+            // No style at all, then a style with no entries: neither has a sprite for "no
+            // colour", and the cube doesn't need one.
+            token.SetStyle(null);
+            Assert.AreEqual(HypercubeSprite.Sprite, tokenRenderer.sprite);
+
+            TokenStyle style = ScriptableObject.CreateInstance<TokenStyle>();
+            token.SetStyle(style);
+            Assert.AreEqual(HypercubeSprite.Sprite, tokenRenderer.sprite);
+            Object.DestroyImmediate(style);
+        }
+
+        [Test]
+        public void TokenThatBecomesAHypercube_DropsItsOverlay_AndOneThatStopsDropsTheSprite()
+        {
+            // A Flame that anchors a line of 5 turns into the Hypercube that match makes.
+            token.SetPiece(new Piece(type, PowerKind.Flame));
+            token.SetPiece(Piece.Hypercube);
 
             Assert.IsFalse(token.ShowsPowerOverlay);
+            var tokenRenderer = tokenObject.GetComponent<SpriteRenderer>();
+            Assert.AreEqual(HypercubeSprite.Sprite, tokenRenderer.sprite);
+
+            // And back to an ordinary piece (a redeal can do this to a token). With no style
+            // here there's no sprite for it, but it mustn't keep the cube's.
+            token.SetPiece(new Piece(type));
+            Assert.IsNull(tokenRenderer.sprite);
+        }
+
+        [Test]
+        public void HypercubeSprite_IsExactlyOneCellWide()
+        {
+            Assert.AreEqual(HypercubeSprite.SizeInCells, HypercubeSprite.Sprite.bounds.size.x, 0.001f);
+            Assert.AreEqual(1f, HypercubeSprite.SizeInCells);
+        }
+
+        [Test]
+        public void HypercubeShape_IsTwoSquareOutlinesJoinedAtTheCorners()
+        {
+            // On the outer outline (in the middle of a side, and in a corner) and on the inner one.
+            Assert.That(HypercubeSprite.LineAlphaAt(new Vector2(0.8f, 0f)), Is.GreaterThan(0.95f));
+            Assert.That(HypercubeSprite.LineAlphaAt(new Vector2(0.8f, 0.8f)), Is.GreaterThan(0.95f));
+            Assert.That(HypercubeSprite.LineAlphaAt(new Vector2(0f, -0.38f)), Is.GreaterThan(0.95f));
+            // On a diagonal between the two squares: a line joining their corners.
+            Assert.That(HypercubeSprite.LineAlphaAt(new Vector2(-0.6f, 0.6f)), Is.GreaterThan(0.95f));
+
+            // Between the squares but off the diagonals, and right in the middle: no line.
+            Assert.AreEqual(0f, HypercubeSprite.LineAlphaAt(new Vector2(0.6f, 0f)));
+            Assert.AreEqual(0f, HypercubeSprite.LineAlphaAt(Vector2.zero));
+        }
+
+        [Test]
+        public void HypercubeColours_AreADarkTileWithLinesOfEveryHue_AndNothingOutside()
+        {
+            // The middle is the tile: dark, and nearly solid.
+            Color middle = HypercubeSprite.ColorAt(Vector2.zero);
+            Assert.That(middle.a, Is.GreaterThan(0.8f));
+            Assert.That(middle.maxColorComponent, Is.LessThan(0.3f));
+
+            // The same line is a different colour on each side of the cube. That's the point:
+            // the cube isn't any one of the gem colours.
+            Color right = HypercubeSprite.ColorAt(new Vector2(0.8f, 0f));
+            Color top = HypercubeSprite.ColorAt(new Vector2(0f, 0.8f));
+            Color left = HypercubeSprite.ColorAt(new Vector2(-0.8f, 0f));
+            Assert.AreNotEqual(right, top);
+            Assert.AreNotEqual(top, left);
+            Assert.AreNotEqual(left, right);
+            Assert.AreEqual(1f, right.a, 0.001f);
+
+            // The sprite's edge has to be fully transparent, or it would show as a square.
+            Assert.AreEqual(0f, HypercubeSprite.ColorAt(new Vector2(1f, 0f)).a);
+            Assert.AreEqual(0f, HypercubeSprite.ColorAt(new Vector2(1f, 1f)).a);
         }
 
         [Test]

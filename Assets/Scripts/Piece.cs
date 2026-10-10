@@ -1,9 +1,8 @@
 namespace Match3
 {
     /// <summary>
-    /// The special ability a <see cref="Piece"/> has, if any. Matches make <see cref="Flame"/>
-    /// and <see cref="Star"/> gems (see <see cref="BoardModel.PowerMadeBy"/>);
-    /// <see cref="Hypercube"/> is never created yet, but the board can already carry one around.
+    /// The special ability a <see cref="Piece"/> has, if any. Each one is made by a match of a
+    /// particular shape: see <see cref="BoardModel.PowerMadeBy"/>.
     /// </summary>
     // An enum is a named set of whole numbers: None is 0, Flame is 1, and so on. Putting None
     // first matters, because 0 is what a field holds before anything is assigned to it.
@@ -15,7 +14,11 @@ namespace Match3
         Flame,
         /// <summary>Made by an L, T or + shape. When it's matched, it clears its whole row and column.</summary>
         Star,
-        /// <summary>The one power gem with no colour of its own.</summary>
+        /// <summary>
+        /// Made by a line of 5 or more. The one power gem with no colour of its own: it is never
+        /// matched, and goes off when the player swaps it with a coloured neighbour, clearing
+        /// every gem of that colour (see <see cref="BoardModel.ActivateHypercube"/>).
+        /// </summary>
         Hypercube,
     }
 
@@ -36,6 +39,9 @@ namespace Match3
     {
         /// <summary>The cell with nothing in it.</summary>
         public static readonly Piece Empty = default;
+
+        /// <summary>A Hypercube: a power with no colour. Every Hypercube is the same piece.</summary>
+        public static readonly Piece Hypercube = new Piece(null, PowerKind.Hypercube);
 
         /// <summary>What this piece matches with, or null if it has no colour (a Hypercube, or an empty cell).</summary>
         public readonly TokenType Colour;

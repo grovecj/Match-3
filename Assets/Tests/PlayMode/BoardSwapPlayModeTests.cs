@@ -86,6 +86,20 @@ namespace Match3.Tests
         private static readonly Vector2Int LineOfFourA = new Vector2Int(2, 0);
         private static readonly Vector2Int LineOfFourB = new Vector2Int(2, 1);
 
+        // A fifth starting board (also match-free) for a line of 5: the same swap, (2,0) with
+        // (2,1), now fills the one gap in a whole bottom row of A's.
+        private static readonly string[] LineOfFiveLayout =
+        {
+            "ABCDE", // y = 4
+            "CDEAB",
+            "EABCD",
+            "BCAEB",
+            "AABAA", // y = 0
+        };
+
+        private static readonly Vector2Int LineOfFiveA = new Vector2Int(2, 0);
+        private static readonly Vector2Int LineOfFiveB = new Vector2Int(2, 1);
+
         private readonly Dictionary<char, TokenType> types = new Dictionary<char, TokenType>();
         private GameObject themeObject;
         private GameObject cellTemplate;
@@ -697,6 +711,175 @@ namespace Match3.Tests
             Assert.IsFalse(timedOut, $"{Beams().Length} beams were still around after {ResolveTimeoutSeconds} seconds.");
         }
 
+        // ---------------------------------------------------------------- Hypercubes
+        //
+        // The rules are covered in Edit Mode (BoardModelHypercubeTests). These check the running
+        // Board: the token changes, a cube swap is accepted without any run, and the whole
+        // colour is cleared before anything falls.
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator LineOfFive_TurnsTheSwappedTokenIntoAHypercube()
+        {
+            board.LoadLayoutForTests(BuildLayout(LineOfFiveLayout));
+            // The A the player moves: it ends up at (2,0), the swapped cell inside the match.
+            Token moved = board.GetToken(LineOfFiveB.x, LineOfFiveB.y);
+
+            var created = new List<(PowerKind kind, Vector2Int cell)>();
+            bool tokenWasTheCube = false;
+            board.PowerGemCreated += (kind, cell) =>
+            {
+                // Only look at the first one: a cascade could, with luck, make another.
+                if (created.Count == 0)
+                {
+                    Token token = board.GetToken(cell.x, cell.y);
+                    // No colour any more, and no overlay: the cube's look is its own sprite.
+                    tokenWasTheCube = token == moved && token.Power == PowerKind.Hypercube &&
+                                      token.Type == null && !token.ShowsPowerOverlay;
+                }
+                created.Add((kind, cell));
+            };
+
+            Assert.IsTrue(board.TrySwap(LineOfFiveA, LineOfFiveB));
+            // Stop as soon as the swap's own step has been reported, before any cascade.
+            yield return new WaitUntil(() => clearSteps.Count > 0);
+
+            Assert.AreEqual((5, 0), clearSteps[0], "The swap should make a run of 5.");
+            Assert.That(created, Is.Not.Empty, "PowerGemCreated never fired.");
+            Assert.AreEqual((PowerKind.Hypercube, LineOfFiveA), created[0], "The Hypercube belongs at the swapped cell.");
+            Assert.IsTrue(tokenWasTheCube, "The token the player moved should itself become the Hypercube, with no colour.");
+            // The cube is a survivor of the match: it's still on the board while the others pop.
+            Assert.IsTrue(moved != null && moved.enabled, "The Hypercube's token was cleared along with the rest of the run.");
+
+            yield return WaitUntilIdle();
+            AssertBoardIsFullAndSettled();
+            AssertNoMatchesLeft();
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator HypercubeSwap_ClearsEveryTokenOfThatColourBeforeAnythingFalls()
+        {
+            // The top-left pair, which makes no match when swapped (see Layout). With the A at
+            // (0,4) turned into a Hypercube, swapping it with the B beside it is a valid move
+            // all the same, and should clear all six B's on the board.
+            Vector2Int cubeStart = NoMatchA;
+            Vector2Int gemStart = NoMatchB;
+            board.SetPowerForTests(cubeStart, PowerKind.Hypercube);
+            Token cube = board.GetToken(cubeStart.x, cubeStart.y);
+            TokenType colour = board.GetToken(gemStart.x, gemStart.y).Type;
+
+            // Which token is in which cell before the swap, and which of them are B's.
+            var before = new Token[board.Width, board.Height];
+            var targets = new List<Token>();
+            for (int x = 0; x < board.Width; x++)
+            {
+                for (int y = 0; y < board.Height; y++)
+                {
+                    before[x, y] = board.GetToken(x, y);
+                    if (before[x, y].Type == colour)
+                    {
+                        targets.Add(before[x, y]);
+                    }
+                }
+            }
+            Assert.AreEqual(6, targets.Count, "The layout should have six B's.");
+
+            var detonated = new List<(PowerKind kind, Vector2Int cell)>();
+            int stepsWhenDetonated = -1;
+            int runsWhenDetonated = -1;
+            int zapsWhenDetonated = -1;
+            // Anything wrong with the board at the moment the cube went off, as a message.
+            string problem = null;
+            board.PowerGemDetonated += (kind, cell) =>
+            {
+                if (detonated.Count == 0)
+                {
+                    stepsWhenDetonated = clearSteps.Count;
+                    runsWhenDetonated = clearedRuns.Count;
+                    zapsWhenDetonated = Zaps().Length;
+                    for (int x = 0; x < board.Width; x++)
+                    {
+                        for (int y = 0; y < board.Height; y++)
+                        {
+                            var here = new Vector2Int(x, y);
+                            Token now = board.GetToken(x, y);
+                            // The two swapped cells held the cube and a B, so both are cleared
+                            // whichever of the two ended up where.
+                            bool cleared = here == cubeStart || here == gemStart || before[x, y].Type == colour;
+                            if (cleared)
+                            {
+                                if (now != null)
+                                {
+                                    problem = $"({x}, {y}) held the cube or a B but still has a token.";
+                                }
+                            }
+                            else if (now != before[x, y] || now.transform.position != board.GridToWorld(x, y))
+                            {
+                                problem = $"({x}, {y}) held another colour but its token changed or moved.";
+                            }
+                        }
+                    }
+                }
+                detonated.Add((kind, cell));
+            };
+
+            Assert.IsTrue(board.TrySwap(cubeStart, gemStart));
+            yield return WaitUntilIdle();
+
+            Assert.AreEqual(new[] { "started" }, swapEvents, "A Hypercube swap is a valid move: it mustn't be rejected.");
+            Assert.That(detonated, Is.Not.Empty, "PowerGemDetonated never fired.");
+            // The swap is made first, so the cube goes off from the cell it was swapped into.
+            Assert.AreEqual((PowerKind.Hypercube, gemStart), detonated[0]);
+            Assert.AreEqual(0, stepsWhenDetonated, "The cube's own step isn't a match, so no clear step is reported for it.");
+            Assert.AreEqual(0, runsWhenDetonated, "Zapped gems aren't runs: nothing should have been reported as one.");
+            Assert.AreEqual(6, zapsWhenDetonated, "The cube should fire one bolt at each B.");
+            Assert.IsNull(problem, "The cube should clear itself and exactly the B's, before anything falls.");
+
+            // Whatever the refill lined up afterwards is a cascade, never "the swap's own match".
+            foreach ((int longestRun, int cascadeIndex) step in clearSteps)
+            {
+                Assert.That(step.cascadeIndex, Is.GreaterThan(0), "Matches after a Hypercube goes off are cascades.");
+            }
+
+            Assert.IsTrue(cube == null, "The Hypercube was taken off the board but not destroyed.");
+            foreach (Token token in targets)
+            {
+                Assert.IsTrue(token == null, "A zapped token was taken off the board but not destroyed.");
+            }
+            AssertBoardIsFullAndSettled();
+            AssertNoMatchesLeft();
+            yield return WaitUntilNoBursts();
+
+            // The bolts clean up after themselves, like the bursts and the Star's beam do.
+            bool timedOut = false;
+            yield return new WaitUntil(
+                () => Zaps().Length == 0,
+                System.TimeSpan.FromSeconds(ResolveTimeoutSeconds),
+                () => timedOut = true);
+            Assert.IsFalse(timedOut, $"{Zaps().Length} bolts were still around after {ResolveTimeoutSeconds} seconds.");
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator SwappingTwoHypercubes_PutsBothBack()
+        {
+            board.SetPowerForTests(NoMatchA, PowerKind.Hypercube);
+            board.SetPowerForTests(NoMatchB, PowerKind.Hypercube);
+            Token cubeA = board.GetToken(NoMatchA.x, NoMatchA.y);
+            Token cubeB = board.GetToken(NoMatchB.x, NoMatchB.y);
+            int detonations = 0;
+            board.PowerGemDetonated += (kind, cell) => detonations++;
+
+            Assert.IsTrue(board.TrySwap(NoMatchA, NoMatchB));
+            yield return WaitUntilIdle();
+
+            Assert.AreEqual(new[] { "started", "rejected" }, swapEvents, "Two Hypercubes can't be swapped (yet).");
+            Assert.AreEqual(0, detonations);
+            Assert.AreSame(cubeA, board.GetToken(NoMatchA.x, NoMatchA.y));
+            Assert.AreSame(cubeB, board.GetToken(NoMatchB.x, NoMatchB.y));
+            Assert.AreEqual(PowerKind.Hypercube, cubeA.Power);
+            Assert.AreEqual(PowerKind.Hypercube, cubeB.Power);
+            AssertBoardIsFullAndSettled();
+        }
+
         // ---------------------------------------------------------------- Hints
 
         [UnityTest, Timeout(TestTimeoutMs)]
@@ -1022,6 +1205,12 @@ namespace Match3.Tests
         private StarBeam[] Beams()
         {
             return boardObject.GetComponentsInChildren<StarBeam>();
+        }
+
+        /// <summary>Every Hypercube bolt under the board right now.</summary>
+        private HypercubeZap[] Zaps()
+        {
+            return boardObject.GetComponentsInChildren<HypercubeZap>();
         }
 
         /// <summary>Waits until every burst has destroyed itself, failing the test if some never do.</summary>

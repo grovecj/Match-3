@@ -227,8 +227,10 @@ namespace Match3.Tests
 
             BoardModel.ClearResult result = ClearAll(board);
 
-            Assert.IsEmpty(result.Created);
-            Assert.AreEqual(new[] { "GBGBGBG", "Y.....Y", "BGBGBGB" }, grids.Rows(board));
+            // A line of 5 leaves a different gem behind: see BoardModelHypercubeTests.
+            Assert.AreEqual(1, result.Created.Count);
+            Assert.AreNotEqual(PowerKind.Flame, result.Created[0].Kind);
+            Assert.AreEqual(new[] { ".......", "...H...", "......." }, grids.PowerRows(board));
         }
 
         [Test]
@@ -260,8 +262,8 @@ namespace Match3.Tests
         [TestCase(MatchShape.Line3, PowerKind.None)]
         [TestCase(MatchShape.Line4, PowerKind.Flame)]
         [TestCase(MatchShape.Cross, PowerKind.Star)]
-        [TestCase(MatchShape.Line5, PowerKind.None)]
-        public void PowerMadeBy_ALineOfFourMakesAFlame_AndACrossMakesAStar(MatchShape shape, PowerKind expected)
+        [TestCase(MatchShape.Line5, PowerKind.Hypercube)]
+        public void PowerMadeBy_EachShapeBiggerThanALineOfThreeMakesItsOwnGem(MatchShape shape, PowerKind expected)
         {
             Assert.AreEqual(expected, BoardModel.PowerMadeBy(shape));
         }

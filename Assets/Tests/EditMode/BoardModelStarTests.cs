@@ -180,7 +180,8 @@ namespace Match3.Tests
         public void CrossWithARunOfFiveInIt_MakesNoStar()
         {
             // A row of 5 with a column of 3 standing on its middle. Runs cross here, but a match
-            // containing a run of 5 is a Line5, not a Cross (that shape is saved for a later gem).
+            // containing a run of 5 is a Line5, not a Cross, and a Line5 makes a Hypercube (see
+            // BoardModelHypercubeTests). It appears in the middle of the five.
             BoardModel board = Grid(
                 "GBRBG",
                 "BGRGB",
@@ -188,9 +189,11 @@ namespace Match3.Tests
 
             BoardModel.ClearResult result = ClearAll(board);
 
-            Assert.IsEmpty(result.Created);
-            Assert.AreEqual(7, result.Matched.Count);
-            Assert.AreEqual(new[] { "GB.BG", "BG.GB", "....." }, grids.Rows(board));
+            Assert.AreEqual(1, result.Created.Count);
+            Assert.AreEqual(PowerKind.Hypercube, result.Created[0].Kind);
+            Assert.AreEqual(Cell(2, 0), result.Created[0].Cell);
+            Assert.AreEqual(6, result.Matched.Count);
+            Assert.AreEqual(new[] { "GB.BG", "BG.GB", "..*.." }, grids.Rows(board));
         }
 
         [Test]
@@ -259,7 +262,7 @@ namespace Match3.Tests
             Assert.AreEqual(Describe(board.FlameBlastCells(centre)), Describe(board.BlastCells(PowerKind.Flame, centre)));
             Assert.AreEqual(Describe(board.StarBlastCells(centre)), Describe(board.BlastCells(PowerKind.Star, centre)));
             Assert.IsEmpty(board.BlastCells(PowerKind.None, centre), "An ordinary gem has no blast.");
-            Assert.IsEmpty(board.BlastCells(PowerKind.Hypercube, centre), "The Hypercube has no blast yet.");
+            Assert.IsEmpty(board.BlastCells(PowerKind.Hypercube, centre), "A Hypercube is set off by a swap, not a match, so it has no blast.");
         }
 
         // ---------------------------------------------------------------- Detonating
