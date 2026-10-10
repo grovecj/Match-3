@@ -1,3 +1,4 @@
+using System.Linq;
 using Match3;
 using Match3.Accounts;
 using Match3.Online;
@@ -71,12 +72,42 @@ public static class SettingsMenuBuilder
             tokenStyleOptionPrefab, boardThemeOptionPrefab, soundSetOptionPrefab, out SettingsMenu settingsMenu);
 
         SetReference(gameManager, "settingsMenu", settingsMenu);
+        FillSoundSetsIfEmpty(audioManager);
         AddPreferencesSync(settingsMenu, themeManager, audioManager);
 
         // Tell Unity the scene has unsaved changes (the * in the Hierarchy) so Ctrl+S saves them.
         EditorSceneManager.MarkSceneDirty(canvas.gameObject.scene);
         Selection.activeGameObject = settingsMenu.gameObject;
         Debug.Log("Settings menu built. Save the scene (Ctrl+S) to keep it.");
+    }
+
+    /// <summary>
+    /// The Sounds section shows one option per entry in the AudioManager's Sound Sets list, so
+    /// an empty list means an empty section. If nobody has filled the list in yet, this fills
+    /// it with every SoundSet asset in the project: the set already in use first, then the rest
+    /// by name. A list that has entries is left alone, so a hand-picked order survives a rebuild.
+    /// </summary>
+    private static void FillSoundSetsIfEmpty(AudioManager audioManager)
+    {
+        var serialized = new SerializedObject(audioManager);
+        if (serialized.FindProperty("soundSets").arraySize > 0)
+        {
+            return;
+        }
+
+        // FindAssets searches the project ("t:SoundSet" = every asset of that type) and returns
+        // GUIDs, which are turned back into paths and then loaded.
+        SoundSet current = audioManager.SoundSet;
+        SoundSet[] sets = AssetDatabase.FindAssets("t:" + nameof(SoundSet))
+            .Select(AssetDatabase.GUIDToAssetPath)
+            .Select(AssetDatabase.LoadAssetAtPath<SoundSet>)
+            .Where(set => set != null)
+            // false sorts before true, so the current set (where this is false) comes first.
+            .OrderBy(set => set != current)
+            .ThenBy(set => set.DisplayName)
+            .ToArray();
+        SetArray(audioManager, "soundSets", sets);
+        Debug.Log($"Build Settings Menu: the AudioManager's Sound Sets list was empty, so it now has all {sets.Length} sound set(s) in the project.", audioManager);
     }
 
     /// <summary>
