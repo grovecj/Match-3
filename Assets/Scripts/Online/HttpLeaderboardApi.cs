@@ -39,10 +39,14 @@ namespace Match3.Online
                 accessToken, LeaderboardJson.ParseRoundToken, done);
         }
 
-        public IEnumerator SubmitScore(string accessToken, string roundToken, int score, Action<ApiResult<Standing>> done)
+        public IEnumerator SubmitScore(string accessToken, string roundToken, int score, RoundStats stats,
+            Action<ApiResult<Standing>> done)
         {
             // JsonUtility.ToJson writes an object's public fields as JSON, the reverse of FromJson.
-            string body = JsonUtility.ToJson(new ScoreSubmission { roundToken = roundToken, score = score });
+            // It can't leave a field out, so "with stats" and "without" are two classes.
+            string body = stats != null
+                ? JsonUtility.ToJson(new ScoreWithStats { roundToken = roundToken, score = score, stats = stats })
+                : JsonUtility.ToJson(new ScoreSubmission { roundToken = roundToken, score = score });
             ApiResult<Standing> result = null;
             bool retried = false;
             yield return Send(() => UnityWebRequest.Post(baseUrl + "/scores", body, "application/json"),
@@ -50,6 +54,7 @@ namespace Match3.Online
 
             // A retry that's told the round already has a score means the first try did reach the
             // server, and only its reply was lost. So it was posted; ask for the standing instead.
+            // (That leaves Standing.unlocked null: which achievements it earned went with the reply.)
             if (retried && result.Code == "round_already_scored")
             {
                 ApiResult<PlayerProfile> me = null;
@@ -151,6 +156,14 @@ namespace Match3.Online
         {
             public string roundToken;
             public int score;
+        }
+
+        [Serializable]
+        private class ScoreWithStats
+        {
+            public string roundToken;
+            public int score;
+            public RoundStats stats;
         }
     }
 }

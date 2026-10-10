@@ -243,6 +243,41 @@ namespace Match3.Tests
         }
 
         [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator RoundStatsTracker_CountsWhatTheBoardReports()
+        {
+            // The tracker is what the server's achievements are worked out from, so it has to
+            // agree with the Board's events (which are also what the score is added up from).
+            var trackerObject = new GameObject("Round Stats Tracker");
+            trackerObject.SetActive(false);
+            RoundStatsTracker tracker = trackerObject.AddComponent<RoundStatsTracker>();
+            tracker.ConfigureForTests(board);
+            trackerObject.SetActive(true);
+            board.LoadLayoutForTests(BuildLayout(TShapeLayout));
+
+            // One swap that makes no match (it still counts as a swap), then the T.
+            Assert.IsTrue(board.TrySwap(NoMatchA, NoMatchB));
+            yield return WaitUntilIdle();
+            Assert.IsTrue(board.TrySwap(TShapeA, TShapeB));
+            yield return WaitUntilIdle();
+
+            RoundStats stats = tracker.Stats;
+            Object.Destroy(trackerObject);
+
+            Assert.AreEqual(2, stats.swaps);
+            Assert.AreEqual(clearedRuns.FindAll(run => run == 3).Count, stats.runs3);
+            Assert.AreEqual(clearedRuns.FindAll(run => run == 4).Count, stats.runs4);
+            Assert.AreEqual(clearedRuns.FindAll(run => run >= 5).Count, stats.runs5);
+            Assert.That(stats.runs3, Is.GreaterThanOrEqualTo(1), "The T's row of 3.");
+            Assert.That(stats.runs4, Is.GreaterThanOrEqualTo(1), "The T's column of 4.");
+            Assert.That(stats.longestRun, Is.GreaterThanOrEqualTo(4));
+            // Only the T cleared anything, so the chain is however many steps it set off.
+            Assert.AreEqual(clearSteps.Count, stats.bestChain);
+
+            tracker.ResetStats();
+            Assert.AreEqual(0, tracker.Stats.swaps, "ResetStats should start the count again.");
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
         public IEnumerator TShapedMatch_BurstsOncePerCellSizedByItsLongestRun_ThenCleansUp()
         {
             board.LoadLayoutForTests(BuildLayout(TShapeLayout));

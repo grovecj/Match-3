@@ -38,6 +38,29 @@ namespace Match3.Tests
         }
 
         [Test]
+        public void ParseStanding_ReadsWhatTheRoundUnlocked()
+        {
+            Standing standing = LeaderboardJson.ParseStanding(
+                "{\"best\":9000,\"rank\":1,\"unlocked\":[{\"key\":\"first-round\",\"name\":\"Warm-Up\"," +
+                "\"description\":\"Finish a round\",\"icon\":\"rounds\",\"goal\":1,\"progress\":1," +
+                "\"unlockedAt\":\"2026-10-10T04:15:00.123456Z\"}]}");
+
+            Assert.That(standing.unlocked, Has.Length.EqualTo(1));
+            Assert.That(standing.unlocked[0].key, Is.EqualTo("first-round"));
+            Assert.That(standing.unlocked[0].name, Is.EqualTo("Warm-Up"));
+            Assert.That(standing.unlocked[0].IsUnlocked, Is.True);
+        }
+
+        [Test]
+        public void ParseStanding_NothingUnlocked_IsAnEmptyListNotNull()
+        {
+            // Null is kept to mean "we don't know" (the reply was lost), so it must not come
+            // from a reply that simply has none, or from an older server with no such field.
+            Assert.That(LeaderboardJson.ParseStanding("{\"best\":9000,\"rank\":1,\"unlocked\":[]}").unlocked, Is.Empty);
+            Assert.That(LeaderboardJson.ParseStanding("{\"best\":9000,\"rank\":1}").unlocked, Is.Empty);
+        }
+
+        [Test]
         public void ParseStanding_WithoutARank_IsNull()
         {
             Assert.That(LeaderboardJson.ParseStanding("{\"best\":5}"), Is.Null);

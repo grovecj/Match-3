@@ -1,5 +1,6 @@
 using System.Globalization;
 using Match3.Accounts;
+using Match3.Achievements;
 using TMPro;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -83,6 +84,10 @@ namespace Match3
         [Header("Account")]
         [Tooltip("Shown between rounds only, like Settings.")]
         [SerializeField] private AccountMenu accountMenu;
+
+        [Header("Achievements")]
+        [Tooltip("Shown between rounds only, like Settings. Optional: leave empty if the scene has no Achievements menu.")]
+        [SerializeField] private AchievementsMenu achievementsMenu;
 
         private enum GameState { Ready, Playing, Paused, RoundOver }
 
@@ -239,6 +244,7 @@ namespace Match3
             settingsMenu.SetAvailable(false);
             leaderboardMenu.SetAvailable(false);
             accountMenu.SetAvailable(false);
+            SetAchievementsAvailable(false);
             // For a signed-in player, this registers the round with the global leaderboard (in
             // the background), so its score can be posted when it ends.
             leaderboardMenu.RoundStarted();
@@ -299,6 +305,7 @@ namespace Match3
             settingsMenu.SetAvailable(true);
             leaderboardMenu.SetAvailable(true);
             accountMenu.SetAvailable(true);
+            SetAchievementsAvailable(true);
         }
 
         private void EnterRoundOver()
@@ -312,10 +319,21 @@ namespace Match3
             settingsMenu.SetAvailable(true);
             leaderboardMenu.SetAvailable(true);
             accountMenu.SetAvailable(true);
+            SetAchievementsAvailable(true);
 
             // If the score makes the local top 10, this pops up the initials prompt over the
             // round-end screen. A signed-in player's score also goes to the global leaderboard.
             leaderboardMenu.OfferEntry(scoreKeeper.Total);
+        }
+
+        // The Achievements menu is the one menu the game can run without, so it's the one
+        // reference that's allowed to be empty.
+        private void SetAchievementsAvailable(bool available)
+        {
+            if (achievementsMenu != null)
+            {
+                achievementsMenu.SetAvailable(available);
+            }
         }
 
         private void ShowButton(string label)

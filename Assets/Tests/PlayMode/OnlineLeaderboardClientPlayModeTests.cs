@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using Match3.Achievements;
 using Match3.Online;
 using NUnit.Framework;
 using UnityEngine;
@@ -25,6 +26,8 @@ namespace Match3.Tests
         private FakeLeaderboardApi api;
         private bool signedIn;
         private string accessToken;
+        // What the round's stats are when the client asks; null posts without any.
+        private RoundStats roundStats;
 
         [SetUp]
         public void SetUp()
@@ -32,6 +35,7 @@ namespace Match3.Tests
             api = new FakeLeaderboardApi();
             signedIn = true;
             accessToken = AccessToken;
+            roundStats = null;
         }
 
         [TearDown]
@@ -49,7 +53,7 @@ namespace Match3.Tests
             // Inactive, so Awake waits until the fakes are plugged in.
             gameObject.SetActive(false);
             client = gameObject.AddComponent<OnlineLeaderboardClient>();
-            client.ConfigureForTests(api, () => signedIn, GetAccessToken);
+            client.ConfigureForTests(api, () => signedIn, GetAccessToken, () => roundStats);
             gameObject.SetActive(true);
             yield return null;
         }
@@ -97,6 +101,62 @@ namespace Match3.Tests
             Assert.That(client.LastPost, Is.EqualTo(OnlineLeaderboardClient.PostState.Posted));
             Assert.That(client.LastStanding.rank, Is.EqualTo(4));
             Assert.That(client.PostMessage, Does.Contain("90,000").And.Contain("#4"));
+        }
+
+        [UnityTest]
+        public IEnumerator PostsTheRoundsStatsWithTheScore()
+        {
+            yield return CreateClient();
+            roundStats = new RoundStats { swaps = 4, runs4 = 2, runs5 = 1, longestRun = 5, bestChain = 2 };
+
+            yield return PlayRound(9000);
+
+            Assert.That(api.SubmittedStats, Is.SameAs(roundStats));
+        }
+
+        [UnityTest]
+        public IEnumerator WithoutATracker_PostsNoStats()
+        {
+            yield return CreateClient();
+
+            yield return PlayRound(9000);
+
+            Assert.That(api.SubmittedStats, Is.Null);
+            Assert.That(client.LastPost, Is.EqualTo(OnlineLeaderboardClient.PostState.Posted));
+        }
+
+        [UnityTest]
+        public IEnumerator ScorePosted_CarriesWhatTheRoundUnlocked()
+        {
+            yield return CreateClient();
+            var unlocked = new[] { new Achievement { key = "first-round", name = "Warm-Up" } };
+            api.Standing = new Standing { best = 9000, rank = 1, unlocked = unlocked };
+            int raised = 0;
+            Achievement[] received = null;
+            client.ScorePosted += achievements =>
+            {
+                raised++;
+                received = achievements;
+            };
+
+            yield return PlayRound(9000);
+
+            Assert.That(raised, Is.EqualTo(1));
+            Assert.That(received, Is.SameAs(unlocked));
+        }
+
+        [UnityTest]
+        public IEnumerator ScoreTurnedDown_DoesNotRaiseScorePosted()
+        {
+            yield return CreateClient();
+            api.ScoreError = ApiResult<Standing>.Failure("implausible_stats", "implausible_stats", reached: true);
+            int raised = 0;
+            client.ScorePosted += _ => raised++;
+
+            yield return PlayRound(9000);
+
+            Assert.That(client.LastPost, Is.EqualTo(OnlineLeaderboardClient.PostState.Failed));
+            Assert.That(raised, Is.Zero);
         }
 
         [UnityTest]
@@ -272,6 +332,7 @@ namespace Match3.Tests
 
             public string SubmittedToken;
             public int SubmittedScore;
+            public RoundStats SubmittedStats;
 
             private int rounds;
 
@@ -284,12 +345,14 @@ namespace Match3.Tests
                 done(RoundResult ?? ApiResult<string>.Success("round-" + rounds));
             }
 
-            public IEnumerator SubmitScore(string accessToken, string roundToken, int score, Action<ApiResult<Standing>> done)
+            public IEnumerator SubmitScore(string accessToken, string roundToken, int score, RoundStats stats,
+                Action<ApiResult<Standing>> done)
             {
                 Calls.Add("SubmitScore");
                 AccessTokens.Add(accessToken);
                 SubmittedToken = roundToken;
                 SubmittedScore = score;
+                SubmittedStats = stats;
                 yield return null;
                 done(ScoreError ?? ApiResult<Standing>.Success(Standing));
             }

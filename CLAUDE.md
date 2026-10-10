@@ -10,7 +10,10 @@ well-explained code over polish. Explain Unity concepts when introducing them.
 - Editor-only tools (e.g. `Match3 > Build Settings Menu`, which regenerates the Settings UI,
   its option prefabs and the PreferencesSync (see `Docs/SettingsSync.md`), `Match3 > Build Leaderboard Menu` (Local/Global tabs and the
   OnlineLeaderboardClient; see `Docs/GlobalLeaderboard.md`), `Match3 > Build Account Menu` (the
-  Account button/window and the AccountManager; see `Docs/Accounts.md`), and
+  Account button/window and the AccountManager; see `Docs/Accounts.md`),
+  `Match3 > Build Achievements Menu` (the Achievements button/window, the unlock toast, the
+  AchievementsClient and RoundStatsTracker; run it after the Account and Leaderboard builders;
+  see `Docs/Achievements.md`), and
   `Match3 > Build Explosion Prefab`, which builds the clear-effect particle prefab) live in
   `Assets/Editor/`, sharing
   helpers from `UIBuilder.cs`. `Match3 > Build Web` makes the browser build into `Builds/Web`
