@@ -23,6 +23,16 @@ and so on. Every wave of a chain reaction is inside one step, so they share its 
 A swapped Hypercube's step is step 0 (x1), and the first cascade after it is x2. The
 multiplier goes back to x1 on the next swap. The side panel shows it ("x3") while it's above x1.
 
+**Last Hurrah.** When the clock reaches 0:00 (and any cascade in progress has finished), every
+power gem still on the board goes off, row by row from the bottom-left, and scores by the same
+rules. Each gem set off this way is a step 0 of its own (x1), like a swapped Hypercube, with
+its whole chain reaction inside it; a Hypercube picks the most common colour, as one caught in
+a blast does. The cascades after the fall are x2, x3 and so on. If one of them makes a new
+power gem, that goes off too, starting again from x1. The round-over screen and the score
+submission wait for all of it. No new rule or number is involved, so the scoring version and
+the server's checks are unchanged: hurrah points arrive in `blastedGems`, the run counts and
+`basePointsAtMultiplier` like any others.
+
 So a run of 3 whose Flame destroys 8 more gems is worth 1,000 + 8 x 250 = 3,000 as the
 player's own match, and 6,000 on the first cascade.
 
@@ -63,7 +73,8 @@ score == basePointsAtMultiplier[0]*1 + [1]*2 + [2]*3 + [3]*4 + [4]*5
 
 The other new stats are for achievements (#71), not for checking the score:
 `flamesCreated`, `starsCreated`, `hypercubesCreated`, `flamesDetonated`, `starsDetonated`,
-`hypercubesDetonated` and `mostGemsOneSwap` (every gem one swap cleared, cascades included).
+`hypercubesDetonated` and `mostGemsOneSwap` (every gem one swap cleared, cascades included;
+gems cleared by the Last Hurrah belong to no swap, so they're left out of it).
 The longest cascade is `bestChain` - 1: `bestChain` already counts the steps of the longest
 chain, the player's own match (or swapped Hypercube) included.
 

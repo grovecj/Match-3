@@ -1078,6 +1078,62 @@ namespace Match3
         }
 
         /// <summary>
+        /// Looks for a power gem on the board, row by row from the bottom, each row left to
+        /// right: so the bottom-left corner is looked at first and the top-right corner last.
+        /// Returns false (and <paramref name="cell"/> is meaningless) if there isn't one.
+        /// The Last Hurrah at the end of a round sets the gems off in this order.
+        /// </summary>
+        // A fixed order, rather than "whichever the loop happens to find", is what makes the
+        // end of a round the same every time for the same board, and so testable.
+        public bool TryFindPowerGem(out Vector2Int cell)
+        {
+            // y is the outer loop here (unlike most loops in this class) because the order is
+            // by row: all of row 0, then all of row 1, and so on.
+            for (int y = 0; y < Height; y++)
+            {
+                for (int x = 0; x < Width; x++)
+                {
+                    if (grid[x, y].Power != PowerKind.None)
+                    {
+                        cell = new Vector2Int(x, y);
+                        return true;
+                    }
+                }
+            }
+
+            // An `out` parameter must be given a value on every path, even when it isn't used.
+            cell = default;
+            return false;
+        }
+
+        /// <summary>
+        /// Sets off the power gem in <paramref name="cell"/> where it sits, with no match and no
+        /// swap: what the Last Hurrah does to every gem still on the board when time runs out.
+        /// The gem is emptied and blasts as it always does, chain reaction included (see
+        /// <see cref="ClearMatches"/>). A Hypercube has nothing to take a colour from, so, like
+        /// one caught in a blast, it goes off on the <see cref="MostCommonColour"/>.
+        ///
+        /// Like <see cref="ActivateHypercube"/> this is a clear step of its own: nothing is
+        /// matched or made, and the result's first wave is this gem alone. Call
+        /// <see cref="Collapse"/> afterwards.
+        /// </summary>
+        public ClearResult DetonatePowerGem(Vector2Int cell)
+        {
+            Piece gem = PieceAt(cell);
+            if (gem.Power == PowerKind.None)
+            {
+                throw new System.ArgumentException($"There is no power gem in cell ({cell.x},{cell.y}).");
+            }
+
+            // The same three lines as ActivateHypercube, minus the colour: leaving the pending
+            // gem's Target out is what tells ResolveWaves "pick the most common one".
+            grid[cell.x, cell.y] = Piece.Empty;
+            var firstWave = new List<PendingGem> { new PendingGem(cell, gem) };
+            return new ClearResult(new List<Vector2Int>(), new List<Creation>(),
+                ResolveWaves(firstWave, new HashSet<Vector2Int>()));
+        }
+
+        /// <summary>
         /// Sets off the power gems in <paramref name="firstWave"/>, then every power gem their
         /// blasts caught, then every gem those blasts caught, until a wave catches none. Returns
         /// what went off, wave by wave. Cells in <paramref name="protectedCells"/> are never

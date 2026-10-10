@@ -60,6 +60,8 @@ namespace Match3
         [SerializeField, Min(0f)] private float zapInterval = 0.05f;
         [Tooltip("Extra pause, in seconds, between one wave of a chain reaction and the next, so the player can follow which gem set off which.")]
         [SerializeField, Min(0f)] private float chainDelay = 0.1f;
+        [Tooltip("Pause, in seconds, between time running out and the first leftover power gem going off (the Last Hurrah), so the player can read the banner first.")]
+        [SerializeField, Min(0f)] private float lastHurrahDelay = 0.6f;
 
         [Header("Reshuffling")]
         [Tooltip("Pause, in seconds, between running out of moves and the tokens shuffling, so the player sees why.")]
@@ -143,6 +145,13 @@ namespace Match3
         /// </summary>
         // Action<PowerKind, Vector2Int, int>: a method taking those three things, in that order.
         public event System.Action<PowerKind, Vector2Int, int> PowerGemDetonated;
+
+        /// <summary>
+        /// Fired when the Last Hurrah starts (see <see cref="TryStartLastHurrah"/>), before its
+        /// first power gem goes off. From here until the board is idle again, every step that's
+        /// scored was set off by the end of the round, not by a swap.
+        /// </summary>
+        public event System.Action LastHurrahStarted;
 
         /// <summary>
         /// Fired when the player's swap starts animating, whether or not it will make a match.
@@ -841,11 +850,30 @@ namespace Match3
                 }
             }
 
-            // Cascade loop: clear the current matches, set off any power gems among them, let
-            // tokens fall and refill, then check whether the new layout made more matches.
-            // Skipped entirely for an invalid swap.
+            // Skipped entirely for an invalid swap: there are no groups to clear.
+            yield return StartCoroutine(ResolveCascades(groups, cascadeIndex));
+
+            // The board has settled. If that left the player with nothing to play, fix it
+            // before handing control back, so input stays locked while the tokens move.
+            yield return StartCoroutine(ReshuffleIfStuck());
+
+            state = BoardState.Idle;
+        }
+
+        /// <summary>
+        /// The cascade loop: clears <paramref name="groups"/>, sets off any power gems among
+        /// them, lets tokens fall and refill, then does it all again for whatever matches the
+        /// new layout made, until there are none. Does nothing if <paramref name="groups"/> is
+        /// empty. <paramref name="cascadeIndex"/> is the index of the first step; each step
+        /// after it counts one higher.
+        /// </summary>
+        // This used to be the second half of ResolveSwap. Moving it into a coroutine of its own
+        // lets a second caller (the Last Hurrah) run exactly the same steps: a coroutine can be
+        // reused like any other method, by `yield return StartCoroutine(...)`-ing it.
+        private IEnumerator ResolveCascades(List<MatchGroup> groups, int cascadeIndex)
+        {
             // A `for` with nothing before its first `;` just means "the counter is already set
-            // up": it was declared above so the Hypercube branch could start it at 1.
+            // up": the caller chose where it starts.
             for (; groups.Count > 0; cascadeIndex++)
             {
                 // The model does the whole clear step right now, blasts and chain reactions
@@ -880,11 +908,90 @@ namespace Match3
                 // A cascade has no swapped cells: nobody moved these tokens, they fell.
                 groups = model.FindMatchGroups();
             }
+        }
 
-            // The board has settled. If that left the player with nothing to play, fix it
-            // before handing control back, so input stays locked while the tokens move.
-            yield return StartCoroutine(ReshuffleIfStuck());
+        /// <summary>
+        /// The Last Hurrah: sets off every power gem still on the board, one after another, and
+        /// resolves what that causes, exactly as a swap's clears are resolved. Call it when the
+        /// round's time has run out. Returns false (and does nothing) if the board is still
+        /// resolving or has no power gem; otherwise the board is resolving until it's all over,
+        /// and no power gem is left when it is.
+        /// </summary>
+        // The second entry point into the resolution pipeline. TrySwap is the first: both lock
+        // the board, start one coroutine, and that coroutine runs the same building blocks
+        // (PlayWaves, CollapseAndRefill, AnimateFalls, ResolveCascades) in its own order.
+        public bool TryStartLastHurrah()
+        {
+            if (state != BoardState.Idle || model == null || !model.TryFindPowerGem(out _))
+            {
+                return false;
+            }
 
+            // Normally input is already off by now, which puts a held token down. This is for
+            // a caller that didn't: nothing may be left half-dragged while gems go off.
+            if (heldCell is Vector2Int held)
+            {
+                PutNeighborBack();
+                tokens[held.x, held.y].transform.position = GridToWorld(held.x, held.y);
+            }
+            ReleaseHeld();
+            ClearHint();
+
+            state = BoardState.Resolving;
+            StartCoroutine(ResolveLastHurrah());
+            return true;
+        }
+
+        /// <summary>
+        /// Runs the Last Hurrah as passes. One pass: every power gem on the board goes off, in
+        /// the model's fixed order (<see cref="BoardModel.TryFindPowerGem"/>), with nothing
+        /// falling in between; then the board falls, refills and cascades. A cascade can make a
+        /// new power gem, so passes repeat until one ends with none on the board.
+        /// </summary>
+        // Each gem set off here is a clear step of its own at cascade index 0, like a swapped
+        // Hypercube: nothing was matched, the gem and its chain reaction are the whole step.
+        // The cascades after the fall are steps 1, 2... as usual, and the next pass starts at 0
+        // again, the way the next swap would.
+        //
+        // Does it end? Each pass does: a gem that goes off is gone, and nothing makes a new one
+        // until the fall. Passes only repeat if a cascade happens to line up four or more, and
+        // every pass is another roll of the dice, so they stop the way cascades themselves do.
+        private IEnumerator ResolveLastHurrah()
+        {
+            LastHurrahStarted?.Invoke();
+            if (lastHurrahDelay > 0f)
+            {
+                yield return new WaitForSeconds(lastHurrahDelay);
+            }
+
+            var noGroups = new List<MatchGroup>();
+            // `while (TryFind(out cell))` reads as "as long as there is one, and here it is".
+            while (model.TryFindPowerGem(out Vector2Int cell))
+            {
+                // `do ... while` runs the body before checking: we already know there's a gem.
+                do
+                {
+                    // As everywhere else: the model does it all now, then the waves play back.
+                    // A gem caught in this one's blast goes off in its chain, so the next
+                    // TryFindPowerGem only ever finds gems that are still waiting.
+                    BoardModel.ClearResult result = model.DetonatePowerGem(cell);
+                    // Nothing was matched, so the gem's own token is still on the board.
+                    yield return StartCoroutine(PlayWaves(result.Waves, firstGemsOnBoard: true));
+                    ClearStepScored?.Invoke(ClearStep.From(result, noGroups, cascadeIndex: 0));
+
+                    if (chainDelay > 0f && model.TryFindPowerGem(out _))
+                    {
+                        yield return new WaitForSeconds(chainDelay);
+                    }
+                }
+                while (model.TryFindPowerGem(out cell));
+
+                CollapseAndRefill();
+                yield return StartCoroutine(AnimateFalls());
+                yield return StartCoroutine(ResolveCascades(model.FindMatchGroups(), cascadeIndex: 1));
+            }
+
+            // No reshuffle here, unlike after a swap: the round is over, so nobody needs a move.
             state = BoardState.Idle;
         }
 
@@ -1534,7 +1641,7 @@ namespace Match3
             float swapDuration, float clearDelay, float fallSpeed,
             float popDuration = 0f, Explosion explosionPrefab = null, float springBackDuration = 0.01f,
             float noMovesDelay = 0f, float shuffleDuration = 0.01f, float beamSpeed = 1000f,
-            float zapInterval = 0f, float chainDelay = 0f)
+            float zapInterval = 0f, float chainDelay = 0f, float lastHurrahDelay = 0f)
         {
             this.width = width;
             this.height = height;
@@ -1555,6 +1662,7 @@ namespace Match3
             this.beamSpeed = beamSpeed;
             this.zapInterval = zapInterval;
             this.chainDelay = chainDelay;
+            this.lastHurrahDelay = lastHurrahDelay;
         }
 
         /// <summary>
