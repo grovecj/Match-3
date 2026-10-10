@@ -45,7 +45,11 @@ namespace Match3.Tests
             // A TokenType asset the Board doesn't list never appears in play, however much art
             // it has. GetDependencies lists every asset a scene refers to without opening the
             // scene, so this can't disturb whatever is open in the Editor.
-            string[] dependencies = AssetDatabase.GetDependencies("Assets/Scenes/Game.unity", recursive: true);
+            //
+            // recursive: false means "only what the scene itself refers to". With true it would
+            // also follow the scene's TokenStyles to the types *they* list, and every style
+            // lists every type, so the test would pass even with a type missing from the Board.
+            string[] dependencies = AssetDatabase.GetDependencies("Assets/Scenes/Game.unity", recursive: false);
             List<TokenType> types = LoadAll<TokenType>();
             Assert.AreEqual(6, types.Count, "The game is balanced for six token types.");
 
