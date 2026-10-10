@@ -70,6 +70,16 @@ namespace Match3.Tests
             return set;
         }
 
+        /// <summary>Makes a sound set with the Match3 and RoundEndHorn slots filled in.</summary>
+        private SoundSet CreateSetWithMatch3AndHorn()
+        {
+            SoundSet set = CreateSetWithMatch3(CreateClip("match3"));
+            var serialized = new SerializedObject(set);
+            serialized.FindProperty("roundEndHorn").objectReferenceValue = CreateClip("horn");
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+            return set;
+        }
+
         /// <summary>Makes an AudioManager using <paramref name="set"/> and runs its Awake.</summary>
         private AudioManager CreateManager(SoundSet set)
         {
@@ -131,6 +141,27 @@ namespace Match3.Tests
             {
                 Assert.IsFalse(source.playOnAwake);
             }
+        }
+
+        [Test]
+        public void Play_KeepsTheHornOnItsOwnSource()
+        {
+            AudioManager manager = CreateManager(CreateSetWithMatch3AndHorn());
+            // GetComponents returns them in the order they were added: the RequireComponent
+            // one (quick effects) first, then the one Awake adds for the horn.
+            AudioSource[] sources = manager.GetComponents<AudioSource>();
+            AudioSource effects = sources[0];
+            AudioSource horn = sources[1];
+
+            // A pitched-up cascade sound changes the effects source and leaves the horn's alone.
+            manager.Play(SoundId.Match3, pitch: 1.4f);
+            Assert.AreEqual(1.4f, effects.pitch, 0.0001f);
+            Assert.AreEqual(1f, horn.pitch, 0.0001f);
+
+            // And the horn doesn't reset the pitch of an effect that's still ringing out.
+            manager.Play(SoundId.RoundEndHorn, pitch: 0.9f);
+            Assert.AreEqual(1.4f, effects.pitch, 0.0001f);
+            Assert.AreEqual(0.9f, horn.pitch, 0.0001f);
         }
 
         [Test]

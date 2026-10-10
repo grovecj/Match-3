@@ -25,6 +25,8 @@ NOTES = (311.13, 369.99)     # E-flat 4 and G-flat 4, in Hz
 HARMONICS = 14               # how many overtones to stack on each note
 ATTACK = 0.02                # seconds to reach full volume
 RELEASE = 0.18               # seconds to fade out at the end
+SLIDE_DEPTH = 0.03           # how flat each note starts, as a fraction of its frequency
+SLIDE_TIME = 0.06            # seconds for most of the slide up to the note
 PEAK = 0.9                   # loudest sample, where 1.0 is the most a WAV can hold
 
 OUTPUT = Path(__file__).resolve().parents[2] / "Assets" / "Audio" / "Chimes" / "horn.wav"
@@ -43,10 +45,12 @@ def sample(t):
     """The horn's raw (not yet normalized) value at time t."""
     value = 0.0
     for note in NOTES:
-        # The pitch starts a touch flat and slides up over the first 60 ms, the way a real
-        # horn "speaks". Integrating the slide gives the phase offset below.
-        slide = -0.03 * math.exp(-t / 0.06)
-        phase = 2 * math.pi * note * (t + slide * 0.06)
+        # The pitch starts 3% flat and slides up to the note over the first 60 ms or so, the
+        # way a real horn "speaks": frequency = note * (1 - 0.03 * e^(-t / 0.06)).
+        # A sine wave needs the phase, which is the frequency added up (integrated) over time.
+        # Integrating that formula from 0 to t gives t minus the `lag` below.
+        lag = SLIDE_DEPTH * SLIDE_TIME * (1 - math.exp(-t / SLIDE_TIME))
+        phase = 2 * math.pi * note * (t - lag)
         for n in range(1, HARMONICS + 1):
             value += math.sin(n * phase) / n
     return value * envelope(t)
