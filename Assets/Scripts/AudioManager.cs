@@ -7,7 +7,9 @@ namespace Match3
     /// <see cref="SoundId"/> and never touch clips or AudioSources themselves, so which clip plays
     /// (the current <see cref="SoundSet"/>) can change without editing any of them.
     ///
-    /// It also owns the master volume, which is saved with PlayerPrefs like the theme choices.
+    /// Like the <see cref="ThemeManager"/> with its styles and themes, it holds the sound sets
+    /// the player can choose from and which one is in use, and saves that choice (by the set's
+    /// <c>Id</c>) with PlayerPrefs. It also owns the master volume, saved the same way.
     ///
     /// How Unity audio fits together:
     ///   AudioClip     - the sound data (a .wav/.ogg asset). Stored in the SoundSet.
@@ -22,9 +24,15 @@ namespace Match3
     public class AudioManager : MonoBehaviour
     {
         public const string SoundVolumeKey = "Settings.SoundVolume";
+        public const string SoundSetKey = "Settings.SoundSet";
         public const float DefaultVolume = 0.8f;
 
-        [Tooltip("The clips to play. Any empty slot in it simply plays nothing.")]
+        [Header("Available")]
+        [Tooltip("Sound sets the player can choose from. The first is used if none is selected.")]
+        [SerializeField] private SoundSet[] soundSets;
+
+        [Header("Current")]
+        [Tooltip("Set in use (and the default when nothing is saved). Any empty slot in it simply plays nothing.")]
         [SerializeField] private SoundSet soundSet;
 
         private AudioSource audioSource;
@@ -37,7 +45,11 @@ namespace Match3
         /// <summary>Master volume, from 0 (muted) to 1 (full).</summary>
         public float Volume { get; private set; } = DefaultVolume;
 
+        public SoundSet[] SoundSets => soundSets;
         public SoundSet SoundSet => soundSet;
+
+        /// <summary>Fired when <see cref="SetSoundSet"/> switches to a different set.</summary>
+        public event System.Action SoundSetChanged;
 
         /// <summary>
         /// Fired whenever <see cref="Volume"/> changes, so the Settings slider can follow a
@@ -57,8 +69,69 @@ namespace Match3
             hornSource.playOnAwake = false;
             hornSource.outputAudioMixerGroup = audioSource.outputAudioMixerGroup;
 
+            LoadSavedSoundSet();
+
             // GetFloat returns the second argument when nothing has been saved yet.
             ApplyVolume(PlayerPrefs.GetFloat(SoundVolumeKey, DefaultVolume));
+        }
+
+        /// <summary>
+        /// Replaces the Inspector's set with the one saved last time, if there is one. A saved id
+        /// that no longer matches any set (say, the asset was deleted) is ignored, which leaves
+        /// the Inspector's set in place as the default. With no set at all, the first available
+        /// one is used.
+        /// </summary>
+        private void LoadSavedSoundSet()
+        {
+            // The same lookup the ThemeManager uses for styles and themes: it returns null for
+            // an empty or unknown id (and skips empty slots in the list) rather than throwing.
+            string savedId = PlayerPrefs.GetString(SoundSetKey, "");
+            SoundSet saved = ThemeManager.FindById(soundSets, savedId, set => set.Id);
+            if (saved != null)
+            {
+                soundSet = saved;
+            }
+
+            if (soundSet == null)
+            {
+                soundSet = FirstAvailableSoundSet();
+            }
+        }
+
+        /// <summary>The first set in the list that isn't an empty slot, or null if there is none.</summary>
+        private SoundSet FirstAvailableSoundSet()
+        {
+            if (soundSets == null)
+            {
+                return null;
+            }
+            foreach (SoundSet set in soundSets)
+            {
+                // Deleting a set's asset leaves a "Missing" slot in the list, which reads as null.
+                if (set != null)
+                {
+                    return set;
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Switches every sound to <paramref name="set"/> and remembers the choice. A sound that
+        /// is already playing finishes in the old set; the next one played uses the new set.
+        /// </summary>
+        public void SetSoundSet(SoundSet set)
+        {
+            if (set == null || set == soundSet)
+            {
+                return;
+            }
+            soundSet = set;
+            PlayerPrefs.SetString(SoundSetKey, set.Id);
+            // Written to disk straight away, like a theme choice, so it survives a crash or a
+            // closed browser tab.
+            PlayerPrefs.Save();
+            SoundSetChanged?.Invoke();
         }
 
         /// <summary>
@@ -70,7 +143,21 @@ namespace Match3
         /// </summary>
         public void Play(SoundId sound, float pitch = 1f, float volumeScale = 1f)
         {
-            AudioClip clip = soundSet != null ? soundSet.GetClip(sound) : null;
+            PlayFrom(soundSet, sound, pitch, volumeScale);
+        }
+
+        /// <summary>
+        /// Plays <paramref name="sound"/> from <paramref name="set"/> without switching to that
+        /// set, so the Settings menu can let the player hear a set before choosing it.
+        /// </summary>
+        public void Preview(SoundSet set, SoundId sound)
+        {
+            PlayFrom(set, sound, 1f, 1f);
+        }
+
+        private void PlayFrom(SoundSet set, SoundId sound, float pitch, float volumeScale)
+        {
+            AudioClip clip = set != null ? set.GetClip(sound) : null;
             if (clip == null)
             {
                 return;

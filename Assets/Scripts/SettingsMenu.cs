@@ -9,12 +9,13 @@ namespace Match3
 {
     /// <summary>
     /// The Settings menu: a gear button that opens a modal panel where the player picks a token
-    /// style and a board theme and sets the sound volume. Choices apply immediately (the board
-    /// behind the panel updates as you click) and are saved, so there's no Apply/Cancel.
+    /// style, a board theme and a sound set, and sets the sound volume. Choices apply immediately
+    /// (the board behind the panel updates as you click) and are saved, so there's no Apply/Cancel.
     ///
-    /// The options aren't laid out by hand. At startup this reads the ThemeManager's lists and
-    /// instantiates one option prefab per style/theme into a layout group, so adding a new
-    /// TokenStyle or BoardTheme asset to the ThemeManager makes it show up here automatically.
+    /// The options aren't laid out by hand. At startup this reads the ThemeManager's and
+    /// AudioManager's lists and instantiates one option prefab per style/theme/sound set into a
+    /// layout group, so adding a new TokenStyle or BoardTheme asset to the ThemeManager (or a
+    /// SoundSet to the AudioManager) makes it show up here automatically.
     ///
     /// The GameManager decides when the menu is allowed (between rounds only) by calling
     /// <see cref="SetAvailable"/>.
@@ -42,8 +43,11 @@ namespace Match3
         [SerializeField] private RectTransform boardThemeList;
         [SerializeField] private BoardThemeOption boardThemeOptionPrefab;
 
-        [Header("Sound section")]
+        [Header("Sounds section")]
         [SerializeField] private AudioManager audioManager;
+        [Tooltip("Layout group the sound set options are created in.")]
+        [SerializeField] private RectTransform soundSetList;
+        [SerializeField] private SoundSetOption soundSetOptionPrefab;
         [Tooltip("Goes from 0 (muted) to 100 (full volume), in whole percent.")]
         [SerializeField] private Slider volumeSlider;
         [Tooltip("Shows the slider's value, e.g. \"80%\".")]
@@ -53,6 +57,7 @@ namespace Match3
 
         private readonly List<TokenStyleOption> tokenStyleOptions = new List<TokenStyleOption>();
         private readonly List<BoardThemeOption> boardThemeOptions = new List<BoardThemeOption>();
+        private readonly List<SoundSetOption> soundSetOptions = new List<SoundSetOption>();
         private InputAction cancelAction;
 
         /// <summary>
@@ -68,7 +73,8 @@ namespace Match3
             if (themeManager == null || board == null || openButton == null || modal == null ||
                 closeButton == null || tokenStyleList == null || tokenStyleOptionPrefab == null ||
                 boardThemeList == null || boardThemeOptionPrefab == null || audioManager == null ||
-                volumeSlider == null || volumeValueText == null || testSoundButton == null)
+                soundSetList == null || soundSetOptionPrefab == null || volumeSlider == null ||
+                volumeValueText == null || testSoundButton == null)
             {
                 Debug.LogError("SettingsMenu: assign every field in the Inspector.", this);
                 enabled = false;
@@ -107,6 +113,7 @@ namespace Match3
             if (audioManager != null)
             {
                 audioManager.VolumeChanged += RefreshVolume;
+                audioManager.SoundSetChanged += RefreshSelection;
             }
             // Catch up on anything that changed while we weren't listening (a no-op before Start
             // has built the options).
@@ -123,6 +130,7 @@ namespace Match3
             if (audioManager != null)
             {
                 audioManager.VolumeChanged -= RefreshVolume;
+                audioManager.SoundSetChanged -= RefreshSelection;
             }
         }
 
@@ -244,7 +252,18 @@ namespace Match3
             audioManager.Play(SoundId.Match3);
         }
 
-        /// <summary>Creates one option per available style and theme.</summary>
+        /// <summary>
+        /// Switches to <paramref name="set"/> and plays its match sound, so the player hears
+        /// what they just picked.
+        /// </summary>
+        private void SelectSoundSet(SoundSet set)
+        {
+            audioManager.SetSoundSet(set);
+            // Play() uses the current set, which is now the one that was clicked.
+            audioManager.Play(SoundId.Match3);
+        }
+
+        /// <summary>Creates one option per available style, theme and sound set.</summary>
         private void BuildOptions()
         {
             foreach (TokenStyle style in themeManager.TokenStyles)
@@ -273,9 +292,25 @@ namespace Match3
                 option.Clicked += () => themeManager.SetBoardTheme(theme);
                 boardThemeOptions.Add(option);
             }
+
+            // SoundSets is null when the AudioManager's list has never been filled in.
+            foreach (SoundSet set in audioManager.SoundSets ?? new SoundSet[0])
+            {
+                if (set == null)
+                {
+                    continue;
+                }
+                SoundSetOption option = Instantiate(soundSetOptionPrefab, soundSetList);
+                option.Setup(set);
+                option.Clicked += () => SelectSoundSet(set);
+                // A different sound from the one that confirms a selection, so previewing and
+                // choosing don't sound the same.
+                option.PreviewClicked += () => audioManager.Preview(set, SoundId.Match4);
+                soundSetOptions.Add(option);
+            }
         }
 
-        /// <summary>Highlights the options that match what the ThemeManager is using.</summary>
+        /// <summary>Highlights the options that match what the ThemeManager and AudioManager are using.</summary>
         private void RefreshSelection()
         {
             foreach (TokenStyleOption option in tokenStyleOptions)
@@ -285,6 +320,10 @@ namespace Match3
             foreach (BoardThemeOption option in boardThemeOptions)
             {
                 option.SetSelected(option.BoardTheme == themeManager.BoardTheme);
+            }
+            foreach (SoundSetOption option in soundSetOptions)
+            {
+                option.SetSelected(option.SoundSet == audioManager.SoundSet);
             }
         }
     }

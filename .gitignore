@@ -119,3 +119,6 @@ InitTestScene*.unity*
 
 # Claude Code worktrees
 /.claude/worktrees/
+
+# jsfxr, downloaded by `npm install` to render the Arcade sounds (see Art/README.md)
+/Art/Audio/node_modules/

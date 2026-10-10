@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6f42c3a3ad56473d8a6f518273da9dff, type: 3}
+  m_Name: Arcade
+  m_EditorClassIdentifier: Match3::Match3.SoundSet
+  id: arcade
+  displayName: Arcade
+  match3: {fileID: 8300000, guid: 91770eb64d4b4e178d3fc1e38d1d5dd3, type: 3}
+  match4: {fileID: 8300000, guid: 47952454222e4c809631d06e2c2f90e8, type: 3}
+  match5Plus: {fileID: 8300000, guid: 3ee4b33704c54314a59e54061aab478d, type: 3}
+  countdownTick: {fileID: 8300000, guid: 34845de120ab42cfb5df59dc84b714ff, type: 3}
+  roundEndHorn: {fileID: 8300000, guid: 137e2f52f7f24fa69d4b1efb0d264024, type: 3}
+  swap: {fileID: 8300000, guid: 45c3b607a78741b2b9e81b33e8898db4, type: 3}
+  invalidSwap: {fileID: 8300000, guid: 6b1fb1cefc6c48d78238d32319de2b49, type: 3}
+  achievementUnlocked: {fileID: 8300000, guid: 2d79bbd65e7f4b7d86aba8d8532e42f4, type: 3}

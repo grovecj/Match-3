@@ -1,3 +1,4 @@
+using System.Linq;
 using Match3;
 using Match3.Accounts;
 using Match3.Online;
@@ -9,9 +10,9 @@ using UnityEngine.UI;
 using static UIBuilder;
 
 /// <summary>
-/// Editor-only helper that builds the Settings menu UI (issues #17 and #49): the two option
+/// Editor-only helper that builds the Settings menu UI (issues #17, #49 and #53): the three option
 /// prefabs, the gear button in the side panel, and the modal Settings panel (including the
-/// sound volume slider), with every Inspector reference wired up. Run it from the menu bar: Match3 > Build Settings Menu, then save the
+/// sound set picker and volume slider), with every Inspector reference wired up. Run it from the menu bar: Match3 > Build Settings Menu, then save the
 /// scene. It also adds the PreferencesSync (issue #70) that copies the settings to the player's
 /// account, if the scene has an AccountManager (Match3 > Build Account Menu makes one).
 ///
@@ -25,9 +26,19 @@ public static class SettingsMenuBuilder
     private const string PrefabFolder = "Assets/Prefabs/UI";
     private const string TokenStyleOptionPath = PrefabFolder + "/TokenStyleOption.prefab";
     private const string BoardThemeOptionPath = PrefabFolder + "/BoardThemeOption.prefab";
+    private const string SoundSetOptionPath = PrefabFolder + "/SoundSetOption.prefab";
     private const string GearSpritePath = "Assets/Sprites/UI/Gear.png";
+    private const string PlaySpritePath = "Assets/Sprites/UI/Play.png";
 
     private static readonly Color OptionColor = new Color(0.22f, 0.24f, 0.32f);
+
+    // The size of one option in each section's grid. The window's content is 820 wide (900
+    // minus 40 of padding each side) and the grids leave 16 between cells, so 262 fits three to
+    // a row and 190 fits four. Keeping every section on one row matters: the window grows with
+    // its content, and a second row anywhere would push it past the bottom of a 1080-high screen.
+    private static readonly Vector2 TokenStyleOptionSize = new Vector2(262, 130);
+    private static readonly Vector2 BoardThemeOptionSize = new Vector2(190, 200);
+    private static readonly Vector2 SoundSetOptionSize = new Vector2(262, 72);
 
     // [MenuItem] adds this method to Unity's menu bar.
     [MenuItem("Match3/Build Settings Menu")]
@@ -46,9 +57,11 @@ public static class SettingsMenuBuilder
             return;
         }
 
-        Sprite gearSprite = ImportGearSprite();
+        Sprite gearSprite = ImportUISprite(GearSpritePath);
+        Sprite playSprite = ImportUISprite(PlaySpritePath);
         TokenStyleOption tokenStyleOptionPrefab = BuildTokenStyleOptionPrefab();
         BoardThemeOption boardThemeOptionPrefab = BuildBoardThemeOptionPrefab();
+        SoundSetOption soundSetOptionPrefab = BuildSoundSetOptionPrefab(playSprite);
 
         // Remove what a previous run built, so running the tool twice doesn't duplicate it.
         DestroyChild(canvas.transform, "Settings");
@@ -56,15 +69,45 @@ public static class SettingsMenuBuilder
 
         Button gearButton = BuildGearButton(sidePanel, gearSprite);
         BuildSettingsPanel(canvas.transform, themeManager, board, audioManager, gearButton,
-            tokenStyleOptionPrefab, boardThemeOptionPrefab, out SettingsMenu settingsMenu);
+            tokenStyleOptionPrefab, boardThemeOptionPrefab, soundSetOptionPrefab, out SettingsMenu settingsMenu);
 
         SetReference(gameManager, "settingsMenu", settingsMenu);
+        FillSoundSetsIfEmpty(audioManager);
         AddPreferencesSync(settingsMenu, themeManager, audioManager);
 
         // Tell Unity the scene has unsaved changes (the * in the Hierarchy) so Ctrl+S saves them.
         EditorSceneManager.MarkSceneDirty(canvas.gameObject.scene);
         Selection.activeGameObject = settingsMenu.gameObject;
         Debug.Log("Settings menu built. Save the scene (Ctrl+S) to keep it.");
+    }
+
+    /// <summary>
+    /// The Sounds section shows one option per entry in the AudioManager's Sound Sets list, so
+    /// an empty list means an empty section. If nobody has filled the list in yet, this fills
+    /// it with every SoundSet asset in the project: the set already in use first, then the rest
+    /// by name. A list that has entries is left alone, so a hand-picked order survives a rebuild.
+    /// </summary>
+    private static void FillSoundSetsIfEmpty(AudioManager audioManager)
+    {
+        var serialized = new SerializedObject(audioManager);
+        if (serialized.FindProperty("soundSets").arraySize > 0)
+        {
+            return;
+        }
+
+        // FindAssets searches the project ("t:SoundSet" = every asset of that type) and returns
+        // GUIDs, which are turned back into paths and then loaded.
+        SoundSet current = audioManager.SoundSet;
+        SoundSet[] sets = AssetDatabase.FindAssets("t:" + nameof(SoundSet))
+            .Select(AssetDatabase.GUIDToAssetPath)
+            .Select(AssetDatabase.LoadAssetAtPath<SoundSet>)
+            .Where(set => set != null)
+            // false sorts before true, so the current set (where this is false) comes first.
+            .OrderBy(set => set != current)
+            .ThenBy(set => set.DisplayName)
+            .ToArray();
+        SetArray(audioManager, "soundSets", sets);
+        Debug.Log($"Build Settings Menu: the AudioManager's Sound Sets list was empty, so it now has all {sets.Length} sound set(s) in the project.", audioManager);
     }
 
     /// <summary>
@@ -88,10 +131,10 @@ public static class SettingsMenuBuilder
 
     // ---- Assets ---------------------------------------------------------------------------
 
-    /// <summary>Makes sure Gear.png is imported as a UI sprite, and returns it.</summary>
-    private static Sprite ImportGearSprite()
+    /// <summary>Makes sure the PNG at <paramref name="path"/> is imported as a UI sprite, and returns it.</summary>
+    private static Sprite ImportUISprite(string path)
     {
-        var importer = (TextureImporter)AssetImporter.GetAtPath(GearSpritePath);
+        var importer = (TextureImporter)AssetImporter.GetAtPath(path);
         if (importer.textureType != TextureImporterType.Sprite || importer.mipmapEnabled)
         {
             importer.textureType = TextureImporterType.Sprite;
@@ -100,13 +143,13 @@ public static class SettingsMenuBuilder
             importer.mipmapEnabled = false;
             importer.SaveAndReimport();
         }
-        return AssetDatabase.LoadAssetAtPath<Sprite>(GearSpritePath);
+        return AssetDatabase.LoadAssetAtPath<Sprite>(path);
     }
 
     private static TokenStyleOption BuildTokenStyleOptionPrefab()
     {
         GameObject root = NewUI("TokenStyleOption", null);
-        Size(root, 400, 130);
+        Size(root, TokenStyleOptionSize.x, TokenStyleOptionSize.y);
         var option = root.AddComponent<TokenStyleOption>();
         AddOptionFrame(root, out GameObject highlight);
 
@@ -125,7 +168,47 @@ public static class SettingsMenuBuilder
 
         WireOption(option, label, highlight);
         SetReference(option, "previewRow", Rect(previewRow));
+        // Five 40-pixel icons with 10 between them are 240 wide, which just fits the 242 the
+        // row has (the option's width minus 10 of margin each side).
+        var serialized = new SerializedObject(option);
+        serialized.FindProperty("iconSize").floatValue = 40;
+        serialized.ApplyModifiedPropertiesWithoutUndo();
         return SavePrefab(root, TokenStyleOptionPath).GetComponent<TokenStyleOption>();
+    }
+
+    /// <summary>
+    /// A sound set option is a short bar: the set's name on the left and a small play button
+    /// on the right for hearing the set without choosing it.
+    /// </summary>
+    private static SoundSetOption BuildSoundSetOptionPrefab(Sprite playSprite)
+    {
+        GameObject root = NewUI("SoundSetOption", null);
+        Size(root, SoundSetOptionSize.x, SoundSetOptionSize.y);
+        var option = root.AddComponent<SoundSetOption>();
+        AddOptionFrame(root, out GameObject highlight);
+
+        // Stretched across the option, starting 24 in from the left and stopping 76 short of
+        // the right edge so a long name can't run under the play button.
+        TMP_Text label = AddText(root, "Label", "Sounds", 28);
+        label.alignment = TextAlignmentOptions.Left;
+        Anchor(label.rectTransform, new Vector2(0, 0), new Vector2(1, 1), new Vector2(0, 0.5f), new Vector2(24, 0), new Vector2(-100, 0));
+
+        // A Button inside the option's own Button. It's created after (so drawn on top of) the
+        // option's background, which means a click here lands on this button and not the option.
+        GameObject preview = NewUI("PreviewButton", root.transform);
+        Anchor(Rect(preview), new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(-14, 0), new Vector2(48, 48));
+        Image previewBackground = AddImage(preview, ButtonColor, UISprite());
+        previewBackground.raycastTarget = true;
+        var previewButton = preview.AddComponent<Button>();
+        previewButton.targetGraphic = previewBackground;
+
+        GameObject icon = NewUI("Icon", preview.transform);
+        Stretch(Rect(icon), 12);
+        AddImage(icon, Color.white, playSprite).preserveAspect = true;
+
+        WireOption(option, label, highlight);
+        SetReference(option, "previewButton", previewButton);
+        return SavePrefab(root, SoundSetOptionPath).GetComponent<SoundSetOption>();
     }
 
     private static BoardThemeOption BuildBoardThemeOptionPrefab()
@@ -136,7 +219,7 @@ public static class SettingsMenuBuilder
         float swatchSize = columns * cellSize + 2 * swatchPadding;
 
         GameObject root = NewUI("BoardThemeOption", null);
-        Size(root, 190, 200);
+        Size(root, BoardThemeOptionSize.x, BoardThemeOptionSize.y);
         var option = root.AddComponent<BoardThemeOption>();
         AddOptionFrame(root, out GameObject highlight);
 
@@ -230,7 +313,8 @@ public static class SettingsMenuBuilder
 
     private static void BuildSettingsPanel(Transform canvas, ThemeManager themeManager, Board board,
         AudioManager audioManager, Button gearButton,
-        TokenStyleOption tokenStyleOptionPrefab, BoardThemeOption boardThemeOptionPrefab, out SettingsMenu menu)
+        TokenStyleOption tokenStyleOptionPrefab, BoardThemeOption boardThemeOptionPrefab,
+        SoundSetOption soundSetOptionPrefab, out SettingsMenu menu)
     {
         // Root: always active, holds the SettingsMenu script. Last child of the Canvas, so it
         // draws on top of everything else.
@@ -264,9 +348,11 @@ public static class SettingsMenuBuilder
         title.fontStyle = FontStyles.Bold;
         PreferredHeight(title.gameObject, 76);
 
-        RectTransform tokenStyleList = AddSection(window, "TokenStyle", "Token Style", new Vector2(400, 130));
-        RectTransform boardThemeList = AddSection(window, "BoardColors", "Board Colors", new Vector2(190, 200));
-        AddSoundSection(window, out Slider volumeSlider, out TMP_Text volumeValueText, out Button testSoundButton);
+        RectTransform tokenStyleList = AddSection(window, "TokenStyle", "Token Style", TokenStyleOptionSize);
+        RectTransform boardThemeList = AddSection(window, "BoardColors", "Board Colors", BoardThemeOptionSize);
+        // The sound section's heading is called "SoundHeader" and its list "SoundSetList".
+        RectTransform soundSetList = AddSection(window, "Sound", "Sounds", SoundSetOptionSize, "SoundSetList");
+        AddVolumeRow(window, out Slider volumeSlider, out TMP_Text volumeValueText, out Button testSoundButton);
 
         // Close button, centered in its own row.
         GameObject closeRow = AddCenteredRow(window, "CloseRow", 90, 0);
@@ -282,6 +368,8 @@ public static class SettingsMenuBuilder
         SetReference(menu, "boardThemeList", boardThemeList);
         SetReference(menu, "boardThemeOptionPrefab", boardThemeOptionPrefab);
         SetReference(menu, "audioManager", audioManager);
+        SetReference(menu, "soundSetList", soundSetList);
+        SetReference(menu, "soundSetOptionPrefab", soundSetOptionPrefab);
         SetReference(menu, "volumeSlider", volumeSlider);
         SetReference(menu, "volumeValueText", volumeValueText);
         SetReference(menu, "testSoundButton", testSoundButton);
@@ -292,15 +380,12 @@ public static class SettingsMenuBuilder
     }
 
     /// <summary>
-    /// Adds the "Sound Volume" heading and a row below it: the volume slider, its value as a
-    /// percentage, and a Test button that plays a sample sound.
+    /// Adds the last row of the "Sounds" section, below the sound set options: a "Volume"
+    /// label, the volume slider, its value as a percentage, and a Test button that plays a
+    /// sample sound.
     /// </summary>
-    private static void AddSoundSection(GameObject window, out Slider slider, out TMP_Text valueText, out Button testButton)
+    private static void AddVolumeRow(GameObject window, out Slider slider, out TMP_Text valueText, out Button testButton)
     {
-        TMP_Text header = AddText(window, "SoundHeader", "Sound Volume", 34);
-        header.alignment = TextAlignmentOptions.Left;
-        PreferredHeight(header.gameObject, 48);
-
         GameObject row = NewUI("SoundRow", window.transform);
         var layout = row.AddComponent<HorizontalLayoutGroup>();
         layout.spacing = 24;
@@ -310,6 +395,10 @@ public static class SettingsMenuBuilder
         layout.childForceExpandWidth = false;
         layout.childForceExpandHeight = false;
         PreferredHeight(row, 80);
+
+        TMP_Text label = AddText(row, "VolumeLabel", "Volume", 34);
+        label.alignment = TextAlignmentOptions.Left;
+        label.gameObject.AddComponent<LayoutElement>().preferredWidth = 130;
 
         slider = AddSlider(row.transform, "VolumeSlider");
         // 0-100 in whole numbers means each arrow-key press moves the volume by 1%.
@@ -360,14 +449,15 @@ public static class SettingsMenuBuilder
     /// <summary>
     /// Adds a section heading and, below it, an empty list the options get created in. The list
     /// uses a Grid Layout Group: fixed-size cells that wrap onto a new row when one fills up.
+    /// The list is named <paramref name="name"/> + "List" unless <paramref name="listName"/> says otherwise.
     /// </summary>
-    private static RectTransform AddSection(GameObject window, string name, string heading, Vector2 cellSize)
+    private static RectTransform AddSection(GameObject window, string name, string heading, Vector2 cellSize, string listName = null)
     {
         TMP_Text header = AddText(window, name + "Header", heading, 34);
         header.alignment = TextAlignmentOptions.Left;
         PreferredHeight(header.gameObject, 48);
 
-        GameObject list = NewUI(name + "List", window.transform);
+        GameObject list = NewUI(listName ?? name + "List", window.transform);
         var grid = list.AddComponent<GridLayoutGroup>();
         grid.cellSize = cellSize;
         grid.spacing = new Vector2(16, 16);

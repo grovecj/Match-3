@@ -22,6 +22,9 @@ the server:
 | The account has nothing saved yet | This device's settings become the account's first. |
 | A different account signs in while a save is pending | The pending save is dropped (the settings it was for have just been replaced), so one player's settings never reach another's account. |
 
+The sound set (`Settings.SoundSet`) isn't synced: it's saved in PlayerPrefs only, so each
+device keeps its own.
+
 Two devices that are both running don't see each other's changes live: a device picks up the
 account's settings when it signs in or starts, not while it's open.
 
