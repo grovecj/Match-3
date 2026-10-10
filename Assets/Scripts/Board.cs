@@ -1464,9 +1464,15 @@ namespace Match3
         /// <see cref="popDuration"/>, then destroys them. With <paramref name="delays"/>, each
         /// token first waits its own number of seconds (matched to <paramref name="popping"/> by
         /// index), so the pops can run along a row one after another; without, they all go at once.
+        /// A token pops from whatever size it is when its turn comes, so the gems that
+        /// <see cref="CollapseIntoNewGems"/> shrank stay small instead of jumping back to full size.
         /// </summary>
         private IEnumerator AnimatePops(List<Token> popping, List<float> delays = null)
         {
+            // Each token's size when its pop started, as a fraction of a cell. 0 means "hasn't
+            // started yet" (a new array of floats is all zeros).
+            var startScales = new float[popping.Count];
+
             // The token that starts last decides how long the whole thing takes.
             float longestDelay = 0f;
             if (delays != null)
@@ -1491,11 +1497,18 @@ namespace Match3
                         continue;
                     }
 
+                    // Its first frame: remember the size it starts from. Usually that's a whole
+                    // cell (1), but a gem that slid into a new power gem arrives already shrunk.
+                    if (startScales[i] == 0f)
+                    {
+                        startScales[i] = popping[i].transform.localScale.x / cellSize;
+                    }
+
                     // With no pop time at all there's nothing to divide by: go straight to "done".
                     float t = popDuration > 0f ? sinceStart / popDuration : 1f;
                     // PopScale stops at 0 once t passes 1, so a token that has finished stays
                     // invisible while later ones are still going.
-                    popping[i].transform.localScale = Vector3.one * (cellSize * PopScale(t));
+                    popping[i].transform.localScale = Vector3.one * (cellSize * startScales[i] * PopScale(t));
                 }
                 yield return null;
             }

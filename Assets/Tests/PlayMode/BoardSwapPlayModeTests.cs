@@ -942,13 +942,17 @@ namespace Match3.Tests
             AssertNoMatchesLeft();
             yield return WaitUntilNoBursts();
 
-            // The bolts clean up after themselves, like the bursts and the Star's beam do.
+            // The bolts put themselves away when they've faded. (Zaps only finds the ones that
+            // are switched on: GetComponentsInChildren skips inactive GameObjects.)
             bool timedOut = false;
             yield return new WaitUntil(
                 () => Zaps().Length == 0,
                 System.TimeSpan.FromSeconds(ResolveTimeoutSeconds),
                 () => timedOut = true);
             Assert.IsFalse(timedOut, $"{Zaps().Length} bolts were still around after {ResolveTimeoutSeconds} seconds.");
+            // They aren't destroyed: all six wait in the pool for the next Hypercube.
+            Assert.That(effectsObject.GetComponent<PowerGemEffects>().PooledZapCountForTests, Is.GreaterThanOrEqualTo(6),
+                "The finished bolts should have gone back to their pool.");
         }
 
         [UnityTest, Timeout(TestTimeoutMs)]

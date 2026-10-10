@@ -21,7 +21,8 @@ namespace Match3
     ///
     /// The particle effects are pooled (see <see cref="ObjectPool{T}"/>): each prefab gets a few
     /// copies that are switched off when they finish and switched back on for the next blast,
-    /// instead of being created and destroyed every time.
+    /// instead of being created and destroyed every time. A Hypercube's bolts are pooled the
+    /// same way; they have no prefab, so their pool builds them in code.
     /// </summary>
     public class PowerGemEffects : MonoBehaviour
     {
@@ -52,6 +53,9 @@ namespace Match3
         // One pool per prefab. A Dictionary looks a pool up by its prefab.
         private readonly Dictionary<ParticleEffect, ObjectPool<ParticleEffect>> pools =
             new Dictionary<ParticleEffect, ObjectPool<ParticleEffect>>();
+
+        // The Hypercube's bolts. Made the first time one is needed (see ZapPool).
+        private ObjectPool<HypercubeZap> zapPool;
 
         // Each bolt gets its own seed, so no two take the same crooked path.
         private int nextZapSeed;
@@ -146,9 +150,7 @@ namespace Match3
                 Vector3 targetPosition = board.GridToWorld(target.x, target.y);
                 float delay = blast.Delays[i];
 
-                var zapObject = new GameObject("Hypercube Zap");
-                zapObject.transform.SetParent(transform, false);
-                HypercubeZap zap = zapObject.AddComponent<HypercubeZap>();
+                HypercubeZap zap = ZapPool().Get();
                 zap.Play(origin, targetPosition, boltColor, delay, board.CellSize, tokenRenderer, order, nextZapSeed++);
 
                 StartCoroutine(PlayAfter(delay, zapSparkPrefab, targetPosition, sparkColor));
@@ -217,6 +219,35 @@ namespace Match3
             return pool;
         }
 
+        /// <summary>The pool of Hypercube bolts, made the first time it's needed.</summary>
+        private ObjectPool<HypercubeZap> ZapPool()
+        {
+            if (zapPool != null)
+            {
+                return zapPool;
+            }
+
+            // The same four functions as PoolFor. The only difference is "make": there's no
+            // prefab to copy, so a new bolt is an empty GameObject with a HypercubeZap on it
+            // (which adds its own segments the first time it plays, and keeps them).
+            zapPool = new ObjectPool<HypercubeZap>(
+                createFunc: () =>
+                {
+                    var zapObject = new GameObject("Hypercube Zap");
+                    zapObject.transform.SetParent(transform, false);
+                    HypercubeZap zap = zapObject.AddComponent<HypercubeZap>();
+                    zap.Finished += finished => zapPool.Release(finished);
+                    return zap;
+                },
+                actionOnGet: zap => zap.gameObject.SetActive(true),
+                actionOnRelease: zap => zap.gameObject.SetActive(false),
+                actionOnDestroy: zap => Destroy(zap.gameObject),
+                collectionCheck: false,
+                defaultCapacity: 16,
+                maxSize: MaxPooledPerEffect);
+            return zapPool;
+        }
+
         // ---- Test hooks -------------------------------------------------------------------
 
         /// <summary>How many finished copies of <paramref name="prefab"/> are waiting in its pool.</summary>
@@ -224,6 +255,9 @@ namespace Match3
         {
             return pools.TryGetValue(prefab, out ObjectPool<ParticleEffect> pool) ? pool.CountInactive : 0;
         }
+
+        /// <summary>How many finished Hypercube bolts are waiting in their pool.</summary>
+        internal int PooledZapCountForTests => zapPool != null ? zapPool.CountInactive : 0;
 
         /// <summary>Sets what the scene would assign. Call it while the GameObject is still inactive.</summary>
         internal void ConfigureForTests(Board board, ParticleEffect gemCreated, ParticleEffect flameBlast,

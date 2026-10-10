@@ -9,8 +9,8 @@ namespace Match3.Tests
     /// the settings <see cref="PowerGemEffects"/> relies on to pool them: an effect that loops,
     /// plays on its own, or never reports that it's finished would leak or misbehave quietly.
     ///
-    /// A prefab that hasn't been built yet is reported as "ignored" rather than failed, with
-    /// what to run: the game works without them (the beams and bolts are built in code).
+    /// A missing prefab fails the test, with what to run: the prefabs are committed, so one
+    /// that has gone (deleted, moved or renamed) means a power gem has lost its effect.
     /// </summary>
     public class PowerGemEffectPrefabAssetTests
     {
@@ -28,10 +28,7 @@ namespace Match3.Tests
         private static ParticleEffect Load(string path)
         {
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
-            if (prefab == null)
-            {
-                Assert.Ignore($"No prefab at {path} yet. Run Match3 > Build Power Gem Effects.");
-            }
+            Assert.IsNotNull(prefab, $"No prefab at {path}. Run Match3 > Build Power Gem Effects.");
             var effect = prefab.GetComponent<ParticleEffect>();
             Assert.IsNotNull(effect, $"{path} has no ParticleEffect component.");
             return effect;

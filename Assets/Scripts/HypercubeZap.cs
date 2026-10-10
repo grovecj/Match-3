@@ -7,8 +7,10 @@ namespace Match3
     /// two that crackles (its kinks jump about a few times while it's lit) and then fades.
     /// <see cref="PowerGemEffects"/> makes one per target gem and gives each the delay the
     /// <see cref="Board"/> pops that gem at (<see cref="Board.ZapDelay"/>), so the gems are
-    /// picked off one after another, each the moment its bolt lands. Like
-    /// <see cref="StarBeam"/>, it runs itself and destroys its own GameObject when done.
+    /// picked off one after another, each the moment its bolt lands. It runs itself, and when
+    /// it has faded it says so through <see cref="Finished"/> and stays alive (like a
+    /// <see cref="ParticleEffect"/>), so it can go back in a pool and be played again: a
+    /// Hypercube fires a dozen of these at once, each made of several GameObjects.
     ///
     /// It only draws. Which gems go is the model's business
     /// (<see cref="BoardModel.ActivateHypercube"/>).
@@ -35,6 +37,8 @@ namespace Match3
         // is made of, stretched from one kink to the next.
         private readonly Transform[] segments = new Transform[SegmentCount];
         private readonly SpriteRenderer[] segmentRenderers = new SpriteRenderer[SegmentCount];
+        // The kinks' positions, kept and overwritten on every flicker rather than made anew.
+        private readonly Vector3[] points = new Vector3[SegmentCount + 1];
         private Vector3 from;
         private Vector3 to;
         private float cellSize = 1f;
@@ -44,6 +48,9 @@ namespace Match3
         private float elapsed;
         private float nextFlicker;
         private System.Random random;
+
+        /// <summary>Fired once each time the bolt has finished fading.</summary>
+        public event System.Action<HypercubeZap> Finished;
 
         /// <summary>
         /// Sets up a bolt from <paramref name="from"/> (the Hypercube) to <paramref name="to"/>
@@ -99,6 +106,18 @@ namespace Match3
         public static Vector3[] JaggedPoints(Vector3 from, Vector3 to, int segmentCount, float jitter, System.Random random)
         {
             var points = new Vector3[segmentCount + 1];
+            FillJaggedPoints(points, from, to, jitter, random);
+            return points;
+        }
+
+        /// <summary>
+        /// The same as <see cref="JaggedPoints"/>, but writes the points into
+        /// <paramref name="points"/> (one more than the number of pieces) instead of making a new
+        /// array, so a bolt that flickers many times can keep reusing one.
+        /// </summary>
+        public static void FillJaggedPoints(Vector3[] points, Vector3 from, Vector3 to, float jitter, System.Random random)
+        {
+            int segmentCount = points.Length - 1;
             Vector3 along = to - from;
             // "Sideways" is the line turned a quarter turn: (x, y) becomes (-y, x). Normalized
             // makes it 1 unit long, so jitter is a distance.
@@ -115,7 +134,6 @@ namespace Match3
                     points[i] += sideways * offset;
                 }
             }
-            return points;
         }
 
         /// <summary>
@@ -145,14 +163,15 @@ namespace Match3
 
             if (elapsed >= delay + FadeDuration)
             {
-                Destroy(gameObject);
+                // Not destroyed: whoever played it puts it away (see PowerGemEffects).
+                Finished?.Invoke(this);
             }
         }
 
         /// <summary>Picks new kinks and lays the segments along them.</summary>
         private void Reshape()
         {
-            Vector3[] points = JaggedPoints(from, to, SegmentCount, Jitter * cellSize, random);
+            FillJaggedPoints(points, from, to, Jitter * cellSize, random);
             for (int i = 0; i < SegmentCount; i++)
             {
                 Vector3 start = points[i];
