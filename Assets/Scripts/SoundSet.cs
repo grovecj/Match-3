@@ -13,6 +13,10 @@ namespace Match3
         Swap,
         InvalidSwap,
         AchievementUnlocked,
+        PowerGemCreated,
+        FlameDetonate,
+        StarDetonate,
+        HypercubeActivate,
     }
 
     /// <summary>
@@ -53,6 +57,13 @@ namespace Match3
         [Tooltip("Played with the \"Achievement unlocked\" toast.")]
         [SerializeField] private AudioClip achievementUnlocked;
 
+        [Header("Power gems")]
+        [Tooltip("A match leaves a Flame, Star or Hypercube behind.")]
+        [SerializeField] private AudioClip powerGemCreated;
+        [SerializeField] private AudioClip flameDetonate;
+        [SerializeField] private AudioClip starDetonate;
+        [SerializeField] private AudioClip hypercubeActivate;
+
         public string Id => id;
         public string DisplayName => displayName;
 
@@ -70,6 +81,10 @@ namespace Match3
                 SoundId.Swap => swap,
                 SoundId.InvalidSwap => invalidSwap,
                 SoundId.AchievementUnlocked => achievementUnlocked,
+                SoundId.PowerGemCreated => powerGemCreated,
+                SoundId.FlameDetonate => flameDetonate,
+                SoundId.StarDetonate => starDetonate,
+                SoundId.HypercubeActivate => hypercubeActivate,
                 _ => null,
             };
         }

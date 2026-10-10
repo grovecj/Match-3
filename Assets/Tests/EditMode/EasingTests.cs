@@ -29,6 +29,27 @@ namespace Match3.Tests
         }
 
         [Test]
+        public void InCubic_StartsAtZeroAndEndsAtOne()
+        {
+            Assert.AreEqual(0f, Easing.InCubic(0f), Tolerance);
+            Assert.AreEqual(1f, Easing.InCubic(1f), Tolerance);
+        }
+
+        [Test]
+        public void InCubic_IsBehindLinearInTheMiddle()
+        {
+            // "In" easing starts slow, so halfway through the time it's less than halfway there.
+            Assert.That(Easing.InCubic(0.5f), Is.LessThan(0.5f));
+        }
+
+        [Test]
+        public void InCubic_ClampsOutOfRangeInput()
+        {
+            Assert.AreEqual(0f, Easing.InCubic(-1f), Tolerance);
+            Assert.AreEqual(1f, Easing.InCubic(2f), Tolerance);
+        }
+
+        [Test]
         public void OutBack_StartsAtZeroAndEndsAtOne()
         {
             Assert.AreEqual(0f, Easing.OutBack(0f), Tolerance);

@@ -18,7 +18,9 @@ well-explained code over polish. Explain Unity concepts when introducing them.
   `Match3 > Build Achievements Menu` (the Achievements button/window, the unlock toast, the
   AchievementsClient and RoundStatsTracker; run it after the Account and Leaderboard builders;
   see `Docs/Achievements.md`), and
-  `Match3 > Build Explosion Prefab`, which builds the clear-effect particle prefab) live in
+  `Match3 > Build Explosion Prefab`, which builds the clear-effect particle prefab, and
+  `Match3 > Build Power Gem Effects` (run after it: the power gem particle prefabs, plus the
+  PowerGemEffects, ScorePopups, PowerGemSounds and ScreenShake listeners in the scene)) live in
   `Assets/Editor/`, sharing
   helpers from `UIBuilder.cs`. `Match3 > Build Web` makes the browser build into `Builds/Web`
   (see `Docs/WebBuild.md`).
