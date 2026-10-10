@@ -305,6 +305,9 @@ namespace Match3.Tests
             // The server wins, as on any sign-in.
             Assert.That(themes.BoardTheme, Is.SameAs(ocean));
             Assert.That(api.Calls, Is.EqualTo(new[] { "Load" }));
+            // The other account's unsent change was to settings that are gone now. Its marker
+            // goes too, or these settings would be saved to that account when it comes back.
+            Assert.That(PlayerPrefs.HasKey(PreferencesSync.PendingForKey), Is.False);
         }
 
         [UnityTest]

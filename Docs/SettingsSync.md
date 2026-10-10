@@ -20,6 +20,7 @@ the server:
 | A save can't be sent (offline, server down) | The change still applies here, and is marked *pending* in PlayerPrefs. It's sent the next time Settings closes or the game starts. |
 | The game starts with a save pending | This device's settings are the newer ones, so they go up instead of the server's coming down. |
 | The account has nothing saved yet | This device's settings become the account's first. |
+| A different account signs in while a save is pending | The pending save is dropped (the settings it was for have just been replaced), so one player's settings never reach another's account. |
 
 Two devices that are both running don't see each other's changes live: a device picks up the
 account's settings when it signs in or starts, not while it's open.

@@ -123,10 +123,12 @@ namespace Match3.Online
             {
                 settingsMenu.Closed -= OnSettingsClosed;
             }
-            // Disabling a component stops its coroutines where they are, so the one that would
-            // have cleared this never gets to. Forget the account too, so the sync starts over
-            // if we're enabled again.
+            // Unticking a component doesn't stop its coroutines (only deactivating or destroying
+            // its GameObject does), so stop the sync ourselves. Forget the account too, so the
+            // sync starts over if we're enabled again.
+            StopAllCoroutines();
             syncing = false;
+            syncAgain = false;
             userId = null;
         }
 
@@ -341,6 +343,11 @@ namespace Match3.Online
                 audioManager.SetVolume(values.soundVolume);
                 audioManager.SaveVolume();
             }
+            // If another account left a save pending here, it was for the settings we've just
+            // replaced. Drop it: sent later, it would save this account's settings to theirs.
+            // (Their unsent change is lost, and their account's settings win when they return.)
+            PlayerPrefs.DeleteKey(PendingForKey);
+            PlayerPrefs.Save();
             // These came from the server, so they're not a change to send back.
             seen = ReadLocal();
         }
