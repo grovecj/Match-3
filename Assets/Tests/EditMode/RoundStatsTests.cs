@@ -63,17 +63,28 @@ namespace Match3.Tests
         }
 
         [Test]
-        public void StepResolved_BestChainIsTheMostStepsFromOneSwap()
+        public void StepScored_BestChainIsTheMostStepsFromOneSwap()
         {
             var stats = new RoundStats();
 
             // One swap that cascades twice (steps 0, 1, 2), then one that doesn't cascade.
-            stats.StepResolved(0);
-            stats.StepResolved(1);
-            stats.StepResolved(2);
-            stats.StepResolved(0);
+            stats.StepScored(new ClearStep(0, new[] { 3 }, 0, 3));
+            stats.StepScored(new ClearStep(1, new[] { 3 }, 0, 3));
+            stats.StepScored(new ClearStep(2, new[] { 3 }, 0, 3));
+            stats.StepScored(new ClearStep(0, new[] { 3 }, 0, 3));
 
             Assert.That(stats.bestChain, Is.EqualTo(3));
+        }
+
+        [Test]
+        public void StepScored_HypercubeSwapWithNoCascade_IsAChainOfOne()
+        {
+            // A swapped Hypercube's step has no runs, but it's still a step.
+            var stats = new RoundStats();
+
+            stats.StepScored(new ClearStep(0, new int[0], blastedGems: 7, gemsCleared: 8));
+
+            Assert.That(stats.bestChain, Is.EqualTo(1));
         }
 
         [Test]
@@ -159,7 +170,6 @@ namespace Match3.Tests
             var stats = new RoundStats();
             stats.SwapStarted();
             stats.RunCleared(5);
-            stats.StepResolved(1);
             stats.StepScored(new ClearStep(1, new[] { 5 }, 3, 8));
             stats.PowerGemCreated(PowerKind.Star);
             stats.PowerGemDetonated(PowerKind.Star);
@@ -208,7 +218,6 @@ namespace Match3.Tests
             var stats = new RoundStats();
             stats.SwapStarted();
             stats.RunCleared(4);
-            stats.StepResolved(0);
             stats.PowerGemCreated(PowerKind.Flame);
             stats.StepScored(new ClearStep(0, new[] { 4 }, 0, 3));
 

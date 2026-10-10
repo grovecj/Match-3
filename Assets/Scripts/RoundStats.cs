@@ -33,8 +33,8 @@ namespace Match3
         /// <summary>The longest match, or 0 if there were none.</summary>
         public int longestRun;
         /// <summary>
-        /// The most clears one swap set off: 1 for a plain match, 2 if the falling tokens then
-        /// made another match, and so on. 0 if nothing was matched.
+        /// The most clears one swap set off: 1 for a plain match (or a swapped Hypercube), 2 if
+        /// the falling tokens then made another match, and so on. 0 if nothing was cleared.
         /// </summary>
         public int bestChain;
 
@@ -123,20 +123,18 @@ namespace Match3
         }
 
         /// <summary>
-        /// A clear step finished. <paramref name="cascadeIndex"/> is 0 for the player's own
-        /// match and counts up for each cascade after it, so the chain so far is one more.
+        /// A clear step was scored (see <see cref="ClearStep"/>): counts it towards the chain,
+        /// and counts its blasted gems, the points it scored at its multiplier, and the gems it
+        /// cleared towards this swap's total.
         /// </summary>
-        public void StepResolved(int cascadeIndex)
-        {
-            bestChain = Math.Max(bestChain, cascadeIndex + 1);
-        }
-
-        /// <summary>
-        /// A clear step was scored (see <see cref="ClearStep"/>): counts its blasted gems, the
-        /// points it scored at its multiplier, and the gems it cleared towards this swap's total.
-        /// </summary>
+        // Every step comes through here, a swapped Hypercube's included (it has no runs, so the
+        // Board's ClearStepResolved skips it). That's why the chain is counted here too: a
+        // Hypercube swap with no cascade after it is still a chain of 1.
         public void StepScored(ClearStep step)
         {
+            // The cascade index is 0 for the player's own step and counts up for each cascade
+            // after it, so the chain so far is one more.
+            bestChain = Math.Max(bestChain, step.CascadeIndex + 1);
             blastedGems += step.BlastedGems;
             // Multiplier x1 goes in [0], x2 in [1], and so on.
             int slot = ScoreRules.Multiplier(step.CascadeIndex) - 1;

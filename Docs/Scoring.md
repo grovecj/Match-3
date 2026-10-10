@@ -65,7 +65,7 @@ The other new stats are for achievements (#71), not for checking the score:
 `flamesCreated`, `starsCreated`, `hypercubesCreated`, `flamesDetonated`, `starsDetonated`,
 `hypercubesDetonated` and `mostGemsOneSwap` (every gem one swap cleared, cascades included).
 The longest cascade is `bestChain` - 1: `bestChain` already counts the steps of the longest
-chain, the player's own match included.
+chain, the player's own match (or swapped Hypercube) included.
 
 ## Limits
 

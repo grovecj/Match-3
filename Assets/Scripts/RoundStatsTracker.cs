@@ -38,7 +38,6 @@ namespace Match3
             // need, so they go through small methods of our own.
             board.SwapStarted += stats.SwapStarted;
             board.MatchCleared += stats.RunCleared;
-            board.ClearStepResolved += OnClearStepResolved;
             board.ClearStepScored += stats.StepScored;
             board.PowerGemCreated += OnPowerGemCreated;
             board.PowerGemDetonated += OnPowerGemDetonated;
@@ -50,16 +49,10 @@ namespace Match3
             {
                 board.SwapStarted -= stats.SwapStarted;
                 board.MatchCleared -= stats.RunCleared;
-                board.ClearStepResolved -= OnClearStepResolved;
                 board.ClearStepScored -= stats.StepScored;
                 board.PowerGemCreated -= OnPowerGemCreated;
                 board.PowerGemDetonated -= OnPowerGemDetonated;
             }
-        }
-
-        private void OnClearStepResolved(int longestRun, int cascadeIndex)
-        {
-            stats.StepResolved(cascadeIndex);
         }
 
         // The power gem events also say where the gem was (and which wave it went off in); the
