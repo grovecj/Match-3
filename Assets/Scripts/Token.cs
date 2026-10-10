@@ -52,9 +52,13 @@ namespace Match3
         // set up in the Inspector. The Board assigns it, with the type, via SetPiece.
         private PowerKind power = PowerKind.None;
         private SpriteRenderer spriteRenderer;
-        // The glow drawn over this token while it's a Flame. It's on a child GameObject that is
-        // only created the first time it's needed, so ordinary tokens never have one.
+        // What's drawn over this token while it's a power gem. It's on a child GameObject that
+        // is only created the first time it's needed, so ordinary tokens never have one.
         private SpriteRenderer powerOverlay;
+        // The two scripts that animate the overlay, one per look. Both sit on the overlay's
+        // GameObject, and only the one for the token's current power is switched on.
+        private FlameGlow flameGlow;
+        private StarSparkle starSparkle;
         private Highlight highlight = Highlight.None;
         // 0 = resting, 1 = fully picked up. Eased toward the highlight's target every frame.
         private float lift;
@@ -69,12 +73,15 @@ namespace Match3
 
         public TokenType Type => type;
 
-        /// <summary>The power this token carries. A Flame shows it with a glow: see <see cref="ShowsPowerOverlay"/>.</summary>
+        /// <summary>
+        /// The power this token carries. A Flame shows it with a glow and a Star with a sparkle:
+        /// see <see cref="ShowsPowerOverlay"/>.
+        /// </summary>
         public PowerKind Power => power;
 
         /// <summary>
-        /// True while this token is drawing a power overlay (the Flame's glow) on top of its
-        /// ordinary sprite.
+        /// True while this token is drawing a power overlay (the Flame's glow or the Star's
+        /// sparkle) on top of its ordinary sprite.
         /// </summary>
         public bool ShowsPowerOverlay => powerOverlay != null && powerOverlay.gameObject.activeSelf;
 
@@ -226,17 +233,17 @@ namespace Match3
         }
 
         /// <summary>
-        /// Shows the Flame's glow if this token is a Flame and hides it if not, creating the
-        /// glow's GameObject the first time it's needed.
+        /// Shows the overlay for this token's power (the Flame's glow or the Star's sparkle) and
+        /// hides it if the token has no power to show, creating the overlay's GameObject the
+        /// first time it's needed.
         /// </summary>
         // An "overlay" is a second picture drawn on top of the first. The token's own sprite
-        // (which the style picks) isn't changed at all, so the glow never has to know which
+        // (which the style picks) isn't changed at all, so the overlay never has to know which
         // style is in use, and switching style can't lose it.
         private void ApplyPowerOverlay()
         {
-            // Only the Flame has a look so far. Star and Hypercube will get theirs when they
-            // can be made.
-            bool show = power == PowerKind.Flame;
+            // A Hypercube will get its look when it can be made.
+            bool show = power == PowerKind.Flame || power == PowerKind.Star;
             if (powerOverlay == null)
             {
                 if (!show)
@@ -245,24 +252,38 @@ namespace Match3
                 }
 
                 // A child GameObject moves, scales and is destroyed with its parent, so the
-                // glow stays on the token while it falls, swaps, is picked up, or pops.
+                // overlay stays on the token while it falls, swaps, is picked up, or pops.
                 // SetParent's `false` means "keep my local position (0, 0, 0)" rather than
                 // "stay where I am in the world", which puts it exactly on the token.
-                var overlayObject = new GameObject("Flame Glow");
+                var overlayObject = new GameObject("Power Overlay");
                 overlayObject.transform.SetParent(transform, false);
-                // FlameGlow's [RequireComponent] adds the SpriteRenderer too.
-                overlayObject.AddComponent<FlameGlow>();
-                powerOverlay = overlayObject.GetComponent<SpriteRenderer>();
-                powerOverlay.sprite = FlameGlow.GlowSprite;
-                powerOverlay.color = FlameGlow.RestColor;
+                powerOverlay = overlayObject.AddComponent<SpriteRenderer>();
+                // One object carries both looks. That's simpler than a child per power, and a
+                // token that changes from one power to another has nothing to create or destroy.
+                flameGlow = overlayObject.AddComponent<FlameGlow>();
+                starSparkle = overlayObject.AddComponent<StarSparkle>();
                 // Draw it the same way, and in the same layer, as the token itself.
                 powerOverlay.sharedMaterial = spriteRenderer.sharedMaterial;
                 powerOverlay.sortingLayerID = spriteRenderer.sortingLayerID;
                 powerOverlay.sortingOrder = spriteRenderer.sortingOrder + OverlayOrderOffset;
             }
 
+            if (show)
+            {
+                bool isStar = power == PowerKind.Star;
+                // A disabled script's Update doesn't run, so only one of the two is ever
+                // animating the overlay.
+                flameGlow.enabled = !isStar;
+                starSparkle.enabled = isStar;
+                // Start from the new look's resting state, so nothing of the old look (its
+                // size, say) is left over until the next Update.
+                powerOverlay.sprite = isStar ? StarSparkle.SparkleSprite : FlameGlow.GlowSprite;
+                powerOverlay.color = isStar ? StarSparkle.RestColor : FlameGlow.RestColor;
+                powerOverlay.transform.localScale = Vector3.one;
+            }
+
             // SetActive(false) hides a GameObject and stops its scripts, without destroying it,
-            // so a token that stops being a Flame can become one again later for free.
+            // so a token that stops being a power gem can become one again later for free.
             powerOverlay.gameObject.SetActive(show);
         }
     }
