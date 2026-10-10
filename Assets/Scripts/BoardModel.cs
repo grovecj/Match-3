@@ -4,7 +4,7 @@ using UnityEngine;
 namespace Match3
 {
     /// <summary>
-    /// The board's game rules as plain data: which <see cref="TokenType"/> is in each cell, and
+    /// The board's game rules as plain data: which <see cref="Piece"/> is in each cell, and
     /// how that changes when tokens are swapped, matched, cleared, and replaced. This is the
     /// "model"; <see cref="Board"/> is the "view + orchestration" that turns what changed here
     /// into GameObjects and animations.
@@ -14,7 +14,7 @@ namespace Match3
     /// method, and check the result, all without GameObjects, frames, or Play Mode.
     ///
     /// Grid convention (same as Board): (0, 0) is the bottom-left cell, x grows to the right,
-    /// y grows upward. A null cell is empty.
+    /// y grows upward. A cell with nothing in it holds <see cref="Piece.Empty"/>.
     /// </summary>
     public class BoardModel
     {
@@ -23,7 +23,8 @@ namespace Match3
 
         /// <summary>
         /// A token moving down its column from <see cref="From"/> to <see cref="To"/> because
-        /// the cells below it were cleared.
+        /// the cells below it were cleared. <see cref="Piece"/> is what it is: falling moves a
+        /// piece whole, so a power gem lands with its power.
         /// </summary>
         // A struct is a small value type: it's copied on assignment, like an int or a Vector2Int.
         // `readonly` promises its fields never change after construction.
@@ -31,31 +32,36 @@ namespace Match3
         {
             public readonly Vector2Int From;
             public readonly Vector2Int To;
+            public readonly Piece Piece;
 
-            public Fall(Vector2Int from, Vector2Int to)
+            public Fall(Vector2Int from, Vector2Int to, Piece piece)
             {
                 From = from;
                 To = to;
+                Piece = piece;
             }
         }
 
         /// <summary>
-        /// A new token of <see cref="Type"/> placed in <see cref="Cell"/> to refill the board.
+        /// A new <see cref="Piece"/> placed in <see cref="Cell"/> to refill the board.
         /// <see cref="FallDistance"/> is how many cells above <see cref="Cell"/> it should appear
         /// so it can fall into place alongside the other new tokens in its column.
         /// </summary>
         public readonly struct Spawn
         {
             public readonly Vector2Int Cell;
-            public readonly TokenType Type;
+            public readonly Piece Piece;
             public readonly int FallDistance;
 
-            public Spawn(Vector2Int cell, TokenType type, int fallDistance)
+            public Spawn(Vector2Int cell, Piece piece, int fallDistance)
             {
                 Cell = cell;
-                Type = type;
+                Piece = piece;
                 FallDistance = fallDistance;
             }
+
+            /// <summary>The new piece's colour: shorthand for <c>Piece.Colour</c>.</summary>
+            public TokenType Type => Piece.Colour;
         }
 
         /// <summary>
@@ -83,7 +89,9 @@ namespace Match3
         // aren't needed: those swaps were already tried when the search visited those cells.
         private static readonly Vector2Int[] SwapDirections = { Vector2Int.right, Vector2Int.up };
 
-        private readonly TokenType[,] grid;
+        // A 2D array of structs: every cell holds a whole Piece (not a reference to one), and
+        // a new array starts out full of Piece.Empty.
+        private readonly Piece[,] grid;
         // The types new tokens are picked from, with nulls filtered out. Duplicates are kept, so
         // listing a type twice makes it twice as likely, same as in the Inspector array.
         private readonly List<TokenType> tokenTypes = new List<TokenType>();
@@ -106,7 +114,7 @@ namespace Match3
                 throw new System.ArgumentException($"Board must be at least 1x1, got {width}x{height}.");
             }
 
-            grid = new TokenType[width, height];
+            grid = new Piece[width, height];
             this.random = random ?? throw new System.ArgumentNullException(nameof(random));
             if (tokenTypes != null)
             {
@@ -129,21 +137,44 @@ namespace Match3
             return cell.x >= 0 && cell.x < Width && cell.y >= 0 && cell.y < Height;
         }
 
-        /// <summary>The type in cell (x, y), or null if the cell is empty.</summary>
-        public TokenType TypeAt(int x, int y)
+        /// <summary>The piece in cell (x, y): its colour and its power. <see cref="Piece.Empty"/> if there's none.</summary>
+        public Piece PieceAt(int x, int y)
         {
             return grid[x, y];
         }
 
-        public TokenType TypeAt(Vector2Int cell)
+        public Piece PieceAt(Vector2Int cell)
         {
             return grid[cell.x, cell.y];
         }
 
-        /// <summary>Puts <paramref name="type"/> in cell (x, y). Null empties the cell.</summary>
+        /// <summary>Puts <paramref name="piece"/> in cell (x, y). <see cref="Piece.Empty"/> empties the cell.</summary>
+        public void SetPieceAt(int x, int y, Piece piece)
+        {
+            grid[x, y] = piece;
+        }
+
+        // TypeAt and SetTypeAt are shorthand for code that only cares about colour, which is
+        // most of it: it reads better than going through PieceAt(...).Colour everywhere.
+
+        /// <summary>
+        /// The colour of the piece in cell (x, y), or null if it has none: the cell is empty, or
+        /// holds a colourless power gem. Use <see cref="PieceAt(int, int)"/> to tell those apart.
+        /// </summary>
+        public TokenType TypeAt(int x, int y)
+        {
+            return grid[x, y].Colour;
+        }
+
+        public TokenType TypeAt(Vector2Int cell)
+        {
+            return grid[cell.x, cell.y].Colour;
+        }
+
+        /// <summary>Puts an ordinary (no power) piece of <paramref name="type"/> in cell (x, y). Null empties the cell.</summary>
         public void SetTypeAt(int x, int y, TokenType type)
         {
-            grid[x, y] = type;
+            grid[x, y] = new Piece(type);
         }
 
         /// <summary>Number of distinct, non-null entries in <paramref name="types"/>.</summary>
@@ -168,8 +199,9 @@ namespace Match3
         // ------------------------------------------------------------ Starting fill
 
         /// <summary>
-        /// Puts a random type in every cell, avoiding any 3-in-a-row so the game doesn't start
-        /// with free matches. Needs at least 3 distinct token types.
+        /// Puts an ordinary piece of a random type in every cell, avoiding any 3-in-a-row so the
+        /// game doesn't start with free matches. Needs at least 3 distinct token types.
+        /// Whatever was on the board before is replaced, so any power gems are lost.
         /// </summary>
         public void FillWithoutMatches()
         {
@@ -185,7 +217,7 @@ namespace Match3
             {
                 for (int y = 0; y < Height; y++)
                 {
-                    grid[x, y] = PickTypeWithoutMatch(x, y);
+                    grid[x, y] = new Piece(PickTypeWithoutMatch(x, y));
                 }
             }
         }
@@ -216,8 +248,8 @@ namespace Match3
         private TokenType PickTypeWithoutMatch(int x, int y)
         {
             // A type is forbidden if the two neighbors in a line are both that same type.
-            TokenType forbiddenHorizontal = x >= 2 && grid[x - 1, y] == grid[x - 2, y] ? grid[x - 1, y] : null;
-            TokenType forbiddenVertical = y >= 2 && grid[x, y - 1] == grid[x, y - 2] ? grid[x, y - 1] : null;
+            TokenType forbiddenHorizontal = ColourOfPair(x - 1, y, x - 2, y);
+            TokenType forbiddenVertical = ColourOfPair(x, y - 1, x, y - 2);
 
             // Collect the types that are still allowed, then pick one of them at random.
             // At most two types are forbidden, and FillWithoutMatches guarantees at least
@@ -235,20 +267,35 @@ namespace Match3
             return candidates[random.Next(candidates.Count)];
         }
 
+        /// <summary>
+        /// The colour that cells (x1, y1) and (x2, y2) share, or null if they don't share one
+        /// (or the second is off the board's left or bottom edge). A third piece of that colour
+        /// next to them would make a 3-in-a-row.
+        /// </summary>
+        private TokenType ColourOfPair(int x1, int y1, int x2, int y2)
+        {
+            if (x2 < 0 || y2 < 0)
+            {
+                return null;
+            }
+            return grid[x1, y1].Matches(grid[x2, y2]) ? grid[x1, y1].Colour : null;
+        }
+
         // ------------------------------------------------------------ Swapping
 
-        /// <summary>Exchanges the types in cells a and b. Doesn't check the move is legal.</summary>
+        /// <summary>Exchanges the pieces in cells a and b. Doesn't check the move is legal.</summary>
         public void Swap(Vector2Int a, Vector2Int b)
         {
-            TokenType typeA = grid[a.x, a.y];
+            Piece pieceA = grid[a.x, a.y];
             grid[a.x, a.y] = grid[b.x, b.y];
-            grid[b.x, b.y] = typeA;
+            grid[b.x, b.y] = pieceA;
         }
 
         // ------------------------------------------------------------ Matching
 
         /// <summary>
-        /// Finds every horizontal and vertical run of 3+ same-type tokens. Each run is returned
+        /// Finds every horizontal and vertical run of 3+ same-colour pieces. A piece's power makes
+        /// no difference, and a piece with no colour is never part of a run. Each run is returned
         /// separately, so an L or T shape comes back as two runs that share a cell. Rows come
         /// first (bottom to top), then columns (left to right); within a run, cells are in order
         /// left to right or bottom to top.
@@ -286,16 +333,16 @@ namespace Match3
             {
                 if (i < length)
                 {
-                    TokenType current = TypeAt(start + step * i);
-                    // Empty cells never match anything, not even each other.
-                    if (current != null && current == TypeAt(start + step * runStart))
+                    // Empty and colourless cells never match anything, not even each other.
+                    if (PieceAt(start + step * i).Matches(PieceAt(start + step * runStart)))
                     {
                         continue; // Same type as the run: it keeps growing.
                     }
                 }
 
                 // The run covering indices runStart..i-1 just ended. Keep it if it's long enough.
-                // (A run starting on an empty cell always ends after 1 cell, so it never counts.)
+                // (A run starting on an empty or colourless cell always ends after 1 cell, so it
+                // never counts.)
                 if (i - runStart >= MinMatchLength)
                 {
                     var run = new List<Vector2Int>();
@@ -369,10 +416,10 @@ namespace Match3
                 return false;
             }
 
-            TokenType typeA = TypeAt(a);
-            TokenType typeB = TypeAt(b);
-            // An empty cell can't be swapped, and swapping two of the same type changes nothing.
-            if (typeA == null || typeB == null || typeA == typeB)
+            Piece pieceA = PieceAt(a);
+            Piece pieceB = PieceAt(b);
+            // An empty cell can't be swapped, and swapping two of the same colour changes nothing.
+            if (pieceA.IsEmpty || pieceB.IsEmpty || pieceA.Colour == pieceB.Colour)
             {
                 return false;
             }
@@ -395,7 +442,7 @@ namespace Match3
             // Remember the board as it is now: it's where the tokens come from, and what to put
             // back if this doesn't work out. Clone copies the array (a plain assignment would
             // just be a second name for the same one).
-            var original = (TokenType[,])grid.Clone();
+            var original = (Piece[,])grid.Clone();
 
             for (int attempt = 0; attempt < MaxAttempts; attempt++)
             {
@@ -416,7 +463,7 @@ namespace Match3
         /// token is drawn from the bag instead of being any type we like. Returns null if it gets
         /// stuck: a cell where everything left in the bag would make a match.
         /// </summary>
-        private List<Move> DealFromBag(TokenType[,] original)
+        private List<Move> DealFromBag(Piece[,] original)
         {
             // The bag holds cells rather than types, so we know which token (not just which
             // type) lands where, and the Board can slide that very token across.
@@ -425,7 +472,7 @@ namespace Match3
             {
                 for (int y = 0; y < Height; y++)
                 {
-                    if (original[x, y] != null)
+                    if (!original[x, y].IsEmpty)
                     {
                         bag.Add(new Vector2Int(x, y));
                     }
@@ -439,22 +486,23 @@ namespace Match3
                 for (int y = 0; y < Height; y++)
                 {
                     // Empty cells stay empty.
-                    if (original[x, y] == null)
+                    if (original[x, y].IsEmpty)
                     {
                         continue;
                     }
 
                     // Same rule as PickTypeWithoutMatch: the cells to the left and below were
                     // dealt earlier in this attempt, so they're safe to look at.
-                    TokenType forbiddenHorizontal = x >= 2 && grid[x - 1, y] == grid[x - 2, y] ? grid[x - 1, y] : null;
-                    TokenType forbiddenVertical = y >= 2 && grid[x, y - 1] == grid[x, y - 2] ? grid[x, y - 1] : null;
+                    TokenType forbiddenHorizontal = ColourOfPair(x - 1, y, x - 2, y);
+                    TokenType forbiddenVertical = ColourOfPair(x, y - 1, x, y - 2);
 
-                    // The places in the bag holding a token that's allowed here.
+                    // The places in the bag holding a token that's allowed here. One with no
+                    // colour can't make a match, so it's allowed anywhere.
                     candidates.Clear();
                     for (int i = 0; i < bag.Count; i++)
                     {
-                        TokenType type = original[bag[i].x, bag[i].y];
-                        if (type != forbiddenHorizontal && type != forbiddenVertical)
+                        TokenType type = original[bag[i].x, bag[i].y].Colour;
+                        if (type == null || (type != forbiddenHorizontal && type != forbiddenVertical))
                         {
                             candidates.Add(i);
                         }
@@ -512,15 +560,15 @@ namespace Match3
 
             foreach (Vector2Int cell in cleared)
             {
-                grid[cell.x, cell.y] = null;
+                grid[cell.x, cell.y] = Piece.Empty;
             }
             return cleared;
         }
 
         /// <summary>
         /// Applies gravity: in every column, tokens drop into the empty cells below them, so all
-        /// the gaps end up at the top. Returns each token that moved, in the order they were
-        /// moved (column by column, bottom to top). Replaying the list in that order is always
+        /// the gaps end up at the top. A token moves whole, so its power goes with it. Returns
+        /// each token that moved, in the order they were moved (column by column, bottom to top). Replaying the list in that order is always
         /// safe: each destination is already empty when its token arrives.
         /// </summary>
         public List<Fall> Collapse()
@@ -533,17 +581,17 @@ namespace Match3
                 int nextFree = 0;
                 for (int y = 0; y < Height; y++)
                 {
-                    TokenType type = grid[x, y];
-                    if (type == null)
+                    Piece piece = grid[x, y];
+                    if (piece.IsEmpty)
                     {
                         continue;
                     }
 
                     if (y != nextFree)
                     {
-                        grid[x, nextFree] = type;
-                        grid[x, y] = null;
-                        falls.Add(new Fall(new Vector2Int(x, y), new Vector2Int(x, nextFree)));
+                        grid[x, nextFree] = piece;
+                        grid[x, y] = Piece.Empty;
+                        falls.Add(new Fall(new Vector2Int(x, y), new Vector2Int(x, nextFree), piece));
                     }
                     nextFree++;
                 }
@@ -552,7 +600,7 @@ namespace Match3
         }
 
         /// <summary>
-        /// Puts a new random type in every empty cell and returns what was placed. Meant to run
+        /// Puts a new ordinary piece of a random type in every empty cell and returns what was placed. Meant to run
         /// right after <see cref="Collapse"/>, when each column's gaps are all at the top. Unlike
         /// the starting fill, refills are allowed to create matches: those become cascades,
         /// which is part of the fun.
@@ -565,7 +613,7 @@ namespace Match3
                 int empty = 0;
                 for (int y = 0; y < Height; y++)
                 {
-                    if (grid[x, y] == null)
+                    if (grid[x, y].IsEmpty)
                     {
                         empty++;
                     }
@@ -575,9 +623,9 @@ namespace Match3
                 // the board in the same order, they arrive together as a neat column.
                 for (int y = 0; y < Height; y++)
                 {
-                    if (grid[x, y] == null)
+                    if (grid[x, y].IsEmpty)
                     {
-                        grid[x, y] = tokenTypes[random.Next(tokenTypes.Count)];
+                        grid[x, y] = new Piece(tokenTypes[random.Next(tokenTypes.Count)]);
                         spawns.Add(new Spawn(new Vector2Int(x, y), grid[x, y], empty));
                     }
                 }

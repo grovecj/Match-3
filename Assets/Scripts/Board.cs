@@ -420,7 +420,7 @@ namespace Match3
             return true;
         }
 
-        /// <summary>Spawns a token on every cell's center showing the type the model has there.</summary>
+        /// <summary>Spawns a token on every cell's center showing the piece the model has there.</summary>
         private void SpawnTokenInEveryCell()
         {
             // The model decides what goes where; we just spawn a token to show each cell.
@@ -428,24 +428,24 @@ namespace Match3
             {
                 for (int y = 0; y < height; y++)
                 {
-                    SpawnToken(x, y, model.TypeAt(x, y), GridToWorld(x, y));
+                    SpawnToken(x, y, model.PieceAt(x, y), GridToWorld(x, y));
                 }
             }
         }
 
         /// <summary>
-        /// Creates a token of <paramref name="type"/> at <paramref name="position"/> and records it
+        /// Creates a token for <paramref name="piece"/> at <paramref name="position"/> and records it
         /// as occupying cell (x, y). The position can differ from the cell's center (e.g. above
         /// the board) so the token can then animate into place.
         /// </summary>
-        private void SpawnToken(int x, int y, TokenType type, Vector3 position)
+        private void SpawnToken(int x, int y, Piece piece, Vector3 position)
         {
             // Instantiate clones the prefab into the scene. Passing a component (Token)
             // instead of a GameObject returns the clone's matching component directly.
             Token token = Instantiate(tokenPrefab, position, Quaternion.identity, tokenContainer);
             token.transform.localScale = Vector3.one * cellSize;
             token.SetStyle(CurrentTokenStyle);
-            token.SetType(type);
+            token.SetPiece(piece);
             PlaceToken(token, x, y);
         }
 
@@ -806,6 +806,8 @@ namespace Match3
             // Very rarely the tokens on the board can't be arranged into a playable layout at
             // all (say, nearly all of them are one type). Then deal new types instead. No tokens
             // are created or destroyed: each one just changes what it shows.
+            // The redeal makes every piece an ordinary one. That's fine while nothing creates
+            // power gems; once something does, this needs a redeal that keeps each piece's power.
             if (!model.FillWithValidMove())
             {
                 Debug.LogWarning($"Board: a {width}x{height} board with these token types has no valid moves.", this);
@@ -814,7 +816,7 @@ namespace Match3
             {
                 for (int y = 0; y < height; y++)
                 {
-                    tokens[x, y].SetType(model.TypeAt(x, y));
+                    tokens[x, y].SetPiece(model.PieceAt(x, y));
                 }
             }
             IsReshuffling = false;
@@ -1004,7 +1006,7 @@ namespace Match3
             foreach (BoardModel.Spawn spawn in model.Refill())
             {
                 Vector2Int cell = spawn.Cell;
-                SpawnToken(cell.x, cell.y, spawn.Type, GridToWorld(cell.x, cell.y + spawn.FallDistance));
+                SpawnToken(cell.x, cell.y, spawn.Piece, GridToWorld(cell.x, cell.y + spawn.FallDistance));
             }
         }
 
