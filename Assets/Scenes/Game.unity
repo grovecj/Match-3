@@ -6076,6 +6076,7 @@ GameObject:
   m_Component:
   - component: {fileID: 740770655}
   - component: {fileID: 740770656}
+  - component: {fileID: 740770657}
   m_Layer: 5
   m_Name: Settings
   m_TagString: Untagged
@@ -6128,6 +6129,23 @@ MonoBehaviour:
   volumeSlider: {fileID: 347016460}
   volumeValueText: {fileID: 851598633}
   testSoundButton: {fileID: 1293718834}
+--- !u!114 &740770657
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 740770654}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 61a0be9031bb4e2bb0d6d0eb30309e54, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Match3::Match3.Online.PreferencesSync
+  accountManager: {fileID: 1091661359}
+  themeManager: {fileID: 1200000003}
+  audioManager: {fileID: 1481894168}
+  settingsMenu: {fileID: 740770656}
+  baseUrl: https://games.cartergrove.me/match3/api
 --- !u!1 &746327343
 GameObject:
   m_ObjectHideFlags: 0
