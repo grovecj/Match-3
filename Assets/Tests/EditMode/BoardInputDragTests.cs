@@ -25,6 +25,23 @@ namespace Match3.Tests
         private const float EdgeStretch = 0.25f;
         private const float Tolerance = 0.0001f;
 
+        // ---- WantsHint ----
+
+        [TestCase(0f, false)]
+        [TestCase(5.75f, false)]
+        [TestCase(6f, true)]
+        [TestCase(30f, true)]
+        public void WantsHint_OnlyOnceTheDelayHasPassed(float idleTime, bool expected)
+        {
+            Assert.AreEqual(expected, WantsHint(idleTime, hintDelay: 6f));
+        }
+
+        [Test]
+        public void WantsHint_DelayOfZero_TurnsHintsOff()
+        {
+            Assert.IsFalse(WantsHint(idleTime: 100f, hintDelay: 0f));
+        }
+
         // ---- ChooseAxis ----
 
         [Test]

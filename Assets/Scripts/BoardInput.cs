@@ -19,6 +19,9 @@ namespace Match3
     ///   Dragging - the pointer has left the dead zone; the token follows it. Letting go here
     ///              swaps or springs back.
     ///   Selected - a token was clicked and is waiting for a click on a neighbor.
+    ///
+    /// It also notices when the player has gone a while without touching the board, and asks
+    /// the Board to show a hint.
     /// </summary>
     [RequireComponent(typeof(Board))]
     public class BoardInput : MonoBehaviour
@@ -43,6 +46,10 @@ namespace Match3
         [Tooltip("How far (as a fraction of a cell) a token can be stretched toward the edge of the " +
                  "board, where there's nothing to swap with. It never quite reaches this.")]
         [SerializeField, Range(0f, 0.5f)] private float edgeStretch = 0.2f;
+
+        [Header("Hints")]
+        [Tooltip("After this many seconds without the player picking up a token, the board shows a valid move. 0 turns hints off.")]
+        [SerializeField, Min(0f)] private float hintDelay = 6f;
 
         // How quickly the measured pointer speed catches up with the real one, in seconds. Short
         // enough to notice a flick, long enough that one jittery frame doesn't count as one.
@@ -76,6 +83,9 @@ namespace Match3
         private Vector2 pointerVelocity;
         private Vector2 lastPointerWorld;
 
+        // How long the board has been waiting for the player to do something, in seconds.
+        private float idleTime;
+
         private void Awake()
         {
             board = GetComponent<Board>();
@@ -103,8 +113,12 @@ namespace Match3
             if (board != null && board.isActiveAndEnabled)
             {
                 board.DropHeld();
+                // A hint left pulsing on a paused or finished board would look like it's still
+                // in play. The wait starts over when input comes back.
+                board.ClearHint();
             }
             state = State.Idle;
+            idleTime = 0f;
         }
 
         private void Update()
@@ -115,6 +129,8 @@ namespace Match3
             {
                 state = State.Idle;
             }
+
+            UpdateHintTimer();
 
             switch (state)
             {
@@ -138,6 +154,29 @@ namespace Match3
                 case State.Dragging:
                     UpdatePress();
                     break;
+            }
+        }
+
+        /// <summary>
+        /// Counts how long the player has left a settled board untouched, and shows a hint once
+        /// that reaches <see cref="hintDelay"/>.
+        /// </summary>
+        private void UpdateHintTimer()
+        {
+            // Only time spent waiting on the player counts. Holding or selecting a token is
+            // doing something, and while the board resolves there's nothing they could do.
+            if (state != State.Idle || board.IsResolving)
+            {
+                idleTime = 0f;
+                return;
+            }
+
+            // This component is switched off while paused and between rounds, so this only
+            // counts time the player could actually have been playing.
+            idleTime += Time.deltaTime;
+            if (WantsHint(idleTime, hintDelay) && !board.IsHintShowing)
+            {
+                board.ShowHint();
             }
         }
 
@@ -308,10 +347,19 @@ namespace Match3
             return cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, 0f));
         }
 
-        // ---------------------------------------------------------------- Drag math
+        // ---------------------------------------------------------------- Drag and hint math
         //
         // Pure functions with no input or scene access, which is why they're `static`: Edit
         // Mode tests can call them directly with any numbers.
+
+        /// <summary>
+        /// Whether a hint is due: the player has been idle for at least <paramref name="hintDelay"/>
+        /// seconds. A delay of 0 (or less) means hints are off.
+        /// </summary>
+        public static bool WantsHint(float idleTime, float hintDelay)
+        {
+            return hintDelay > 0f && idleTime >= hintDelay;
+        }
 
         /// <summary>
         /// Decides which axis a drag moves along. Inside the dead zone there's no axis. Leaving

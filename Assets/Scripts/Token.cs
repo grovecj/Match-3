@@ -26,8 +26,10 @@ namespace Match3
         [SerializeField, Range(0f, 0.2f)] private float pulseAmount = 0.05f;
         [Tooltip("How many times per second a selected token pulses.")]
         [SerializeField, Min(0.1f)] private float pulseRate = 1.5f;
+        [Tooltip("How much a hinted token pulses, as a fraction of its size. Bigger than the selected pulse, so it catches the eye.")]
+        [SerializeField, Range(0f, 0.3f)] private float hintPulseAmount = 0.12f;
 
-        /// <summary>How a token is being singled out by the player.</summary>
+        /// <summary>How a token is being singled out, by the player or (for a hint) for them.</summary>
         public enum Highlight
         {
             /// <summary>Resting on the board at its normal size.</summary>
@@ -36,6 +38,8 @@ namespace Match3
             Held,
             /// <summary>Clicked, waiting for a click on a neighbor: picked up and gently pulsing.</summary>
             Selected,
+            /// <summary>Part of a move the board is suggesting: pulsing in place, not picked up.</summary>
+            Hint,
         }
 
         private SpriteRenderer spriteRenderer;
@@ -62,8 +66,9 @@ namespace Match3
         }
 
         /// <summary>
-        /// Picks the token up (<see cref="Highlight.Held"/> or <see cref="Highlight.Selected"/>) or
-        /// puts it back down (<see cref="Highlight.None"/>). The size change animates over
+        /// Picks the token up (<see cref="Highlight.Held"/> or <see cref="Highlight.Selected"/>),
+        /// makes it pulse where it is (<see cref="Highlight.Hint"/>), or puts it back to normal
+        /// (<see cref="Highlight.None"/>). Being picked up animates over
         /// <see cref="liftDuration"/> rather than jumping.
         /// </summary>
         public void SetHighlight(Highlight newHighlight)
@@ -73,13 +78,21 @@ namespace Match3
                 return;
             }
 
+            // A hint pulses around the resting size, so the token is probably mid-pulse right
+            // now. Snap it back first, or the check below would remember the swollen size as
+            // the resting one.
+            if (highlight == Highlight.Hint)
+            {
+                transform.localScale = restScale;
+            }
+
             // Only remember the resting size when starting from rest. A token picked up again
             // while it's still shrinking back is part-way lifted, so its scale isn't the rest scale.
             if (highlight == Highlight.None && lift == 0f)
             {
                 restScale = transform.localScale;
             }
-            if (newHighlight == Highlight.Selected)
+            if (newHighlight == Highlight.Selected || newHighlight == Highlight.Hint)
             {
                 pulseTime = 0f;
             }
@@ -95,11 +108,13 @@ namespace Match3
 
         private void Update()
         {
-            float target = highlight == Highlight.None ? 0f : 1f;
+            // Only a token the player has picked up is lifted; a hinted one stays on the board.
+            float target = highlight == Highlight.Held || highlight == Highlight.Selected ? 1f : 0f;
+            bool pulsing = highlight == Highlight.Selected || highlight == Highlight.Hint;
             // Nothing to animate: fully at rest, or fully lifted and not pulsing. Returning early
             // matters because other code (the Board's pop) sets the scale of resting tokens, and
             // we mustn't overwrite it.
-            if (lift == target && highlight != Highlight.Selected && !highlightChanged)
+            if (lift == target && !pulsing && !highlightChanged)
             {
                 return;
             }
@@ -110,20 +125,20 @@ namespace Match3
             lift = Mathf.MoveTowards(lift, target, Time.deltaTime / liftDuration);
             float size = Mathf.Lerp(1f, liftScale, Easing.OutCubic(lift));
 
-            if (highlight == Highlight.Selected)
+            if (pulsing)
             {
                 pulseTime += Time.deltaTime;
                 // (1 - cos) / 2 swings smoothly between 0 and 1, starting at 0, so the pulse
                 // begins without a jump. 2 * PI radians is one full swing.
                 float wave = (1f - Mathf.Cos(pulseTime * pulseRate * 2f * Mathf.PI)) / 2f;
-                size += pulseAmount * wave;
+                size += (highlight == Highlight.Hint ? hintPulseAmount : pulseAmount) * wave;
             }
 
             transform.localScale = restScale * size;
 
             // Back down: stop drawing on top only now, so the token doesn't dip under its
             // neighbor while it's still bigger than them.
-            if (lift == 0f)
+            if (lift == 0f && highlight == Highlight.None)
             {
                 spriteRenderer.sortingOrder = restSortingOrder;
             }

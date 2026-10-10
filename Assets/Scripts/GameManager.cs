@@ -61,8 +61,10 @@ namespace Match3
         [SerializeField] private TMP_Text timerText;
         [SerializeField] private Color timerColor = Color.white;
         [SerializeField] private Color timerWarningColor = new Color(1f, 0.3f, 0.3f);
-        [Tooltip("Shows \"Time's up! Final score: X\" when a round ends. Hidden otherwise.")]
+        [Tooltip("Shows \"Time's up! Final score: X\" when a round ends, and \"No more moves!\" while the board reshuffles. Hidden otherwise.")]
         [SerializeField] private TMP_Text messageText;
+        [Tooltip("How long, in seconds, \"No more moves!\" stays up when the board reshuffles.")]
+        [SerializeField, Min(0f)] private float noMovesMessageDuration = 1.5f;
         [Tooltip("The one button used both to start the first round and to play again.")]
         [SerializeField] private Button roundButton;
         [SerializeField] private TMP_Text roundButtonLabel;
@@ -95,6 +97,8 @@ namespace Match3
         private float timeRemaining;
         // The whole second the timer showed last frame, so we can tell when it changes.
         private int lastSecondShown;
+        // Seconds until the "No more moves!" message is hidden again. 0 when it isn't showing.
+        private float noMovesMessageTimeLeft;
         private InputAction pauseAction;
 
         private void Start()
@@ -114,6 +118,7 @@ namespace Match3
             // here, from code, which keeps the wiring visible next to the method it calls.
             roundButton.onClick.AddListener(StartRound);
             resumeButton.onClick.AddListener(Resume);
+            board.NoMovesLeft += ShowNoMovesMessage;
 
             // InputSystem.actions is the project-wide actions asset (Assets/Settings/
             // InputSystem_Actions, set under Project Settings > Input System Package). Unity
@@ -126,6 +131,10 @@ namespace Match3
 
         private void OnDestroy()
         {
+            if (board != null)
+            {
+                board.NoMovesLeft -= ShowNoMovesMessage;
+            }
             if (roundButton != null)
             {
                 roundButton.onClick.RemoveListener(StartRound);
@@ -204,7 +213,20 @@ namespace Match3
 
         private void UpdatePlaying()
         {
-            if (timeRemaining > 0f)
+            // Counted down here (not in a coroutine) so that, like the round timer, it simply
+            // stops while paused: UpdatePlaying isn't called then.
+            if (noMovesMessageTimeLeft > 0f)
+            {
+                noMovesMessageTimeLeft -= Time.deltaTime;
+                if (noMovesMessageTimeLeft <= 0f)
+                {
+                    messageText.gameObject.SetActive(false);
+                }
+            }
+
+            // The clock stops while the board reshuffles: running out of moves is bad luck, and
+            // the player can't do anything until the tokens have settled again.
+            if (timeRemaining > 0f && !board.IsReshuffling)
             {
                 // Time.deltaTime is the number of seconds since the last frame. Subtracting it
                 // every frame makes the timer count real seconds whatever the frame rate is.
@@ -241,6 +263,7 @@ namespace Match3
             // the button also hides its label).
             roundButton.gameObject.SetActive(false);
             messageText.gameObject.SetActive(false);
+            noMovesMessageTimeLeft = 0f;
             settingsMenu.SetAvailable(false);
             leaderboardMenu.SetAvailable(false);
             accountMenu.SetAvailable(false);
@@ -312,6 +335,8 @@ namespace Match3
         {
             state = GameState.RoundOver;
             SetInputEnabled(false);
+            // "Time's up!" takes over the message from here; don't let the countdown hide it.
+            noMovesMessageTimeLeft = 0f;
             string finalScore = scoreKeeper.Total.ToString("N0", CultureInfo.InvariantCulture);
             messageText.text = $"Time's up!\nFinal score: {finalScore}";
             messageText.gameObject.SetActive(true);
@@ -324,6 +349,25 @@ namespace Match3
             // If the score makes the local top 10, this pops up the initials prompt over the
             // round-end screen. A signed-in player's score also goes to the global leaderboard.
             leaderboardMenu.OfferEntry(scoreKeeper.Total);
+        }
+
+        /// <summary>
+        /// Called by the Board when it has run out of moves and is about to reshuffle. Shows a
+        /// short message so the tokens moving by themselves aren't a surprise.
+        /// </summary>
+        private void ShowNoMovesMessage()
+        {
+            // The board can also run dry on the cascade that ends the round. "Time's up!" is
+            // about to replace the message then, so don't flash this one first. A duration of 0
+            // means "no message": showing it would leave nothing counting down to hide it again.
+            if (state != GameState.Playing || timeRemaining <= 0f || noMovesMessageDuration <= 0f)
+            {
+                return;
+            }
+
+            messageText.text = "No more moves!\nShuffling...";
+            messageText.gameObject.SetActive(true);
+            noMovesMessageTimeLeft = noMovesMessageDuration;
         }
 
         // The Achievements menu is the one menu the game can run without, so it's the one

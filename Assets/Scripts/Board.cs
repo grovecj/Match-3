@@ -55,6 +55,12 @@ namespace Match3
         [Tooltip("Particle burst spawned on every cleared cell. Optional: without one, tokens just pop.")]
         [SerializeField] private Explosion explosionPrefab;
 
+        [Header("Reshuffling")]
+        [Tooltip("Pause, in seconds, between running out of moves and the tokens shuffling, so the player sees why.")]
+        [SerializeField, Min(0f)] private float noMovesDelay = 0.5f;
+        [Tooltip("How long, in seconds, the tokens take to slide to their new cells in a shuffle.")]
+        [SerializeField, Min(0.01f)] private float shuffleDuration = 0.4f;
+
         /// <summary>How big a popping token gets at its largest, relative to its normal size.</summary>
         public const float PopPeakScale = 1.2f;
 
@@ -95,6 +101,12 @@ namespace Match3
         /// </summary>
         public event System.Action SwapRejected;
 
+        /// <summary>
+        /// Fired when the board has settled with no swap left that would make a match, just
+        /// before it reshuffles itself.
+        /// </summary>
+        public event System.Action NoMovesLeft;
+
         // Idle: waiting for the player. Resolving: a swap and everything it caused (clearing,
         // falling, refilling, cascades) is still playing out, so input has to wait.
         private enum BoardState { Idle, Resolving }
@@ -128,6 +140,9 @@ namespace Match3
         private Vector2Int heldDirection;
         private float heldDistance;
 
+        // The two tokens currently pulsing as a hint, or null when no hint is showing.
+        private Token[] hintedTokens;
+
         /// <summary>The kinds of token that can appear on the board (e.g. for previews in menus).</summary>
         public IReadOnlyList<TokenType> TokenTypes => tokenTypes;
 
@@ -143,6 +158,18 @@ namespace Match3
         /// Input should be ignored until it's false.
         /// </summary>
         public bool IsResolving => state == BoardState.Resolving;
+
+        /// <summary>
+        /// True from the moment the board announces it has no moves left until its tokens have
+        /// finished shuffling. The round clock stops for this: running out of moves is bad luck,
+        /// and shouldn't also cost the player time.
+        /// </summary>
+        // `{ get; private set; }` is an "auto-property": C# makes the hidden field for us. Anyone
+        // can read it, but only Board can change it.
+        public bool IsReshuffling { get; private set; }
+
+        /// <summary>True while two tokens are pulsing to suggest a move.</summary>
+        public bool IsHintShowing => hintedTokens != null;
 
         /// <summary>True while the player has a token picked up (held or selected).</summary>
         public bool IsHolding => heldCell.HasValue;
@@ -226,6 +253,8 @@ namespace Match3
             // A swap in progress would keep moving tokens we're about to destroy, so cancel it.
             StopAllCoroutines();
             state = BoardState.Idle;
+            // The reshuffle coroutine was just stopped, so it will never get to clear this itself.
+            IsReshuffling = false;
             heldCell = null;
             BuildCells();
             FillWithRandomTokens();
@@ -343,7 +372,8 @@ namespace Match3
 
         /// <summary>
         /// Destroys any existing tokens and puts a new token of a random type in every cell,
-        /// avoiding any 3-in-a-row so the game doesn't start with free matches.
+        /// avoiding any 3-in-a-row so the game doesn't start with free matches, and making sure
+        /// there's at least one move to play.
         /// </summary>
         private void FillWithRandomTokens()
         {
@@ -351,7 +381,10 @@ namespace Match3
             {
                 return;
             }
-            model.FillWithoutMatches();
+            if (!model.FillWithValidMove())
+            {
+                Debug.LogWarning($"Board: a {width}x{height} board with these token types has no valid moves.", this);
+            }
             SpawnTokenInEveryCell();
         }
 
@@ -374,6 +407,8 @@ namespace Match3
             tokenContainer.SetParent(transform, false);
             tokens = new Token[width, height];
             model = null;
+            // The hinted tokens were in the old container, so they're gone too.
+            hintedTokens = null;
 
             if (tokenPrefab == null || BoardModel.CountDistinctTypes(tokenTypes) < 3)
             {
@@ -450,11 +485,67 @@ namespace Match3
                 return false;
             }
 
+            // The player has found something to do; the hint has done its job (or been ignored).
+            ClearHint();
             heldCell = cell;
             heldDirection = Vector2Int.zero;
             heldDistance = 0f;
             tokens[cell.x, cell.y].SetHighlight(Token.Highlight.Held);
             return true;
+        }
+
+        // ---------------------------------------------------------------- Hints
+        //
+        // BoardInput decides *when* the player could use a hint (they haven't touched the board
+        // for a while); the Board decides *what* to show, because it has the model to ask.
+
+        /// <summary>
+        /// Makes the two tokens of a valid move pulse, replacing any hint already showing.
+        /// Returns false (and shows nothing) while the board is resolving or a token is picked
+        /// up, or if there's no valid move to show.
+        /// </summary>
+        public bool ShowHint()
+        {
+            if (state != BoardState.Idle || model == null || heldCell.HasValue)
+            {
+                return false;
+            }
+
+            ClearHint();
+            // The same search that decides whether to reshuffle. It scans column by column from
+            // the bottom-left, so on a board with several moves the hint is always the one in
+            // the leftmost column (and the lowest of those).
+            if (!model.TryFindValidMove(out Vector2Int a, out Vector2Int b))
+            {
+                return false;
+            }
+
+            hintedTokens = new[] { tokens[a.x, a.y], tokens[b.x, b.y] };
+            foreach (Token token in hintedTokens)
+            {
+                token.SetHighlight(Token.Highlight.Hint);
+            }
+            return true;
+        }
+
+        /// <summary>Stops the hinted tokens pulsing. Does nothing if no hint is showing.</summary>
+        public void ClearHint()
+        {
+            if (hintedTokens == null)
+            {
+                return;
+            }
+
+            foreach (Token token in hintedTokens)
+            {
+                // Leave a token alone if it has since been picked up: that's the player's
+                // highlight now, not the hint's.
+                if (token != null && token.CurrentHighlight == Token.Highlight.Hint)
+                {
+                    token.SetHighlight(Token.Highlight.None);
+                }
+            }
+            hintedTokens = null;
         }
 
         /// <summary>
@@ -609,6 +700,7 @@ namespace Match3
                 }
             }
             ReleaseHeld();
+            ClearHint();
 
             // Lock the board here, not inside the coroutine, so there's no gap in which a
             // second swap could sneak in.
@@ -623,7 +715,8 @@ namespace Match3
         // ordinary code instead of juggling timers or callbacks.
         /// <summary>
         /// One whole turn: swap, then either swap back (no match) or clear -> fall -> refill,
-        /// repeating for as long as the falling tokens create new matches (cascades).
+        /// repeating for as long as the falling tokens create new matches (cascades). If the
+        /// board ends up with no valid moves, it's reshuffled before the turn ends.
         /// </summary>
         private IEnumerator ResolveSwap(Vector2Int a, Vector2Int b)
         {
@@ -664,7 +757,67 @@ namespace Match3
                 runs = model.FindMatches();
             }
 
+            // The board has settled. If that left the player with nothing to play, fix it
+            // before handing control back, so input stays locked while the tokens move.
+            yield return StartCoroutine(ReshuffleIfStuck());
+
             state = BoardState.Idle;
+        }
+
+        /// <summary>
+        /// If no swap on the board would make a match, announces it through
+        /// <see cref="NoMovesLeft"/> and shuffles the tokens into a layout that has one (and no
+        /// matches). Does nothing if the board is playable.
+        /// </summary>
+        private IEnumerator ReshuffleIfStuck()
+        {
+            if (model.HasValidMove())
+            {
+                // `yield break` is a coroutine's `return`: it ends the coroutine right here.
+                yield break;
+            }
+
+            // Set before the event fires, so a listener that asks already gets "yes".
+            IsReshuffling = true;
+            NoMovesLeft?.Invoke();
+            if (noMovesDelay > 0f)
+            {
+                yield return new WaitForSeconds(noMovesDelay);
+            }
+
+            List<BoardModel.Move> moves = model.Shuffle();
+            if (moves != null)
+            {
+                // As with a swap: the model has already changed, so file each token under its
+                // new cell, then let the animation catch the screen up. The copy is needed
+                // because one token's new cell is usually another token's old one.
+                var before = (Token[,])tokens.Clone();
+                var shuffled = new List<Vector2Int>();
+                foreach (BoardModel.Move move in moves)
+                {
+                    PlaceToken(before[move.From.x, move.From.y], move.To.x, move.To.y);
+                    shuffled.Add(move.To);
+                }
+                yield return StartCoroutine(SlideHome(shuffled, shuffleDuration, Easing.OutCubic));
+                IsReshuffling = false;
+                yield break;
+            }
+
+            // Very rarely the tokens on the board can't be arranged into a playable layout at
+            // all (say, nearly all of them are one type). Then deal new types instead. No tokens
+            // are created or destroyed: each one just changes what it shows.
+            if (!model.FillWithValidMove())
+            {
+                Debug.LogWarning($"Board: a {width}x{height} board with these token types has no valid moves.", this);
+            }
+            for (int x = 0; x < width; x++)
+            {
+                for (int y = 0; y < height; y++)
+                {
+                    tokens[x, y].SetType(model.TypeAt(x, y));
+                }
+            }
+            IsReshuffling = false;
         }
 
         /// <summary>Exchanges the contents of cells a and b in both the model and the view array.</summary>
@@ -934,7 +1087,8 @@ namespace Match3
         internal void ConfigureForTests(int width, int height, SpriteRenderer cellPrefab, Token tokenPrefab,
             ThemeManager themeManager, TokenType[] tokenTypes, int seed,
             float swapDuration, float clearDelay, float fallSpeed,
-            float popDuration = 0f, Explosion explosionPrefab = null, float springBackDuration = 0.01f)
+            float popDuration = 0f, Explosion explosionPrefab = null, float springBackDuration = 0.01f,
+            float noMovesDelay = 0f, float shuffleDuration = 0.01f)
         {
             this.width = width;
             this.height = height;
@@ -950,6 +1104,8 @@ namespace Match3
             this.popDuration = popDuration;
             this.explosionPrefab = explosionPrefab;
             this.springBackDuration = springBackDuration;
+            this.noMovesDelay = noMovesDelay;
+            this.shuffleDuration = shuffleDuration;
         }
 
         /// <summary>
@@ -966,6 +1122,7 @@ namespace Match3
 
             StopAllCoroutines();
             state = BoardState.Idle;
+            IsReshuffling = false;
             heldCell = null;
             if (!ResetTokens())
             {

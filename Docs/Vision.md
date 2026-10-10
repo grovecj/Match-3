@@ -45,5 +45,7 @@ Use these to decide what goes in. A feature should clearly serve at least one an
 - **The clock pauses while power gems detonate** (2026-10-10, #84). Long chains reward the
   player instead of costing them time. It keeps running during swaps, ordinary clears and
   falls.
+- **The clock also pauses while the board reshuffles** (2026-10-10, #14). Running out of
+  moves is luck, not a mistake, so it does not cost time.
 - **Five token types until power gems are playtested** (2026-10-10). A sixth colour is
   ticketed as #88 and deferred.
