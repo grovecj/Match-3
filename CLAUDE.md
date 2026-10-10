@@ -6,6 +6,8 @@ well-explained code over polish. Explain Unity concepts when introducing them.
 - Unity 6000.5.7f1, 2D URP template, new Input System (`com.unity.inputsystem`). Target: PC.
 - Repo root is the Unity project root. Source art goes in `Art/`, game assets in `Assets/`.
 - Tasks are tracked in GitHub Issues (`gh issue list -R grovecj/Match-3`).
+- `Docs/Vision.md` says what the game is, the pillars a feature must serve, and what we are
+  not doing. For feature planning, use the `game-designer` agent (`.claude/agents/`).
 - Unity must be closed before moving/renaming files outside the Editor; always move `.meta` files with their assets.
 - Editor-only tools (e.g. `Match3 > Build Settings Menu`, which regenerates the Settings UI,
   its option prefabs and the PreferencesSync (see `Docs/SettingsSync.md`), `Match3 > Build Leaderboard Menu` (Local/Global tabs and the
