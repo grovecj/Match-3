@@ -1,24 +1,25 @@
-# Runs the Edit Mode and Play Mode tests (issue #33), so a PR that breaks a test gets a red check
-# before it's merged.
-#   - Pull requests: runs when Assets/, Packages/, ProjectSettings/ or this file changes.
-#   - Run workflow (manual, any branch): runs the tests on demand, e.g. on main.
+# Runs the Edit Mode and Play Mode tests (issue #33) on demand:
+#   - Run workflow (manual, any branch): e.g. on a PR's branch before merging, or on main.
+# It doesn't run on pull requests by itself (see `on:` below).
 # See Docs/CI.md ("Tests") for how it works and how to read the results.
 #
-# This is a separate workflow from build.yml so it shows up as its own check on the PR ("Test"
-# next to "Build"), runs in parallel with the build, and can be re-run on its own. The two share
+# This is a separate workflow from build.yml so it shows up as its own check ("Test" next to
+# "Build") and can be run on its own. The two share
 # the Unity license secrets and the Git LFS cache.
 
 name: Test
 
 on:
-  pull_request:
-    # Same filter as the build: tests only need to run when something Unity sees changes, or
-    # when any workflow changes (so a CI change proves both workflows still work).
-    paths:
-      - 'Assets/**'
-      - 'Packages/**'
-      - 'ProjectSettings/**'
-      - '.github/workflows/**'
+  # Running on every pull request is switched off, like the build: PRs are usually merged
+  # before the run would finish. Run the tests in the Editor's Test Runner, or use Run workflow
+  # on the PR's branch. Uncomment to turn it back on.
+  # pull_request:
+  #   paths:
+  #     - 'Assets/**'
+  #     - 'Packages/**'
+  #     - 'ProjectSettings/**'
+  #     - '.github/workflows/**'
+  # Adds a "Run workflow" button on the Actions tab (pick the branch to test).
   workflow_dispatch:
 
 # A newer push to the same PR cancels the older test run, like the build does.

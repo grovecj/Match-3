@@ -1,7 +1,7 @@
 # Builds the game with Unity (issue #23) and deploys it (issue #24):
-#   - Pull requests: Windows only, as a quick "does the player build still compile?" check.
 #   - Run workflow (manual, any branch): Windows and Web, with downloadable builds. This is how
-#     you make a release build, rather than getting one for every merge.
+#     you make a release build, or check that a branch still builds. Nothing builds by itself:
+#     not pull requests, and not merges.
 #   - Run workflow on main (with "Deploy" ticked, the default): also publishes the release.
 #     The Web build goes live at games.cartergrove.me/match3 and the Windows zip is uploaded
 #     for download.
@@ -14,16 +14,16 @@
 name: Build
 
 on:
-  pull_request:
-    # Only build when something Unity cares about changes. A README edit doesn't need a
-    # 15-minute build. Any workflow change counts too, so a CI change (this file or test.yml)
-    # gets a build and a test run on its PR. Note the filter looks at the PR's whole diff
-    # against main, not just the latest push.
-    paths:
-      - 'Assets/**'
-      - 'Packages/**'
-      - 'ProjectSettings/**'
-      - '.github/workflows/**'
+  # Building every pull request is switched off: PRs here are usually merged before a build
+  # would finish, so the minutes were wasted. Run workflow on the PR's branch when you do want
+  # the check. Uncomment to turn it back on (a Windows-only build, when something Unity cares
+  # about changes; the rest of this file still handles the pull_request event).
+  # pull_request:
+  #   paths:
+  #     - 'Assets/**'
+  #     - 'Packages/**'
+  #     - 'ProjectSettings/**'
+  #     - '.github/workflows/**'
   # Building every merge to main is switched off: with lots of small PRs, a Windows + Web build
   # (and ~65 MB of artifacts) per merge isn't worth the minutes. Uncomment to turn it back on.
   # push:
@@ -34,7 +34,7 @@ on:
   #     - 'ProjectSettings/**'
   #     - '.github/workflows/build.yml'
   # Adds a "Run workflow" button on the Actions tab (pick a branch, usually main). This is the
-  # way to get Windows + Web builds now.
+  # only way to get a build now.
   workflow_dispatch:
     # Inputs appear as form fields next to the Run workflow button, and the workflow reads them
     # as `inputs.<name>`. Untick this to build main without releasing it, e.g. just to refresh

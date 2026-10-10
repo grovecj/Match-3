@@ -2,21 +2,19 @@
 
 GitHub Actions and [GameCI](https://game.ci) build the game in the cloud (issue #23):
 
-- **Pull requests** that change `Assets/`, `Packages/`, `ProjectSettings/` or a workflow
-  build **Windows only**, as a check that the player build still compiles. No artifacts are
-  uploaded. Other PRs (docs only, say) don't build.
-- **Release builds are manual.** Go to **Actions → Build → Run workflow** and pick a branch
-  (usually `main`). That builds **Windows and Web** and uploads both. Merges to `main` don't
-  build on their own: with lots of small PRs, one release per merge isn't needed. The `push`
-  trigger is commented out in the workflow if you want it back.
+- **Builds are manual.** Go to **Actions → Build → Run workflow** and pick a branch
+  (usually `main`, or a PR's branch to check it still builds). That builds **Windows and Web**
+  and uploads both. Nothing builds on its own: PRs are usually merged before a build would
+  finish, and with lots of small PRs one release per merge isn't needed. The `pull_request`
+  and `push` triggers are commented out in the workflow if you want them back.
 
 - **Releases (deploys) are manual too** (issue #24). A **Run workflow** on `main` with
   **Deploy** ticked (the default) also publishes the build: Web to
   <https://games.cartergrove.me/match3/>, and the Windows zip to Spaces. See
   [Deploying](#deploying) below and the README's *Releasing* section.
 
-- **Tests run on pull requests too** (issue #33), in a separate workflow that runs next to the
-  build. See [Tests](#tests) below.
+- **Tests are manual too** (issue #33), in a separate workflow: **Actions → Test → Run
+  workflow**. See [Tests](#tests) below.
 
 The workflow is [`.github/workflows/build.yml`](../.github/workflows/build.yml). Its comments explain each step.
 
@@ -24,9 +22,9 @@ The workflow is [`.github/workflows/build.yml`](../.github/workflows/build.yml).
 
 | | |
 |---|---|
-| **Triggers** | `pull_request`, only when `Assets/`, `Packages/`, `ProjectSettings/` or anything in `.github/workflows/` changes (judged on the PR's whole diff against `main`). `workflow_dispatch` (**Run workflow**) on any branch. `push` to `main` is commented out. |
+| **Triggers** | `workflow_dispatch` (**Run workflow**) on any branch, and nothing else. `pull_request` and `push` to `main` are commented out. |
 | **Runner** | `ubuntu-latest`. Unity runs headless inside GameCI's Docker image `unityci/editor:ubuntu-6000.5.7f1-<platform>-3`. |
-| **Matrix** | PRs: `StandaloneWindows64` (Mono). Run workflow: `StandaloneWindows64` and `WebGL`, in parallel. All use GameCI's default build method with the Player Settings committed in `ProjectSettings/ProjectSettings.asset`. |
+| **Matrix** | `StandaloneWindows64` (Mono) and `WebGL`, in parallel. (If the `pull_request` trigger is turned back on, PRs build Windows only.) All use GameCI's default build method with the Player Settings committed in `ProjectSettings/ProjectSettings.asset`. |
 | **Caches** | Git LFS objects (`.git/lfs`), keyed on the list of LFS files. Unity's `Library/`, per platform, keyed on `Assets/`, `Packages/` and `ProjectSettings/`. |
 | **Artifacts** | Manual runs only: `Match3-StandaloneWindows64` and `Match3-WebGL`, kept for 7 days. Download them from the bottom of a run's summary page. |
 | **Pinned versions** | `game-ci/unity-builder` is pinned to the v6.0.0 commit SHA and its `game-ci/cli` to `v0.1.69`, because that step receives the Unity credentials. Upgrade both on purpose after reading the release notes. |
@@ -47,9 +45,9 @@ the build uses.
 
 | | |
 |---|---|
-| **Triggers** | The same as the build: `pull_request` when `Assets/`, `Packages/`, `ProjectSettings/` or `.github/workflows/` changes, plus **Actions → Test → Run workflow** on any branch. |
+| **Triggers** | The same as the build: only **Actions → Test → Run workflow**, on any branch. `pull_request` is commented out. |
 | **What runs** | `testMode: all`: every test in `Match3.Tests.EditMode`, then every test in `Match3.Tests.PlayMode`. |
-| **Fails when** | Any test fails, the code doesn't compile, or the license can't be activated. The PR then shows a red **Test** check. |
+| **Fails when** | Any test fails, the code doesn't compile, or the license can't be activated. A PR whose branch was tested then shows a red **Test** check. |
 | **Results** | A **Test Results** check run on the commit (from `githubToken`), listing every test with failures annotated. Plus a `Test-results` artifact holding the NUnit XML files, kept 7 days, uploaded even when tests fail. |
 | **Caches** | The same LFS cache as the build. Its own `Library-Tests-` cache, because the Editor imports for its default (Linux) target, not Windows or Web. |
 | **Pinned versions** | `game-ci/unity-test-runner` is pinned to the v4.4.0 commit SHA and `game-ci/cli` to `v0.1.69`, like the builder, since this step also gets the Unity credentials. |
@@ -58,9 +56,9 @@ the build uses.
 failed test with its assertion message and stack trace, and puts an annotation on the failing
 line. For the full Unity log, open the **Test** job's *Run tests* step instead.
 
-**Why a separate workflow?** It gives the PR a separate check for "tests pass" and "the player
-builds", so you can tell at a glance which one broke, re-run just the tests, and have both run
-in parallel rather than one after the other.
+**Why a separate workflow?** It keeps "tests pass" and "the player builds" as separate checks,
+so you can run just the one you want (the tests are much the quicker), and tell at a glance
+which one broke when you run both.
 
 **Why `checks: write`?** The `Test Results` check run is created with the workflow's own token,
 and creating check runs needs that permission. Otherwise the token can only read the repo.
@@ -84,8 +82,8 @@ encrypted secrets.
 4. Re-run the workflow (**Actions → Build → Run workflow**).
 
 The workflow reads these as `${{ secrets.NAME }}`. GitHub masks them as `***` in logs.
-Pull requests from **forks** don't get secrets, so their builds fail at activation. That's
-expected: only branches in this repo can be built.
+Only branches in this repo can be built: **Run workflow** doesn't offer a fork's branches, and
+a fork wouldn't get the secrets anyway.
 
 ## Deploying
 
@@ -141,11 +139,11 @@ the `deploy` job gets with write access.
 - **LFS cache.** The PNGs and fonts are in Git LFS. The free plan allows 1 GB of LFS
   downloads a month, and each fresh runner would download all of them. The cache means they
   are downloaded again only when the set of LFS files changes.
-- **Cache scope.** GitHub lets a PR read its own caches and `main`'s, but not another PR's,
-  and `main` can't read PR caches. Since merges no longer build, **`main` only gets a cache
-  when you Run workflow on `main`**. Without one, each new PR's first build is cold (~33 min
-  instead of ~7-11). So run a build on `main` now and then, for example after merging a batch
-  of PRs. That also refreshes the cache PRs start from.
+- **Cache scope.** GitHub lets a branch read its own caches and `main`'s, but not another
+  branch's, and `main` can't read a branch's. Since nothing builds by itself, **`main` only
+  gets a cache when you Run workflow on `main`**. Without one, a run on a new branch is cold
+  (~33 min instead of ~7-11 for Windows). So run a build on `main` now and then, for example
+  after merging a batch of PRs. That also refreshes the cache other branches start from.
 - **Eviction.** Caches unused for 7 days are deleted, and the repo gets 10 GB in total (each
   `Library/` cache is ~1.2-1.4 GB). Deleting a merged PR's caches (**Actions → Caches**) frees
   room so `main`'s aren't pushed out.
@@ -153,9 +151,10 @@ the `deploy` job gets with write access.
 ## Budget (private repo)
 
 The repo is private, so Actions minutes and artifact storage count against the free quota
-(2,000 Linux minutes a month on GitHub Free). A PR push costs ~7-11 min cached (~33 cold), so
-roughly 200 pushes a month. A manual Windows + Web build costs ~25 min cached (~97 cold). The
-path filters and PR cancellation keep it down further.
+(2,000 Linux minutes a month on GitHub Free). A manual Windows + Web build costs ~25 min
+cached (~97 cold). Nothing runs unless you start it, so that's the whole bill: PR builds
+(~7-11 min cached per push, ~33 cold) and PR test runs were switched off because PRs were
+usually merged before they finished.
 
 ## Timings
 
