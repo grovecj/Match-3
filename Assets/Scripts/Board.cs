@@ -209,6 +209,14 @@ namespace Match3
         // can read it, but only Board can change it.
         public bool IsReshuffling { get; private set; }
 
+        /// <summary>
+        /// True while power gems are going off: from a clear step's first detonation until its
+        /// last wave has finished playing, just before anything falls. The round clock stops
+        /// for this too, so a long chain rewards the player instead of eating their time.
+        /// An ordinary match (no power gem) never sets it.
+        /// </summary>
+        public bool IsDetonating { get; private set; }
+
         /// <summary>True while two tokens are pulsing to suggest a move.</summary>
         public bool IsHintShowing => hintedTokens != null;
 
@@ -294,8 +302,10 @@ namespace Match3
             // A swap in progress would keep moving tokens we're about to destroy, so cancel it.
             StopAllCoroutines();
             state = BoardState.Idle;
-            // The reshuffle coroutine was just stopped, so it will never get to clear this itself.
+            // The reshuffle and detonation coroutines were just stopped, so they will never get
+            // to clear these themselves.
             IsReshuffling = false;
+            IsDetonating = false;
             heldCell = null;
             BuildCells();
             FillWithRandomTokens();
@@ -1052,6 +1062,9 @@ namespace Match3
         // next. Nothing here decides what goes off, only when the player sees it.
         private IEnumerator PlayWaves(IReadOnlyList<IReadOnlyList<BoardModel.Detonation>> waves, bool firstGemsOnBoard)
         {
+            // Covers every wave, and the waits between them, so the clock is held for the whole
+            // chain and starts again only as the tokens begin to fall.
+            IsDetonating = waves.Count > 0;
             for (int waveIndex = 0; waveIndex < waves.Count; waveIndex++)
             {
                 bool isLastWave = waveIndex == waves.Count - 1;
@@ -1094,6 +1107,7 @@ namespace Match3
                     yield return new WaitForSeconds(chainDelay);
                 }
             }
+            IsDetonating = false;
         }
 
         /// <summary>
@@ -1539,6 +1553,7 @@ namespace Match3
             StopAllCoroutines();
             state = BoardState.Idle;
             IsReshuffling = false;
+            IsDetonating = false;
             heldCell = null;
             if (!ResetTokens())
             {
