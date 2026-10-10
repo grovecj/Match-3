@@ -6,6 +6,8 @@ well-explained code over polish. Explain Unity concepts when introducing them.
 - Unity 6000.5.7f1, 2D URP template, new Input System (`com.unity.inputsystem`). Target: PC.
 - Repo root is the Unity project root. Source art goes in `Art/`, game assets in `Assets/`.
 - Tasks are tracked in GitHub Issues (`gh issue list -R grovecj/Match-3`).
+- Scoring rules are constants in `Assets/Scripts/ScoreRules.cs` and must match the server's
+  checks in grovecj/match-3-api; `Docs/Scoring.md` lists both sides and how to change a rule.
 - `Docs/Vision.md` says what the game is, the pillars a feature must serve, and what we are
   not doing. For feature planning, use the `game-designer` agent (`.claude/agents/`).
 - Unity must be closed before moving/renaming files outside the Editor; always move `.meta` files with their assets.

@@ -19400,9 +19400,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Match3.ScoreKeeper
   board: {fileID: 709381719}
-  pointsForThree: 1000
-  pointsForFour: 2000
-  pointsForFiveOrMore: 5000
 --- !u!4 &2066332376
 Transform:
   m_ObjectHideFlags: 0
