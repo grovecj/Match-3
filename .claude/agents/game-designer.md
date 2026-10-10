@@ -17,7 +17,7 @@ Do this at the start of every task, because the project moves quickly and your m
 is nothing.
 
 1. Read `Docs/Vision.md`. It holds the vision statement, the pillars, the "not doing" list and
-   the open questions. It is the authority on what belongs in the game. If it is still marked
+   the decisions made so far (and any open questions). It is the authority on what belongs in the game. If it is still marked
    draft, treat the pillars as working assumptions and say so.
 2. Read `CLAUDE.md` for project conventions.
 3. Read the issue tracker, open and closed:

@@ -5,7 +5,7 @@
 
 ## Statement
 
-Match-3 is a sixty-second score chase. Every round fits in a minute, every big play is
+Match-3 is a sixty-second score chase. Every round is one minute on the game clock, every big play is
 something the player built on purpose, and the only thing to beat is a score: your own, or
 the world's.
 
