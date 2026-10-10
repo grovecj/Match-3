@@ -61,6 +61,17 @@ namespace Match3.Tests
         private static readonly Vector2Int TShapeA = new Vector2Int(2, 1);
         private static readonly Vector2Int TShapeB = new Vector2Int(3, 1);
 
+        // A third starting board, with no matches and no valid moves either: each row is the
+        // one below it shifted two places, so no single swap can line three of a type up.
+        private static readonly string[] DeadLayout =
+        {
+            "DEABC", // y = 4
+            "BCDEA",
+            "EABCD",
+            "CDEAB",
+            "ABCDE", // y = 0
+        };
+
         private readonly Dictionary<char, TokenType> types = new Dictionary<char, TokenType>();
         private GameObject themeObject;
         private GameObject cellTemplate;
@@ -82,6 +93,12 @@ namespace Match3.Tests
         // Board.SwapStarted and Board.SwapRejected, recorded as "started"/"rejected" in the
         // order they fired, so a test can check both which ones fired and their order.
         private List<string> swapEvents;
+
+        // How many times Board.NoMovesLeft has fired.
+        private int noMovesCount;
+
+        // Board.IsReshuffling, as it was each time Board.NoMovesLeft fired.
+        private List<bool> reshufflingWhenAnnounced;
 
         // [UnitySetUp] is [SetUp] that can span frames: it's a coroutine, so it can
         // `yield return null` ("wait one frame") to let Unity run Start before the test begins.
@@ -154,6 +171,10 @@ namespace Match3.Tests
             swapEvents = new List<string>();
             board.SwapStarted += () => swapEvents.Add("started");
             board.SwapRejected += () => swapEvents.Add("rejected");
+            noMovesCount = 0;
+            board.NoMovesLeft += () => noMovesCount++;
+            reshufflingWhenAnnounced = new List<bool>();
+            board.NoMovesLeft += () => reshufflingWhenAnnounced.Add(board.IsReshuffling);
         }
 
         // Runs after every test, even a failing one. In Play Mode, Destroy is the normal way to
@@ -359,6 +380,138 @@ namespace Match3.Tests
             Assert.That(clearedRuns, Is.Empty, "Nothing matched, so MatchCleared shouldn't fire.");
             Assert.AreEqual(new[] { "started", "rejected" }, swapEvents,
                 "An invalid swap should fire SwapStarted, then SwapRejected, once each.");
+            Assert.AreEqual(0, noMovesCount, "The board still has a move, so it shouldn't reshuffle.");
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator BoardWithNoValidMoves_ReshufflesItsOwnTokens()
+        {
+            board.LoadLayoutForTests(BuildLayout(DeadLayout));
+            var tokensBefore = new List<Token>();
+            var typesBefore = new List<TokenType>();
+            for (int x = 0; x < board.Width; x++)
+            {
+                for (int y = 0; y < board.Height; y++)
+                {
+                    tokensBefore.Add(board.GetToken(x, y));
+                    typesBefore.Add(board.GetToken(x, y).Type);
+                }
+            }
+
+            // The board checks for moves whenever it settles, and a swap that's put back counts.
+            // On this board every swap is put back, so any one will do.
+            Assert.IsTrue(board.TrySwap(NoMatchA, NoMatchB));
+            yield return WaitUntilIdle();
+
+            Assert.AreEqual(1, noMovesCount, "NoMovesLeft should fire once for the one reshuffle.");
+            // The GameManager stops the clock while IsReshuffling is true, so it has to cover
+            // the whole reshuffle (from the announcement on) and nothing after it.
+            Assert.AreEqual(new[] { true }, reshufflingWhenAnnounced, "IsReshuffling should already be true when NoMovesLeft fires.");
+            Assert.IsFalse(board.IsReshuffling, "IsReshuffling should be false again once the board is idle.");
+            Assert.That(clearedRuns, Is.Empty, "A reshuffle must not hand out free matches.");
+            AssertBoardIsFullAndSettled();
+            AssertNoMatchesLeft();
+
+            // The same Token objects, just in different cells: nothing destroyed, nothing spawned.
+            var tokensAfter = new List<Token>();
+            var typesAfter = new List<TokenType>();
+            for (int x = 0; x < board.Width; x++)
+            {
+                for (int y = 0; y < board.Height; y++)
+                {
+                    tokensAfter.Add(board.GetToken(x, y));
+                    typesAfter.Add(board.GetToken(x, y).Type);
+                }
+            }
+            Assert.That(tokensAfter, Is.EquivalentTo(tokensBefore), "A reshuffle should move the existing tokens.");
+            Assert.That(typesAfter, Is.Not.EqualTo(typesBefore), "The layout should have changed.");
+        }
+
+        // ---------------------------------------------------------------- Hints
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator ShowHint_PulsesTheTwoTokensOfAMoveThatReallyMatches()
+        {
+            Assert.IsFalse(board.IsHintShowing);
+            Assert.IsTrue(board.ShowHint(), "This layout has a valid move, so there's a hint to show.");
+            Assert.IsTrue(board.IsHintShowing);
+
+            // Find the hinted tokens by looking at the board, the way the player would.
+            var hinted = new List<Vector2Int>();
+            for (int x = 0; x < board.Width; x++)
+            {
+                for (int y = 0; y < board.Height; y++)
+                {
+                    if (board.GetToken(x, y).CurrentHighlight == Token.Highlight.Hint)
+                    {
+                        hinted.Add(new Vector2Int(x, y));
+                    }
+                }
+            }
+            Assert.AreEqual(2, hinted.Count, "A hint is exactly the two tokens to swap.");
+
+            // A hinted token pulses bigger than its resting size, without being picked up.
+            Token hintedToken = board.GetToken(hinted[0].x, hinted[0].y);
+            Vector3 restScale = hintedToken.transform.localScale;
+            float biggest = restScale.x;
+            for (float waited = 0f; waited < 0.5f; waited += Time.deltaTime)
+            {
+                biggest = Mathf.Max(biggest, hintedToken.transform.localScale.x);
+                yield return null;
+            }
+            Assert.That(biggest, Is.GreaterThan(restScale.x), "A hinted token should pulse.");
+            Assert.IsFalse(board.IsHolding, "Showing a hint mustn't pick anything up.");
+
+            // Taking the hint ends it, puts both tokens back to normal, and makes a match.
+            Assert.IsTrue(board.TrySwap(hinted[0], hinted[1]), "The hinted tokens should be neighbors.");
+            Assert.IsFalse(board.IsHintShowing, "Swapping should clear the hint.");
+            Assert.AreEqual(Token.Highlight.None, hintedToken.CurrentHighlight);
+            yield return WaitUntilIdle();
+            Assert.That(clearedRuns, Is.Not.Empty, "The hinted swap should have made a match.");
+            AssertBoardIsFullAndSettled();
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator PickingUpAHintedToken_EndsTheHint_AndItStillGoesBackToItsOwnSize()
+        {
+            // On this layout the hint is (1,1) and (2,1): the lowest, leftmost valid move.
+            Token hintedToken = board.GetToken(1, 1);
+            Token otherHinted = board.GetToken(2, 1);
+            Vector3 restScale = hintedToken.transform.localScale;
+            Assert.IsTrue(board.ShowHint());
+            Assert.AreEqual(Token.Highlight.Hint, hintedToken.CurrentHighlight);
+            Assert.AreEqual(Token.Highlight.Hint, otherHinted.CurrentHighlight);
+
+            // Wait until it's visibly mid-pulse, the awkward moment to pick it up.
+            yield return new WaitUntil(() => hintedToken.transform.localScale.x > restScale.x * 1.02f);
+            Assert.IsTrue(board.TryPickUp(new Vector2Int(1, 1)));
+
+            Assert.IsFalse(board.IsHintShowing, "Picking a token up should clear the hint.");
+            Assert.AreEqual(Token.Highlight.Held, hintedToken.CurrentHighlight);
+            Assert.AreEqual(Token.Highlight.None, otherHinted.CurrentHighlight);
+
+            board.DropHeld();
+            yield return new WaitForSeconds(LiftSettleSeconds);
+            Assert.That(hintedToken.transform.localScale, Is.EqualTo(restScale).Using(Vector3Comparer),
+                "A token picked up mid-pulse should still settle at exactly its old size.");
+            Assert.That(otherHinted.transform.localScale, Is.EqualTo(restScale).Using(Vector3Comparer));
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator ShowHint_IsRefusedWhileResolvingOrHolding()
+        {
+            Assert.IsTrue(board.TryPickUp(NoMatchA));
+            Assert.IsFalse(board.ShowHint(), "No hints while the player is holding a token.");
+            board.DropHeld();
+
+            Assert.IsTrue(board.TrySwap(NoMatchA, NoMatchB));
+            Assert.IsFalse(board.ShowHint(), "No hints while a swap resolves.");
+            Assert.IsFalse(board.IsHintShowing);
+            yield return WaitUntilIdle();
+
+            Assert.IsTrue(board.ShowHint(), "Hints work again once the board is idle.");
+            board.ClearHint();
+            Assert.IsFalse(board.IsHintShowing);
         }
 
         [UnityTest, Timeout(TestTimeoutMs)]

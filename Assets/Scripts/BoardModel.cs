@@ -58,6 +58,31 @@ namespace Match3
             }
         }
 
+        /// <summary>
+        /// A token moved from <see cref="From"/> to <see cref="To"/> by <see cref="Shuffle"/>.
+        /// Unlike a <see cref="Fall"/>, the two cells can be anywhere on the board.
+        /// </summary>
+        public readonly struct Move
+        {
+            public readonly Vector2Int From;
+            public readonly Vector2Int To;
+
+            public Move(Vector2Int from, Vector2Int to)
+            {
+                From = from;
+                To = to;
+            }
+        }
+
+        // How many random boards FillWithValidMove and Shuffle try before giving up. A try
+        // nearly always works on a normal board; the cap is there so a board that can't have a
+        // valid move at all (a 2x2, say) ends in "false" rather than an endless loop.
+        private const int MaxAttempts = 100;
+
+        // The two neighbors TryFindValidMove swaps each cell with. The left and lower neighbors
+        // aren't needed: those swaps were already tried when the search visited those cells.
+        private static readonly Vector2Int[] SwapDirections = { Vector2Int.right, Vector2Int.up };
+
         private readonly TokenType[,] grid;
         // The types new tokens are picked from, with nulls filtered out. Duplicates are kept, so
         // listing a type twice makes it twice as likely, same as in the Inspector array.
@@ -166,6 +191,25 @@ namespace Match3
         }
 
         /// <summary>
+        /// <see cref="FillWithoutMatches"/>, repeated until the board also has at least one
+        /// valid move, so the player is never dealt a board they can't play. Returns false if
+        /// no such board turned up (only on boards too small to ever have a move); the board is
+        /// still filled without matches.
+        /// </summary>
+        public bool FillWithValidMove()
+        {
+            for (int attempt = 0; attempt < MaxAttempts; attempt++)
+            {
+                FillWithoutMatches();
+                if (HasValidMove())
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
         /// Picks a random type for cell (x, y) that won't complete a 3-in-a-row with the two
         /// already-placed tokens to its left or the two below it.
         /// </summary>
@@ -263,6 +307,171 @@ namespace Match3
                 }
                 runStart = i;
             }
+        }
+
+        // ------------------------------------------------------------ Valid moves
+
+        /// <summary>
+        /// True if swapping some pair of neighboring tokens would make a match. Meant for a
+        /// settled board (one with no matches on it already).
+        /// </summary>
+        public bool HasValidMove()
+        {
+            // `out _` means "this method hands something back here, but I don't need it".
+            return TryFindValidMove(out _, out _);
+        }
+
+        /// <summary>
+        /// Looks for a swap that would make a match, and if there is one, returns true with the
+        /// two cells to swap in <paramref name="a"/> and <paramref name="b"/>. The board is left
+        /// exactly as it was.
+        /// </summary>
+        // This is a "brute-force" search: rather than being clever about which swaps could
+        // work, try every one of them. Each swap is a "what if": make it, ask FindMatches (the
+        // same code the real game uses, so the two can never disagree), then undo it. An 8x8
+        // board only has 112 possible swaps, so trying them all takes no time at all.
+        //
+        // `out` parameters are extra return values: the method must assign them before it
+        // returns, and the caller gets them back.
+        public bool TryFindValidMove(out Vector2Int a, out Vector2Int b)
+        {
+            for (int x = 0; x < Width; x++)
+            {
+                for (int y = 0; y < Height; y++)
+                {
+                    var cell = new Vector2Int(x, y);
+                    foreach (Vector2Int direction in SwapDirections)
+                    {
+                        if (SwapWouldMatch(cell, cell + direction))
+                        {
+                            a = cell;
+                            b = cell + direction;
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            // `default` is a type's "zero" value: (0, 0) for a Vector2Int.
+            a = default;
+            b = default;
+            return false;
+        }
+
+        /// <summary>
+        /// True if swapping the tokens in <paramref name="a"/> and <paramref name="b"/> would
+        /// leave a match on the board. Nothing is changed.
+        /// </summary>
+        private bool SwapWouldMatch(Vector2Int a, Vector2Int b)
+        {
+            if (!IsInBounds(a) || !IsInBounds(b))
+            {
+                return false;
+            }
+
+            TokenType typeA = TypeAt(a);
+            TokenType typeB = TypeAt(b);
+            // An empty cell can't be swapped, and swapping two of the same type changes nothing.
+            if (typeA == null || typeB == null || typeA == typeB)
+            {
+                return false;
+            }
+
+            Swap(a, b);
+            bool matches = FindMatches().Count > 0;
+            Swap(a, b);
+            return matches;
+        }
+
+        // ------------------------------------------------------------ Shuffling
+
+        /// <summary>
+        /// Rearranges the tokens already on the board (the same number of each type, in new
+        /// cells) so that there are no matches and at least one valid move. Returns where every
+        /// token went, or null, with the board untouched, if no such arrangement was found.
+        /// </summary>
+        public List<Move> Shuffle()
+        {
+            // Remember the board as it is now: it's where the tokens come from, and what to put
+            // back if this doesn't work out. Clone copies the array (a plain assignment would
+            // just be a second name for the same one).
+            var original = (TokenType[,])grid.Clone();
+
+            for (int attempt = 0; attempt < MaxAttempts; attempt++)
+            {
+                List<Move> moves = DealFromBag(original);
+                if (moves != null && HasValidMove())
+                {
+                    return moves;
+                }
+            }
+
+            System.Array.Copy(original, grid, original.Length);
+            return null;
+        }
+
+        /// <summary>
+        /// One shuffle attempt: puts every token of <paramref name="original"/> into "the bag",
+        /// then fills the board the way <see cref="FillWithoutMatches"/> does, except each cell's
+        /// token is drawn from the bag instead of being any type we like. Returns null if it gets
+        /// stuck: a cell where everything left in the bag would make a match.
+        /// </summary>
+        private List<Move> DealFromBag(TokenType[,] original)
+        {
+            // The bag holds cells rather than types, so we know which token (not just which
+            // type) lands where, and the Board can slide that very token across.
+            var bag = new List<Vector2Int>();
+            for (int x = 0; x < Width; x++)
+            {
+                for (int y = 0; y < Height; y++)
+                {
+                    if (original[x, y] != null)
+                    {
+                        bag.Add(new Vector2Int(x, y));
+                    }
+                }
+            }
+
+            var moves = new List<Move>();
+            var candidates = new List<int>();
+            for (int x = 0; x < Width; x++)
+            {
+                for (int y = 0; y < Height; y++)
+                {
+                    // Empty cells stay empty.
+                    if (original[x, y] == null)
+                    {
+                        continue;
+                    }
+
+                    // Same rule as PickTypeWithoutMatch: the cells to the left and below were
+                    // dealt earlier in this attempt, so they're safe to look at.
+                    TokenType forbiddenHorizontal = x >= 2 && grid[x - 1, y] == grid[x - 2, y] ? grid[x - 1, y] : null;
+                    TokenType forbiddenVertical = y >= 2 && grid[x, y - 1] == grid[x, y - 2] ? grid[x, y - 1] : null;
+
+                    // The places in the bag holding a token that's allowed here.
+                    candidates.Clear();
+                    for (int i = 0; i < bag.Count; i++)
+                    {
+                        TokenType type = original[bag[i].x, bag[i].y];
+                        if (type != forbiddenHorizontal && type != forbiddenVertical)
+                        {
+                            candidates.Add(i);
+                        }
+                    }
+                    if (candidates.Count == 0)
+                    {
+                        return null;
+                    }
+
+                    int picked = candidates[random.Next(candidates.Count)];
+                    Vector2Int from = bag[picked];
+                    bag.RemoveAt(picked);
+                    grid[x, y] = original[from.x, from.y];
+                    moves.Add(new Move(from, new Vector2Int(x, y)));
+                }
+            }
+            return moves;
         }
 
         // ------------------------------------------------------------ Clearing, gravity, refill
