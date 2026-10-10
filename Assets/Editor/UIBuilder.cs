@@ -6,7 +6,7 @@ using UnityEngine.UI;
 /// <summary>
 /// Small helpers shared by the Editor tools that build UI from code
 /// (<see cref="SettingsMenuBuilder"/>, <see cref="LeaderboardMenuBuilder"/>,
-/// <see cref="AccountMenuBuilder"/>): creating UI
+/// <see cref="AccountMenuBuilder"/>, <see cref="AchievementsMenuBuilder"/>): creating UI
 /// objects, positioning them, and setting private [SerializeField] references.
 ///
 /// The builders say "using static UIBuilder;", which lets them call these as if they were

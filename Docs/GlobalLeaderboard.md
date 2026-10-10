@@ -28,6 +28,10 @@ The round token is the server's protection against made-up scores: it only accep
 for a round it saw start at least 55 seconds earlier, once per round, and no more than 10,000
 points per second of play. So a round must really be played to be posted.
 
+Achievements ride on the same request: the score is posted with the round's stats (how many
+matches of each size, and so on), and the reply lists what the round unlocked. See
+[Achievements.md](Achievements.md).
+
 **Testing tip:** that also means a shortened round (a small `roundDuration` on the
 GameManager) is turned down with "The global leaderboard didn't accept this round." Test
 posting with full 60-second rounds.

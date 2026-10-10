@@ -1,5 +1,6 @@
 using Match3;
 using Match3.Accounts;
+using Match3.Achievements;
 using Match3.Online;
 using TMPro;
 using UnityEditor;
@@ -57,6 +58,18 @@ public static class LeaderboardMenuBuilder
         // coroutines keep running while the panel is hidden.
         var online = root.AddComponent<OnlineLeaderboardClient>();
         SetReference(online, "accountManager", accountManager);
+        // The old client is gone, and the achievements pieces pointed at it. If they exist
+        // (Match3 > Build Achievements Menu), point them at the new one.
+        var roundStats = Object.FindAnyObjectByType<RoundStatsTracker>();
+        if (roundStats != null)
+        {
+            SetReference(online, "roundStats", roundStats);
+        }
+        var achievements = Object.FindAnyObjectByType<AchievementsClient>();
+        if (achievements != null)
+        {
+            SetReference(achievements, "online", online);
+        }
 
         BuildPanel(root, menu);
         BuildPrompt(root, menu);

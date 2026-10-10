@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using Match3.Achievements;
 
 namespace Match3.Online
 {
@@ -20,8 +21,13 @@ namespace Match3.Online
         /// </summary>
         IEnumerator StartRound(string accessToken, Action<ApiResult<string>> done);
 
-        /// <summary><c>POST /scores</c>: posts the round's score. Answers with the player's best and rank.</summary>
-        IEnumerator SubmitScore(string accessToken, string roundToken, int score, Action<ApiResult<Standing>> done);
+        /// <summary>
+        /// <c>POST /scores</c>: posts the round's score, with what happened in the round
+        /// (<paramref name="stats"/>, or null to send none). Answers with the player's best and
+        /// rank, and any achievements the round unlocked.
+        /// </summary>
+        IEnumerator SubmitScore(string accessToken, string roundToken, int score, RoundStats stats,
+            Action<ApiResult<Standing>> done);
 
         /// <summary><c>GET /scores/top</c>: the best <paramref name="limit"/> players. Public: no token needed.</summary>
         IEnumerator GetTop(int limit, Action<ApiResult<GlobalEntry[]>> done);
@@ -66,12 +72,21 @@ namespace Match3.Online
         public int score;
     }
 
-    /// <summary>Where a player stands: their best score, and its rank (1 = top; tied players share a rank).</summary>
+    /// <summary>
+    /// The answer to a posted score. Where the player stands: their best score, and its rank
+    /// (1 = top; tied players share a rank). And what the round earned them.
+    /// </summary>
     [Serializable]
     public class Standing
     {
         public int best;
         public int rank;
+
+        /// <summary>
+        /// The achievements this round unlocked (empty if none). Null means we don't know: the
+        /// server's reply was lost and the standing had to be asked for again.
+        /// </summary>
+        public Achievement[] unlocked;
     }
 
     /// <summary>

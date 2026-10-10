@@ -1,5 +1,6 @@
 using System;
 using System.Text.RegularExpressions;
+using Match3.Achievements;
 using UnityEngine;
 
 namespace Match3.Online
@@ -26,7 +27,14 @@ namespace Match3.Online
         public static Standing ParseStanding(string json)
         {
             Standing standing = Parse<Standing>(json);
-            return standing != null && standing.rank > 0 ? standing : null;
+            if (standing == null || standing.rank <= 0)
+            {
+                return null;
+            }
+            // A server from before achievements sends no "unlocked" at all. That round earned
+            // none, which is an empty list (null is kept for "we don't know", see Standing).
+            standing.unlocked ??= new Achievement[0];
+            return standing;
         }
 
         public static GlobalEntry[] ParseTop(string json)

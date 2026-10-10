@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Globalization;
 using Match3.Accounts;
+using Match3.Achievements;
 using UnityEngine;
 
 namespace Match3.Online
@@ -14,7 +15,8 @@ namespace Match3.Online
     /// <see cref="RoundEnded"/> posts the score with that token. The server only accepts a
     /// score for a round it saw start about a minute earlier, which is its basic protection
     /// against made-up scores. How it went is in <see cref="LastPost"/> and
-    /// <see cref="PostMessage"/>.
+    /// <see cref="PostMessage"/>. The round's <see cref="RoundStats"/> go with the score, and
+    /// the server answers with any achievements they earned (<see cref="ScorePosted"/>).
     ///
     /// <b>Showing the board.</b> <see cref="RefreshBoard"/> loads the top players
     /// (<see cref="Top"/>, public, so guests see it too) and, when signed in, the player's own
@@ -44,9 +46,17 @@ namespace Match3.Online
         [SerializeField] private AccountManager accountManager;
         [Tooltip("The leaderboard server. Only change it to test against a local server, and don't commit that.")]
         [SerializeField] private string baseUrl = HttpLeaderboardApi.DefaultBaseUrl;
+        [Tooltip("Counts what happens in each round, to send with its score. Optional: without it, scores are posted without stats, which earns fewer achievements.")]
+        [SerializeField] private RoundStatsTracker roundStats;
 
         /// <summary>Raised whenever anything below changes.</summary>
         public event Action Changed;
+
+        /// <summary>
+        /// Raised when the server has accepted a round's score, with the achievements it
+        /// unlocked: empty if none, null if we couldn't find out (see <see cref="Standing.unlocked"/>).
+        /// </summary>
+        public event Action<Achievement[]> ScorePosted;
 
         public PostState LastPost { get; private set; }
 
@@ -75,6 +85,11 @@ namespace Match3.Online
         // (see ConfigureForTests), so they don't need a real sign-in.
         private Func<bool> isSignedIn;
         private Func<Action<string>, IEnumerator> getAccessToken;
+        // The round's stats so far, or null to post without any.
+        private Func<RoundStats> getRoundStats;
+        // The signed-in account's id (null when signed out), to notice the player changing
+        // while a score is on its way.
+        private Func<string> getUserId;
 
         // Counts rounds. Each request remembers which round it was for, and an answer that
         // arrives after the next round has started is ignored instead of mixing the two up.
@@ -103,6 +118,11 @@ namespace Match3.Online
             // A method name without "()" is a delegate: a reference to the method itself, to
             // call later. GetAccessToken's shape (takes a callback, returns a coroutine) matches.
             getAccessToken = accountManager.GetAccessToken;
+            getUserId = () => accountManager.UserId;
+            if (roundStats != null)
+            {
+                getRoundStats = () => roundStats.Stats;
+            }
         }
 
         /// <summary>
@@ -118,6 +138,10 @@ namespace Match3.Online
             LastPost = PostState.None;
             LastStanding = null;
             PostMessage = null;
+            if (roundStats != null)
+            {
+                roundStats.ResetStats();
+            }
 
             if (enabled && IsSignedIn)
             {
@@ -143,7 +167,8 @@ namespace Match3.Online
                 Changed?.Invoke();
                 return;
             }
-            StartCoroutine(PostScore(round, score));
+            // Read the stats now, at the moment the score was read, so the two belong together.
+            StartCoroutine(PostScore(round, score, getRoundStats?.Invoke()));
         }
 
         /// <summary>Loads the top players (and, when signed in, the player's own standing).</summary>
@@ -190,8 +215,12 @@ namespace Match3.Online
             }
         }
 
-        private IEnumerator PostScore(int thisRound, int score)
+        private IEnumerator PostScore(int thisRound, int score, RoundStats stats)
         {
+            // Whose round this is. The Account menu opens as soon as the round ends, so the
+            // player can sign out (or someone else sign in) before the server has answered.
+            string postedBy = getUserId?.Invoke();
+
             LastPost = PostState.Posting;
             PostMessage = "Posting your score...";
             Changed?.Invoke();
@@ -224,7 +253,7 @@ namespace Match3.Online
             }
 
             ApiResult<Standing> result = null;
-            yield return api.SubmitScore(token, roundToken, score, r => result = r);
+            yield return api.SubmitScore(token, roundToken, score, stats, r => result = r);
             if (thisRound != round)
             {
                 yield break;
@@ -237,6 +266,13 @@ namespace Match3.Online
                 LastStanding = result.Value;
                 PostMessage = $"Posted! Your best: {Format(result.Value.best)}, #{result.Value.rank}";
                 Changed?.Invoke();
+                // The unlocks belong to whoever played the round. If that's no longer who is
+                // signed in, announcing them would show one player's achievements to another
+                // (or to nobody), so keep quiet: they'll be in that player's list next time.
+                if (getUserId?.Invoke() == postedBy)
+                {
+                    ScorePosted?.Invoke(result.Value.unlocked);
+                }
                 // The board has (maybe) just changed, so load it again for when it's next shown.
                 RefreshBoard();
             }
@@ -323,11 +359,14 @@ namespace Match3.Online
         /// still inactive, before Awake runs.
         /// </summary>
         internal void ConfigureForTests(ILeaderboardApi api, Func<bool> isSignedIn,
-            Func<Action<string>, IEnumerator> getAccessToken)
+            Func<Action<string>, IEnumerator> getAccessToken, Func<RoundStats> getRoundStats = null,
+            Func<string> getUserId = null)
         {
             this.api = api;
             this.isSignedIn = isSignedIn;
             this.getAccessToken = getAccessToken;
+            this.getRoundStats = getRoundStats;
+            this.getUserId = getUserId;
         }
     }
 }

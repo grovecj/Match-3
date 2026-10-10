@@ -12,6 +12,7 @@ namespace Match3
         RoundEndHorn,
         Swap,
         InvalidSwap,
+        AchievementUnlocked,
     }
 
     /// <summary>
@@ -48,6 +49,10 @@ namespace Match3
         [Tooltip("A swap that makes no match and swaps back.")]
         [SerializeField] private AudioClip invalidSwap;
 
+        [Header("Achievements")]
+        [Tooltip("Played with the \"Achievement unlocked\" toast.")]
+        [SerializeField] private AudioClip achievementUnlocked;
+
         public string Id => id;
         public string DisplayName => displayName;
 
@@ -64,6 +69,7 @@ namespace Match3
                 SoundId.RoundEndHorn => roundEndHorn,
                 SoundId.Swap => swap,
                 SoundId.InvalidSwap => invalidSwap,
+                SoundId.AchievementUnlocked => achievementUnlocked,
                 _ => null,
             };
         }
