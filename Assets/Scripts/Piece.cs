@@ -1,8 +1,9 @@
 namespace Match3
 {
     /// <summary>
-    /// The special ability a <see cref="Piece"/> has, if any. Only <see cref="None"/> is ever
-    /// created so far; the others are here so the board can already carry them around.
+    /// The special ability a <see cref="Piece"/> has, if any. Matches make <see cref="Flame"/>
+    /// gems (see <see cref="BoardModel.PowerMadeBy"/>); <see cref="Star"/> and
+    /// <see cref="Hypercube"/> are never created yet, but the board can already carry them around.
     /// </summary>
     // An enum is a named set of whole numbers: None is 0, Flame is 1, and so on. Putting None
     // first matters, because 0 is what a field holds before anything is assigned to it.
@@ -10,6 +11,7 @@ namespace Match3
     {
         /// <summary>An ordinary gem.</summary>
         None,
+        /// <summary>Made by a line of exactly 4. When it's matched, it clears the 3x3 around it.</summary>
         Flame,
         Star,
         /// <summary>The one power gem with no colour of its own.</summary>
