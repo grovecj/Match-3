@@ -296,7 +296,8 @@ namespace Match3
         /// <summary>
         /// Finds every horizontal and vertical run of 3+ same-colour pieces. A piece's power makes
         /// no difference, and a piece with no colour is never part of a run. Each run is returned
-        /// separately, so an L or T shape comes back as two runs that share a cell. Rows come
+        /// separately, so an L or T shape comes back as two runs that share a cell (see
+        /// <see cref="FindMatchGroups"/> for the shapes put back together). Rows come
         /// first (bottom to top), then columns (left to right); within a run, cells are in order
         /// left to right or bottom to top.
         /// </summary>
@@ -354,6 +355,79 @@ namespace Match3
                 }
                 runStart = i;
             }
+        }
+
+        /// <summary>
+        /// Finds every match on the board as a whole shape: the runs from
+        /// <see cref="FindMatches"/>, with runs that share a cell (an L, T or +) merged into one
+        /// <see cref="MatchGroup"/>. Runs that merely sit next to each other stay separate.
+        /// Each group knows its shape and its anchor cell. The board isn't changed.
+        ///
+        /// Groups are in the order of their first run, and each group's runs are in the order
+        /// <see cref="FindMatches"/> found them.
+        /// </summary>
+        /// <param name="swappedA">One of the two cells the player just swapped. Leave both null for a cascade.</param>
+        /// <param name="swappedB">The other swapped cell.</param>
+        public List<MatchGroup> FindMatchGroups(Vector2Int? swappedA = null, Vector2Int? swappedB = null)
+        {
+            List<List<Vector2Int>> runs = FindMatches();
+
+            // groupOf[i] is the label of the group run i belongs to. Every run starts out alone,
+            // labelled with its own index. When two runs turn out to share a cell, everything
+            // carrying one label is relabelled with the other, joining the two groups. The
+            // smaller label is the one kept, so a group's label is always the index of its
+            // first run.
+            var groupOf = new int[runs.Count];
+            for (int i = 0; i < runs.Count; i++)
+            {
+                groupOf[i] = i;
+            }
+
+            // The first run found on each cell. A cell can be in at most two runs (one along
+            // its row, one up its column), so one entry per cell is enough to spot a crossing.
+            var runAt = new Dictionary<Vector2Int, int>();
+            for (int i = 0; i < runs.Count; i++)
+            {
+                foreach (Vector2Int cell in runs[i])
+                {
+                    if (!runAt.TryGetValue(cell, out int other))
+                    {
+                        runAt[cell] = i;
+                        continue;
+                    }
+
+                    int keep = Mathf.Min(groupOf[i], groupOf[other]);
+                    int drop = Mathf.Max(groupOf[i], groupOf[other]);
+                    for (int j = 0; j < runs.Count; j++)
+                    {
+                        if (groupOf[j] == drop)
+                        {
+                            groupOf[j] = keep;
+                        }
+                    }
+                }
+            }
+
+            var groups = new List<MatchGroup>();
+            for (int first = 0; first < runs.Count; first++)
+            {
+                // Only a group's first run still has its own index as its label.
+                if (groupOf[first] != first)
+                {
+                    continue;
+                }
+
+                var groupRuns = new List<List<Vector2Int>>();
+                for (int i = first; i < runs.Count; i++)
+                {
+                    if (groupOf[i] == first)
+                    {
+                        groupRuns.Add(runs[i]);
+                    }
+                }
+                groups.Add(new MatchGroup(TypeAt(runs[first][0]), groupRuns, swappedA, swappedB));
+            }
+            return groups;
         }
 
         // ------------------------------------------------------------ Valid moves
