@@ -39,6 +39,9 @@ namespace Match3
         /// found them (rows before columns). Runs that cross both list the cell they share.
         /// </summary>
         // IReadOnlyList lets other code read and loop over the list but not add to or remove from it.
+        // That only covers the outer list: each run inside is still an ordinary List, the same
+        // one FindMatches made, because the code that clears runs takes them in that form. So
+        // treat the runs as read-only too; Cells, Shape and Anchor were worked out from them.
         public IReadOnlyList<List<Vector2Int>> Runs { get; }
 
         /// <summary>Every cell in the group, each listed once.</summary>
