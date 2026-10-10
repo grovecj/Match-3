@@ -744,12 +744,19 @@ namespace Match3
 
         /// <summary>
         /// The power gem a match of <paramref name="shape"/> leaves behind at its anchor, or
-        /// <see cref="PowerKind.None"/> if it leaves nothing. So far only a line of exactly 4
-        /// makes one (a Flame).
+        /// <see cref="PowerKind.None"/> if it leaves nothing. A line of exactly 4 makes a Flame,
+        /// and an L, T or + makes a Star.
         /// </summary>
         public static PowerKind PowerMadeBy(MatchShape shape)
         {
-            return shape == MatchShape.Line4 ? PowerKind.Flame : PowerKind.None;
+            // A switch picks one branch by comparing a value against each `case`. `default` is
+            // the branch for everything not listed.
+            switch (shape)
+            {
+                case MatchShape.Line4: return PowerKind.Flame;
+                case MatchShape.Cross: return PowerKind.Star;
+                default: return PowerKind.None;
+            }
         }
 
         /// <summary>
@@ -776,19 +783,63 @@ namespace Match3
         }
 
         /// <summary>
+        /// The cells a Star in <paramref name="centre"/> blasts: its whole row and its whole
+        /// column, including <paramref name="centre"/> itself (once). That is always
+        /// Width + Height - 1 cells, wherever the Star is: unlike a Flame's blast, nothing is
+        /// lost at an edge. The row is listed first, left to right, then the rest of the column,
+        /// bottom to top.
+        /// </summary>
+        public List<Vector2Int> StarBlastCells(Vector2Int centre)
+        {
+            var cells = new List<Vector2Int>();
+            for (int x = 0; x < Width; x++)
+            {
+                cells.Add(new Vector2Int(x, centre.y));
+            }
+            for (int y = 0; y < Height; y++)
+            {
+                // The row already listed the centre.
+                if (y != centre.y)
+                {
+                    cells.Add(new Vector2Int(centre.x, y));
+                }
+            }
+            return cells;
+        }
+
+        /// <summary>
+        /// The cells a gem with <paramref name="power"/> blasts when it goes off in
+        /// <paramref name="cell"/>: see <see cref="FlameBlastCells"/> and
+        /// <see cref="StarBlastCells"/>. Empty for a power that has no blast.
+        /// </summary>
+        // This is the one place that knows which power has which blast. ClearMatches asks here
+        // rather than checking for each kind of gem itself, so a new kind of blast is a new
+        // case here and nothing else in the clear step has to change.
+        public List<Vector2Int> BlastCells(PowerKind power, Vector2Int cell)
+        {
+            switch (power)
+            {
+                case PowerKind.Flame: return FlameBlastCells(cell);
+                case PowerKind.Star: return StarBlastCells(cell);
+                default: return new List<Vector2Int>();
+            }
+        }
+
+        /// <summary>
         /// One whole clear step, done in a fixed order:
         ///  1. every cell of every group in <paramref name="groups"/> is emptied, except that a
         ///     group whose shape makes a power gem (see <see cref="PowerMadeBy"/>) gets that gem,
         ///     in the group's colour, in its anchor cell instead;
-        ///  2. every Flame that was among the matched cells then detonates, emptying the cells
-        ///     around it (see <see cref="FlameBlastCells"/>).
+        ///  2. every power gem that was among the matched cells then detonates, emptying the
+        ///     cells its blast covers (see <see cref="BlastCells"/>): the 3x3 around a Flame, the
+        ///     row and column of a Star.
         /// Gravity is not part of it: call <see cref="Collapse"/> afterwards, so nothing falls
         /// between a match and its blast.
         ///
         /// A gem made in step 1 is never touched by step 2: it wasn't on the board when the
         /// match happened, so it neither goes off nor gets blasted away. That holds even when a
-        /// Flame is itself the anchor of a line of 4: the old Flame goes off and a new one is
-        /// left in its place.
+        /// power gem is itself the anchor of a match that makes one: the old gem goes off and
+        /// the new one is left in its place.
         ///
         /// A blast only removes what it hits. A power gem caught in one is simply cleared, it
         /// doesn't go off in turn.
@@ -800,11 +851,11 @@ namespace Match3
             var created = new List<Creation>();
             // Where this step's new gems are, so the blasts below can leave them alone.
             var createdCells = new HashSet<Vector2Int>();
-            // The Flames found among the matched cells. They're only noted here and set off
-            // after every group has been cleared, so the result doesn't depend on which group
-            // happened to be looked at first.
-            var flames = new List<Vector2Int>();
-            var flamePieces = new List<Piece>();
+            // The power gems found among the matched cells, and what each one was. They're only
+            // noted here and set off after every group has been cleared, so the result doesn't
+            // depend on which group happened to be looked at first.
+            var gemCells = new List<Vector2Int>();
+            var gemPieces = new List<Piece>();
 
             // Two groups never share a cell (FindMatchGroups would have merged them), so each
             // matched cell is visited exactly once.
@@ -814,10 +865,12 @@ namespace Match3
                 foreach (Vector2Int cell in group.Cells)
                 {
                     Piece piece = grid[cell.x, cell.y];
-                    if (piece.Power == PowerKind.Flame)
+                    // Any power at all: a matched gem always goes off. (A Hypercube can't get
+                    // here, because a piece with no colour is never part of a match.)
+                    if (piece.Power != PowerKind.None)
                     {
-                        flames.Add(cell);
-                        flamePieces.Add(piece);
+                        gemCells.Add(cell);
+                        gemPieces.Add(piece);
                     }
 
                     if (made != PowerKind.None && cell == group.Anchor)
@@ -836,10 +889,10 @@ namespace Match3
             }
 
             var detonations = new List<Detonation>();
-            for (int i = 0; i < flames.Count; i++)
+            for (int i = 0; i < gemCells.Count; i++)
             {
                 var blasted = new List<Vector2Int>();
-                foreach (Vector2Int cell in FlameBlastCells(flames[i]))
+                foreach (Vector2Int cell in BlastCells(gemPieces[i].Power, gemCells[i]))
                 {
                     // Already empty means the match (or an earlier blast) cleared it: there's
                     // nothing left there for this blast to remove.
@@ -850,7 +903,7 @@ namespace Match3
                     grid[cell.x, cell.y] = Piece.Empty;
                     blasted.Add(cell);
                 }
-                detonations.Add(new Detonation(flames[i], flamePieces[i], blasted));
+                detonations.Add(new Detonation(gemCells[i], gemPieces[i], blasted));
             }
 
             return new ClearResult(matched, created, detonations);

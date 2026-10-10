@@ -8,7 +8,8 @@ namespace Match3
     /// own sprite is untouched underneath. That's what lets one effect work with every token
     /// style (Gems, Flat, Glass) without any of them needing a "flame" version of their art.
     ///
-    /// The token creates this the first time it's given a Flame (see <c>Token.SetPiece</c>).
+    /// The token creates this the first time it's given a power (see <c>Token.SetPiece</c>),
+    /// and switches it on only while that power is a Flame; a Star has <see cref="StarSparkle"/>.
     /// Being a child, it follows the token for free: it falls with it, grows with it when the
     /// token is picked up, and shrinks away with it when the token pops.
     /// </summary>

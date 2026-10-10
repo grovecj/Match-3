@@ -44,7 +44,7 @@ namespace Match3
         [SerializeField, Min(0.01f)] private float springBackDuration = 0.2f;
 
         [Header("Resolving")]
-        [Tooltip("Pause, in seconds, between matched tokens being cleared and the rest falling. The pop plays during it. A Flame's blast takes the same again.")]
+        [Tooltip("Pause, in seconds, between matched tokens being cleared and the rest falling. The pop plays during it. A power gem's blast takes the same again, plus however long a Star's beam travels.")]
         [SerializeField, Min(0f)] private float clearDelay = 0.25f;
         [Tooltip("How fast falling tokens move, in cells per second.")]
         [SerializeField, Min(0.1f)] private float fallSpeed = 10f;
@@ -54,6 +54,8 @@ namespace Match3
         [SerializeField, Min(0f)] private float popDuration = 0.12f;
         [Tooltip("Particle burst spawned on every cleared cell. Optional: without one, tokens just pop.")]
         [SerializeField] private Explosion explosionPrefab;
+        [Tooltip("How fast a Star's beam travels along its row and column, in cells per second. Each token in its path pops as the beam reaches it.")]
+        [SerializeField, Min(0.1f)] private float beamSpeed = 16f;
 
         [Header("Reshuffling")]
         [Tooltip("Pause, in seconds, between running out of moves and the tokens shuffling, so the player sees why.")]
@@ -73,6 +75,12 @@ namespace Match3
         // flash. A placeholder: proper blast effects and sounds are a later issue.
         private const float BlastBurstScale = 3f;
         private const int BlastBurstRunLength = 5;
+
+        // A Star's beam is drawn this far in front of the tokens: above a picked-up token and
+        // its overlay, so nothing on the board covers it.
+        private const int BeamOrderOffset = 10;
+        // How much white is mixed into the gem's colour for its beam (0 = none, 1 = all white).
+        private const float BeamWhiteness = 0.6f;
 
         /// <summary>
         /// Fired once for every run of matching tokens that gets cleared, with the run's length
@@ -780,8 +788,10 @@ namespace Match3
                 // the code reads in the order things happen.
                 if (result.Detonations.Count > 0)
                 {
-                    List<Token> blasted = Detonate(result.Detonations);
-                    yield return StartCoroutine(PopAndPause(blasted));
+                    // `out` hands back a second list alongside the returned one: how long each
+                    // blasted token waits before it pops (see Detonate).
+                    List<Token> blasted = Detonate(result.Detonations, out List<float> popDelays);
+                    yield return StartCoroutine(PopAndPause(blasted, popDelays));
                 }
 
                 // Phase 3: only now does anything fall.
@@ -843,7 +853,7 @@ namespace Match3
             // are created or destroyed: each one just changes what it shows.
             // The redeal only changes colours: a power gem is still a power gem afterwards, in
             // the same cell. (FillWithValidMove would also work, but it makes every piece an
-            // ordinary one, silently deleting the player's Flames.)
+            // ordinary one, silently deleting the player's power gems.)
             if (!model.RedealKeepingPowers())
             {
                 Debug.LogWarning($"Board: a {width}x{height} board with these token types has no valid moves.", this);
@@ -975,28 +985,101 @@ namespace Match3
         }
 
         /// <summary>
-        /// Phase 2 of a clear step: for each power gem the model set off, spawns one big burst
-        /// on its cell, takes the tokens its blast cleared off the board, and reports it through
+        /// Phase 2 of a clear step: for each power gem the model set off, shows its blast (one
+        /// big burst for a Flame, a beam along the row and column for a Star), takes the tokens
+        /// the blast cleared off the board, and reports it through
         /// <see cref="PowerGemDetonated"/>. Returns the removed tokens, as
         /// <see cref="RemoveMatched"/> does. The gem's own token isn't among them: it was part
         /// of the match, so it has already popped.
         /// </summary>
+        /// <param name="popDelays">
+        /// For each returned token, in the same order, how many seconds to wait before popping
+        /// it (see <see cref="BlastDelay"/>).
+        /// </param>
         // Blasted gems score nothing yet (that's the scoring issue), so no MatchCleared here.
-        private List<Token> Detonate(IReadOnlyList<BoardModel.Detonation> detonations)
+        private List<Token> Detonate(IReadOnlyList<BoardModel.Detonation> detonations, out List<float> popDelays)
         {
             var removed = new List<Token>();
+            popDelays = new List<float>();
             foreach (BoardModel.Detonation detonation in detonations)
             {
                 // The gem's token is gone by now, which is why the model hands back the piece it
                 // was: that's where the blast's colour comes from.
-                SpawnExplosion(detonation.Cell, detonation.Piece.Colour, BlastBurstRunLength, BlastBurstScale);
+                TokenType colour = detonation.Piece.Colour;
+                if (detonation.Kind == PowerKind.Star)
+                {
+                    // An ordinary-sized burst on the gem itself; the beam does the travelling.
+                    SpawnExplosion(detonation.Cell, colour, BlastBurstRunLength);
+                    SpawnBeam(detonation.Cell, colour);
+                }
+                else
+                {
+                    SpawnExplosion(detonation.Cell, colour, BlastBurstRunLength, BlastBurstScale);
+                }
+
+                // All the blasted tokens leave the board (the view array) right now, so it
+                // agrees with the model again. What's spread over time is only when each pops.
                 foreach (Vector2Int cell in detonation.Blasted)
                 {
                     removed.Add(TakeToken(cell));
+                    popDelays.Add(BlastDelay(detonation.Kind, detonation.Cell, cell, beamSpeed));
                 }
                 PowerGemDetonated?.Invoke(detonation.Kind, detonation.Cell);
             }
             return removed;
+        }
+
+        /// <summary>
+        /// How many seconds after a power gem of <paramref name="kind"/> goes off in
+        /// <paramref name="gemCell"/> its blast reaches <paramref name="cell"/>. A Flame's blast
+        /// hits everything at once (0). A Star's beam travels outward at
+        /// <paramref name="beamSpeed"/> cells per second, so a cell 3 away waits 3 times as long
+        /// as the one next to the gem.
+        /// </summary>
+        // This is how an effect is sequenced across cells: the whole blast is decided up front,
+        // and each cell is just given its own start time. Nothing has to "step" along the row.
+        // `public static` so the Edit Mode tests can check it without a scene.
+        public static float BlastDelay(PowerKind kind, Vector2Int gemCell, Vector2Int cell, float beamSpeed)
+        {
+            if (kind != PowerKind.Star)
+            {
+                return 0f;
+            }
+
+            // A cell in the Star's row or column differs from it in only x or only y, so adding
+            // the two differences gives its distance along the beam, in cells.
+            int distance = Mathf.Abs(cell.x - gemCell.x) + Mathf.Abs(cell.y - gemCell.y);
+            return distance / beamSpeed;
+        }
+
+        /// <summary>
+        /// Fires a Star's beam from <paramref name="cell"/> to the four edges of the board, in a
+        /// pale version of <paramref name="type"/>'s colour. The beam runs and cleans up by
+        /// itself (see <see cref="StarBeam"/>).
+        /// </summary>
+        private void SpawnBeam(Vector2Int cell, TokenType type)
+        {
+            // Unlike the Explosion there's no prefab: the beam is simple enough to build in
+            // code. Parented to the Board, like the bursts, to keep the Hierarchy tidy.
+            var beamObject = new GameObject("Star Beam");
+            beamObject.transform.SetParent(transform, false);
+            beamObject.transform.position = GridToWorld(cell.x, cell.y);
+            StarBeam beam = beamObject.AddComponent<StarBeam>();
+
+            TokenStyle style = CurrentTokenStyle;
+            Color gemColor = style != null ? style.BurstColorFor(type) : Color.white;
+            // The token prefab's renderer says how tokens are drawn (material, sorting layer).
+            SpriteRenderer tokenRenderer = tokenPrefab.GetComponent<SpriteRenderer>();
+
+            // Each arm starts in the middle of the gem's cell, so it has half a cell to cross
+            // before it even leaves that cell, then one whole cell for each cell beyond it.
+            beam.Play(Color.Lerp(gemColor, Color.white, BeamWhiteness), cellSize, beamSpeed,
+                reachRight: width - cell.x - 0.5f,
+                reachUp: height - cell.y - 0.5f,
+                reachLeft: cell.x + 0.5f,
+                reachDown: cell.y + 0.5f,
+                drawLike: tokenRenderer,
+                sortingOrder: tokenRenderer.sortingOrder + BeamOrderOffset);
         }
 
         /// <summary>
@@ -1015,13 +1098,16 @@ namespace Match3
 
         /// <summary>
         /// Pops <paramref name="popping"/> and then waits out whatever is left of
-        /// <see cref="clearDelay"/>.
+        /// <see cref="clearDelay"/>. <paramref name="delays"/>, if given, holds each token's wait
+        /// before its pop starts (see <see cref="AnimatePops"/>).
         /// </summary>
-        private IEnumerator PopAndPause(List<Token> popping)
+        // `= null` makes the parameter optional: the match phase leaves it out, and everything
+        // pops together.
+        private IEnumerator PopAndPause(List<Token> popping, List<float> delays = null)
         {
             // The pop is part of the clear delay, not extra time on top of it; waiting for it
             // here also means every popped token is gone before the next phase starts.
-            yield return StartCoroutine(AnimatePops(popping));
+            yield return StartCoroutine(AnimatePops(popping, delays));
             float remainingDelay = clearDelay - popDuration;
             if (remainingDelay > 0f)
             {
@@ -1054,18 +1140,41 @@ namespace Match3
 
         /// <summary>
         /// Swells <paramref name="popping"/> slightly and then shrinks them to nothing over
-        /// <see cref="popDuration"/>, then destroys them.
+        /// <see cref="popDuration"/>, then destroys them. With <paramref name="delays"/>, each
+        /// token first waits its own number of seconds (matched to <paramref name="popping"/> by
+        /// index), so the pops can run along a row one after another; without, they all go at once.
         /// </summary>
-        private IEnumerator AnimatePops(List<Token> popping)
+        private IEnumerator AnimatePops(List<Token> popping, List<float> delays = null)
         {
+            // The token that starts last decides how long the whole thing takes.
+            float longestDelay = 0f;
+            if (delays != null)
+            {
+                foreach (float delay in delays)
+                {
+                    longestDelay = Mathf.Max(longestDelay, delay);
+                }
+            }
+
             // Time.deltaTime is scaled time, so while the game is paused (Time.timeScale = 0) it's
             // 0 and the pop freezes along with everything else.
-            for (float elapsed = 0f; elapsed < popDuration; elapsed += Time.deltaTime)
+            for (float elapsed = 0f; elapsed < longestDelay + popDuration; elapsed += Time.deltaTime)
             {
-                Vector3 scale = Vector3.one * (cellSize * PopScale(elapsed / popDuration));
-                foreach (Token token in popping)
+                for (int i = 0; i < popping.Count; i++)
                 {
-                    token.transform.localScale = scale;
+                    // One shared clock, and each token reads it from its own starting point.
+                    float sinceStart = elapsed - (delays != null ? delays[i] : 0f);
+                    if (sinceStart < 0f)
+                    {
+                        // Its turn hasn't come yet: leave it sitting on the board as it is.
+                        continue;
+                    }
+
+                    // With no pop time at all there's nothing to divide by: go straight to "done".
+                    float t = popDuration > 0f ? sinceStart / popDuration : 1f;
+                    // PopScale stops at 0 once t passes 1, so a token that has finished stays
+                    // invisible while later ones are still going.
+                    popping[i].transform.localScale = Vector3.one * (cellSize * PopScale(t));
                 }
                 yield return null;
             }
@@ -1196,7 +1305,7 @@ namespace Match3
             ThemeManager themeManager, TokenType[] tokenTypes, int seed,
             float swapDuration, float clearDelay, float fallSpeed,
             float popDuration = 0f, Explosion explosionPrefab = null, float springBackDuration = 0.01f,
-            float noMovesDelay = 0f, float shuffleDuration = 0.01f)
+            float noMovesDelay = 0f, float shuffleDuration = 0.01f, float beamSpeed = 1000f)
         {
             this.width = width;
             this.height = height;
@@ -1214,6 +1323,7 @@ namespace Match3
             this.springBackDuration = springBackDuration;
             this.noMovesDelay = noMovesDelay;
             this.shuffleDuration = shuffleDuration;
+            this.beamSpeed = beamSpeed;
         }
 
         /// <summary>

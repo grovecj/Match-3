@@ -232,10 +232,11 @@ namespace Match3.Tests
         }
 
         [Test]
-        public void CrossWithARunOfFourInIt_MakesNoFlame()
+        public void CrossWithARunOfFourInIt_MakesAStarNotAFlame()
         {
             // A row of 3 and a column of 4 sharing (1,0). There's a run of 4 here, but the
-            // match as a whole is a Cross, not a Line4, and only a Line4 makes a Flame.
+            // match as a whole is a Cross, not a Line4, and only a Line4 makes a Flame. A Cross
+            // makes a Star instead (see BoardModelStarTests), where the two runs meet.
             BoardModel board = Grid(
                 "GRBG",
                 "BRGB",
@@ -249,16 +250,18 @@ namespace Match3.Tests
                 new List<Vector2Int> { Cell(0, 0), Cell(1, 0), Cell(2, 0) },
                 new List<Vector2Int> { Cell(1, 0), Cell(1, 1), Cell(1, 2), Cell(1, 3) },
             }));
-            Assert.IsEmpty(result.Created);
-            Assert.AreEqual(6, result.Matched.Count);
-            Assert.AreEqual(new[] { "G.BG", "B.GB", "G.BG", "...B" }, grids.Rows(board));
+            Assert.AreEqual(1, result.Created.Count);
+            Assert.AreEqual(PowerKind.Star, result.Created[0].Kind);
+            Assert.AreEqual(Cell(1, 0), result.Created[0].Cell);
+            Assert.AreEqual(5, result.Matched.Count);
+            Assert.AreEqual(new[] { "G.BG", "B.GB", "G.BG", ".R.B" }, grids.Rows(board));
         }
 
         [TestCase(MatchShape.Line3, PowerKind.None)]
         [TestCase(MatchShape.Line4, PowerKind.Flame)]
-        [TestCase(MatchShape.Cross, PowerKind.None)]
+        [TestCase(MatchShape.Cross, PowerKind.Star)]
         [TestCase(MatchShape.Line5, PowerKind.None)]
-        public void PowerMadeBy_OnlyALineOfFourMakesAFlame(MatchShape shape, PowerKind expected)
+        public void PowerMadeBy_ALineOfFourMakesAFlame_AndACrossMakesAStar(MatchShape shape, PowerKind expected)
         {
             Assert.AreEqual(expected, BoardModel.PowerMadeBy(shape));
         }

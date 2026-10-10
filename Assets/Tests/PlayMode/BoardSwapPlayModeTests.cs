@@ -313,17 +313,18 @@ namespace Match3.Tests
         }
 
         [UnityTest, Timeout(TestTimeoutMs)]
-        public IEnumerator TShapedMatch_BurstsOncePerCellSizedByItsLongestRun_ThenCleansUp()
+        public IEnumerator TShapedMatch_BurstsOncePerClearedCellSizedByItsRun_ThenCleansUp()
         {
             board.LoadLayoutForTests(BuildLayout(TShapeLayout));
 
             Assert.IsTrue(board.TrySwap(TShapeA, TShapeB));
             yield return WaitUntilIdle();
 
-            // A row of 3 and a column of 4 sharing one cell: 6 cells, so 6 bursts, not 7. The
-            // shared cell bursts at the column's size, so 4 of them are 4s.
+            // A row of 3 and a column of 4 sharing one cell: 6 cells. The shared cell is where
+            // the T leaves its Star, so it isn't cleared and doesn't burst. That leaves 5
+            // bursts: 2 from the row and 3 from the column.
             Assert.IsNotNull(firstStepBursts, "The swap's clear step was never reported.");
-            CollectionAssert.AreEquivalent(new[] { 3, 3, 4, 4, 4, 4 }, firstStepBursts);
+            CollectionAssert.AreEquivalent(new[] { 3, 3, 4, 4, 4 }, firstStepBursts);
 
             // Every burst destroys itself once its particles have faded, so none pile up.
             yield return WaitUntilNoBursts();
@@ -548,6 +549,152 @@ namespace Match3.Tests
             AssertBoardIsFullAndSettled();
             AssertNoMatchesLeft();
             yield return WaitUntilNoBursts();
+        }
+
+        // ---------------------------------------------------------------- Star gems
+        //
+        // As with the Flame, the rules are covered in Edit Mode (BoardModelStarTests). These
+        // check the running Board: the token changes, and the beam's blast is its own phase.
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator TShape_TurnsTheSwappedTokenIntoAStar()
+        {
+            board.LoadLayoutForTests(BuildLayout(TShapeLayout));
+            // The A the player moves: it ends up at (2,1), where the T's two runs cross.
+            Token moved = board.GetToken(TShapeB.x, TShapeB.y);
+            TokenType colour = moved.Type;
+
+            var created = new List<(PowerKind kind, Vector2Int cell)>();
+            bool tokenWasAStar = false;
+            bool tokenShowedTheSparkle = false;
+            int detonations = 0;
+            board.PowerGemCreated += (kind, cell) =>
+            {
+                // Only look at the first one: a cascade could, with luck, make another.
+                if (created.Count == 0)
+                {
+                    Token token = board.GetToken(cell.x, cell.y);
+                    tokenWasAStar = token == moved && token.Power == PowerKind.Star && token.Type == colour;
+                    tokenShowedTheSparkle = token.ShowsPowerOverlay &&
+                                            token.GetComponentInChildren<StarSparkle>().enabled;
+                }
+                created.Add((kind, cell));
+            };
+            board.PowerGemDetonated += (kind, cell) => detonations++;
+
+            Assert.IsTrue(board.TrySwap(TShapeA, TShapeB));
+            // Stop as soon as the swap's own step has been reported, before any cascade.
+            yield return new WaitUntil(() => clearSteps.Count > 0);
+
+            Assert.That(created, Is.Not.Empty, "PowerGemCreated never fired.");
+            Assert.AreEqual((PowerKind.Star, TShapeA), created[0], "The Star belongs at the swapped cell.");
+            Assert.IsTrue(tokenWasAStar, "The token the player moved should itself become the Star, in its own colour.");
+            Assert.IsTrue(tokenShowedTheSparkle, "The new Star should show its sparkle straight away.");
+            Assert.AreEqual(0, detonations, "A Star mustn't go off in the step that made it.");
+            // The Star is a survivor of the match: it's still on the board while the others pop.
+            Assert.IsTrue(moved != null && moved.enabled, "The Star's token was cleared along with the rest of the match.");
+
+            yield return WaitUntilIdle();
+            AssertBoardIsFullAndSettled();
+            AssertNoMatchesLeft();
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator MatchedStar_ClearsItsRowAndColumnAfterTheMatchAndBeforeAnythingFalls()
+        {
+            // The A at (0,0) is in the run of 3 that MatchA/MatchB make along the bottom row.
+            // As a Star in the corner, its beam runs along the rest of row 0 and up column 0.
+            var starCell = new Vector2Int(0, 0);
+            board.SetPowerForTests(starCell, PowerKind.Star);
+            Assert.IsTrue(board.GetToken(0, 0).ShowsPowerOverlay);
+
+            // Which token was in which cell once the match had been taken off the board. The
+            // matched cells are empty (null) by then; everything else hasn't moved yet.
+            Token[,] afterMatch = null;
+            board.ClearStepResolved += (_, cascadeIndex) =>
+            {
+                if (cascadeIndex == 0)
+                {
+                    afterMatch = new Token[board.Width, board.Height];
+                    for (int x = 0; x < board.Width; x++)
+                    {
+                        for (int y = 0; y < board.Height; y++)
+                        {
+                            afterMatch[x, y] = board.GetToken(x, y);
+                        }
+                    }
+                }
+            };
+
+            var detonated = new List<(PowerKind kind, Vector2Int cell)>();
+            int stepsWhenDetonated = -1;
+            int runsWhenDetonated = -1;
+            int beamsWhenDetonated = -1;
+            // Anything wrong with the board at the moment the Star went off, as a message.
+            string problem = null;
+            var blasted = new List<Token>();
+            board.PowerGemDetonated += (kind, cell) =>
+            {
+                if (detonated.Count == 0)
+                {
+                    stepsWhenDetonated = clearSteps.Count;
+                    runsWhenDetonated = clearedRuns.Count;
+                    beamsWhenDetonated = Beams().Length;
+                    for (int x = 0; x < board.Width; x++)
+                    {
+                        for (int y = 0; y < board.Height; y++)
+                        {
+                            Token before = afterMatch[x, y];
+                            Token now = board.GetToken(x, y);
+                            bool inTheBeam = x == starCell.x || y == starCell.y;
+                            if (inTheBeam)
+                            {
+                                if (before != null)
+                                {
+                                    blasted.Add(before);
+                                }
+                                if (now != null)
+                                {
+                                    problem = $"({x}, {y}) is in the Star's row or column but still has a token.";
+                                }
+                            }
+                            else if (now != before || now.transform.position != board.GridToWorld(x, y))
+                            {
+                                problem = $"({x}, {y}) is outside the Star's row and column but its token changed or moved.";
+                            }
+                        }
+                    }
+                }
+                detonated.Add((kind, cell));
+            };
+
+            Assert.IsTrue(board.TrySwap(MatchA, MatchB));
+            yield return WaitUntilIdle();
+
+            Assert.That(detonated, Is.Not.Empty, "PowerGemDetonated never fired.");
+            Assert.AreEqual((PowerKind.Star, starCell), detonated[0]);
+            Assert.AreEqual(1, stepsWhenDetonated, "The blast belongs to the swap's own step, after the match was reported.");
+            Assert.AreEqual(1, runsWhenDetonated, "Blasted gems aren't runs: only the run of 3 should have been reported.");
+            Assert.AreEqual(1, beamsWhenDetonated, "The Star should fire one beam as it goes off.");
+            Assert.IsNull(problem, "The beam should clear exactly the Star's row and column, before anything falls.");
+
+            // Row 0 has 5 cells and column 0 has 4 more; 3 of those 9 were the match itself.
+            Assert.AreEqual(6, blasted.Count);
+            foreach (Token token in blasted)
+            {
+                Assert.IsTrue(token == null, "A token in the beam was taken off the board but not destroyed.");
+            }
+            AssertBoardIsFullAndSettled();
+            AssertNoMatchesLeft();
+            yield return WaitUntilNoBursts();
+
+            // The beam cleans up after itself, like the bursts do.
+            bool timedOut = false;
+            yield return new WaitUntil(
+                () => Beams().Length == 0,
+                System.TimeSpan.FromSeconds(ResolveTimeoutSeconds),
+                () => timedOut = true);
+            Assert.IsFalse(timedOut, $"{Beams().Length} beams were still around after {ResolveTimeoutSeconds} seconds.");
         }
 
         // ---------------------------------------------------------------- Hints
@@ -869,6 +1016,12 @@ namespace Match3.Tests
         private Explosion[] Bursts()
         {
             return boardObject.GetComponentsInChildren<Explosion>();
+        }
+
+        /// <summary>Every Star beam under the board right now.</summary>
+        private StarBeam[] Beams()
+        {
+            return boardObject.GetComponentsInChildren<StarBeam>();
         }
 
         /// <summary>Waits until every burst has destroyed itself, failing the test if some never do.</summary>
