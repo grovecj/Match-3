@@ -18,7 +18,8 @@ namespace Match3
         /// Made by a line of 5 or more. The one power gem with no colour of its own: it is never
         /// matched, and goes off when the player swaps it with a coloured neighbour, clearing
         /// every gem of that colour (see <see cref="BoardModel.ActivateHypercube"/>). Caught in
-        /// another gem's blast it goes off too, on whichever colour there is most of.
+        /// another gem's blast it goes off too, on whichever colour there is most of. Swapped
+        /// with a Flame, a Star or another Hypercube it makes a combo (see <see cref="PowerCombo"/>).
         /// </summary>
         Hypercube,
     }
@@ -35,6 +36,13 @@ namespace Match3
         BigFlame,
         /// <summary>Any pair with a Star: three whole rows and three whole columns around the moved gem.</summary>
         StarCross,
+        /// <summary>
+        /// A Hypercube + a Flame or Star: every ordinary gem of the partner's colour becomes that
+        /// power, then the Hypercube goes off on that colour, setting them all off.
+        /// </summary>
+        Conversion,
+        /// <summary>Hypercube + Hypercube: every other piece on the board is destroyed.</summary>
+        ClearBoard,
     }
 
     /// <summary>

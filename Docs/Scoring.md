@@ -41,6 +41,18 @@ score nothing, just as a swapped Hypercube's own cell doesn't. Power gems it cat
 the next wave as usual. No new rule or number is involved, so `ScoreRules.Version` stays at 2
 and the server's checks are unchanged; each combo gem counts as detonated by its own kind.
 
+**Hypercube combos** (#109). A Hypercube swapped with a Flame or Star first turns every
+ordinary gem of the partner's colour into that power (a power gem of that colour keeps its
+own), then goes off on that colour exactly as a swapped Hypercube does: every gem of the
+colour, the partner included, is a blasted gem (250), and each goes off in the next wave. Two
+Hypercubes swapped together destroy every other piece on the board: 62 blasted gems on an 8x8,
+**15,500 at x1, the largest single step in the game**, before the cascades that follow; the
+partner cube and any power gem caught go off with nothing left to hit. Both are step 0 (x1)
+and no number changed, so `ScoreRules.Version` stays at 2. For the stats, a converted gem
+counts as detonated (`flamesDetonated` / `starsDetonated`) but not as created, so the server
+must not require "detonated ≤ created" for Flames and Stars (grovecj/match-3-api#2). Both cubes
+of a Hypercube + Hypercube count in `hypercubesDetonated`.
+
 So a run of 3 whose Flame destroys 8 more gems is worth 1,000 + 8 x 250 = 3,000 as the
 player's own match, and 6,000 on the first cascade.
 

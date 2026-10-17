@@ -13,6 +13,8 @@ namespace Match3
     /// <item>A Star: a burst on the gem and beams that race along its row and column (<see cref="StarBeam"/>).</item>
     /// <item>A Hypercube: a crackling arc to each gem of the colour (<see cref="HypercubeZap"/>), with a spark on each as it's hit.</item>
     /// <item>A combo: a Flame burst scaled up to the 5x5, or a Star burst with three beams per axis.</item>
+    /// <item>A Hypercube + Flame or Star: a new-gem flash on every gem the cube turns into a power gem, then the usual bolts.</item>
+    /// <item>Two Hypercubes: a spark on every cell, spreading out from the moved cube in rings.</item>
     /// </list>
     ///
     /// It only listens to the <see cref="Board"/>'s events (<see cref="Board.PowerGemCreated"/>
@@ -75,6 +77,7 @@ namespace Match3
                 return;
             }
             board.PowerGemCreated += OnPowerGemCreated;
+            board.PowerGemConverted += OnPowerGemConverted;
             board.PowerGemBlastStarted += OnBlastStarted;
         }
 
@@ -83,6 +86,7 @@ namespace Match3
             if (board != null)
             {
                 board.PowerGemCreated -= OnPowerGemCreated;
+                board.PowerGemConverted -= OnPowerGemConverted;
                 board.PowerGemBlastStarted -= OnBlastStarted;
             }
         }
@@ -95,6 +99,15 @@ namespace Match3
             Color color = board.GemColorFor(token != null ? token.Type : null);
             // The matched gems slide into the cell first; the flash goes off as the gem appears.
             StartCoroutine(PlayAfter(board.CollapseDuration, gemCreatedPrefab, board.GridToWorld(cell.x, cell.y), color));
+        }
+
+        private void OnPowerGemConverted(PowerKind kind, Vector2Int cell)
+        {
+            // The same flash as a new gem, but straight away: nothing slides in first. The token
+            // already shows its new power, so the flash is in its (unchanged) colour.
+            Token token = board.GetToken(cell.x, cell.y);
+            Color color = board.GemColorFor(token != null ? token.Type : null);
+            PlayEffect(gemCreatedPrefab, board.GridToWorld(cell.x, cell.y), color);
         }
 
         private void OnBlastStarted(PowerGemBlast blast)
@@ -113,12 +126,27 @@ namespace Match3
                     PlayEffect(starBurstPrefab, origin, color);
                     FireCrossBeams(blast.Cell, Color.Lerp(color, Color.white, BeamWhiteness));
                     return;
+                case PowerCombo.ClearBoard:
+                    // No bolts: dozens of them at once would be a tangle (and a lot to draw on a
+                    // phone). A spark on each gem as its ring reaches it reads as one wave.
+                    PlayEffect(zapSparkPrefab, origin, color);
+                    for (int i = 0; i < blast.Blasted.Count; i++)
+                    {
+                        Vector2Int cell = blast.Blasted[i];
+                        StartCoroutine(PlayAfter(blast.Delays[i], zapSparkPrefab, board.GridToWorld(cell.x, cell.y), color));
+                    }
+                    return;
+                // A Conversion's cube is drawn like any Hypercube (below): the conversion itself
+                // was shown by OnPowerGemConverted, and its gems' blasts come in the next wave.
             }
 
             // ...and its partner only flares in its own cell: its blast is part of that one.
             if (blast.IsComboPartner)
             {
-                PlayEffect(blast.Kind == PowerKind.Star ? starBurstPrefab : flameBlastPrefab, origin, color);
+                ParticleEffect flare = blast.Kind == PowerKind.Star ? starBurstPrefab
+                    : blast.Kind == PowerKind.Hypercube ? zapSparkPrefab
+                    : flameBlastPrefab;
+                PlayEffect(flare, origin, color);
                 return;
             }
 

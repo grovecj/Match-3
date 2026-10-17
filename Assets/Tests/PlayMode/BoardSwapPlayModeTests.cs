@@ -956,25 +956,94 @@ namespace Match3.Tests
         }
 
         [UnityTest, Timeout(TestTimeoutMs)]
-        public IEnumerator SwappingTwoHypercubes_PutsBothBack()
+        public IEnumerator SwappingTwoHypercubes_ClearsTheWholeBoard()
         {
+            // A 5x5 board: the moved cube destroys the 23 other pieces.
             board.SetPowerForTests(NoMatchA, PowerKind.Hypercube);
             board.SetPowerForTests(NoMatchB, PowerKind.Hypercube);
-            Token cubeA = board.GetToken(NoMatchA.x, NoMatchA.y);
-            Token cubeB = board.GetToken(NoMatchB.x, NoMatchB.y);
-            int detonations = 0;
-            board.PowerGemDetonated += (kind, cell, wave) => detonations++;
+            var steps = new List<ClearStep>();
+            board.ClearStepScored += steps.Add;
+            var cubesWentOff = new List<Vector2Int>();
+            board.PowerGemDetonated += (kind, cell, wave) =>
+            {
+                if (kind == PowerKind.Hypercube)
+                {
+                    cubesWentOff.Add(cell);
+                }
+            };
 
             Assert.IsTrue(board.TrySwap(NoMatchA, NoMatchB));
             yield return WaitUntilIdle();
 
-            Assert.AreEqual(new[] { "started", "rejected" }, swapEvents, "Two Hypercubes can't be swapped (yet).");
-            Assert.AreEqual(0, detonations);
-            Assert.AreSame(cubeA, board.GetToken(NoMatchA.x, NoMatchA.y));
-            Assert.AreSame(cubeB, board.GetToken(NoMatchB.x, NoMatchB.y));
-            Assert.AreEqual(PowerKind.Hypercube, cubeA.Power);
-            Assert.AreEqual(PowerKind.Hypercube, cubeB.Power);
+            Assert.AreEqual(new[] { "started" }, swapEvents, "Two Hypercubes are a valid move.");
+            Assert.AreEqual(PowerCombo.ClearBoard, blasts[0].Combo);
+            Assert.AreEqual(NoMatchB, blasts[0].Cell, "The moved cube carries the blast.");
+            Assert.AreEqual(23, blasts[0].Blasted.Count);
+            Assert.IsTrue(blasts[1].IsComboPartner);
+            CollectionAssert.AreEquivalent(new[] { NoMatchB, NoMatchA }, cubesWentOff,
+                "Both cubes went off (and no other Hypercube was on the board).");
+
+            Assert.AreEqual(0, steps[0].CascadeIndex);
+            Assert.AreEqual(23, steps[0].BlastedGems);
+            Assert.AreEqual(25, steps[0].GemsCleared);
+            Assert.AreEqual(23 * ScoreRules.PointsPerBlastedGem, steps[0].Points);
+
             AssertBoardIsFullAndSettled();
+            AssertNoMatchesLeft();
+            yield return WaitUntilNoBursts();
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator SwappingAHypercubeWithAFlame_ConvertsTheColourFirst()
+        {
+            // NoMatchB is a B (the top row is "ABCDE"); there are five more B's on this board.
+            board.SetPowerForTests(NoMatchA, PowerKind.Hypercube);
+            board.SetPowerForTests(NoMatchB, PowerKind.Flame);
+            TokenType colour = board.GetToken(NoMatchB.x, NoMatchB.y).Type;
+
+            var converted = new List<Vector2Int>();
+            var convertedPowers = new List<PowerKind>();
+            var detonatingWhenConverted = new List<bool>();
+            board.PowerGemConverted += (kind, cell) =>
+            {
+                converted.Add(cell);
+                // The clock is already held while the player watches the colour change.
+                detonatingWhenConverted.Add(board.IsDetonating);
+                // The token shows its new power as the event fires.
+                convertedPowers.Add(board.GetToken(cell.x, cell.y).Power);
+            };
+            int created = 0;
+            board.PowerGemCreated += (kind, cell) => created++;
+            var detonatingWhenWentOff = new List<bool>();
+            board.PowerGemDetonated += (kind, cell, wave) => detonatingWhenWentOff.Add(board.IsDetonating);
+
+            Assert.IsTrue(board.TrySwap(NoMatchB, NoMatchA));
+            yield return WaitUntilIdle();
+
+            Assert.AreEqual(new[] { "started" }, swapEvents);
+            Assert.AreEqual(5, converted.Count, "Every other B became a Flame.");
+            Assert.That(convertedPowers, Is.All.EqualTo(PowerKind.Flame));
+            Assert.AreEqual(PowerKind.Hypercube, blasts[0].Kind);
+            Assert.AreEqual(PowerCombo.Conversion, blasts[0].Combo);
+            Assert.AreEqual(colour, blasts[0].Colour);
+            Assert.AreEqual(6, blasts[0].Blasted.Count, "The cube zaps the five converted gems and the Flame.");
+            // Every gem the cube zapped was a Flame, so each went off in wave 1.
+            int flamesInWaveOne = 0;
+            foreach (PowerGemBlast blast in blasts)
+            {
+                if (blast.WaveIndex == 1 && blast.Kind == PowerKind.Flame)
+                {
+                    flamesInWaveOne++;
+                }
+            }
+            Assert.AreEqual(6, flamesInWaveOne);
+            Assert.That(detonatingWhenWentOff, Is.All.True, "The clock is held while the combo plays.");
+            Assert.That(detonatingWhenConverted, Is.All.True, "The clock is held from the conversion on.");
+            Assert.AreEqual(0, created, "Converted gems weren't made by a match.");
+
+            AssertBoardIsFullAndSettled();
+            AssertNoMatchesLeft();
+            yield return WaitUntilNoBursts();
         }
 
         // ---------------------------------------------------------------- Combos

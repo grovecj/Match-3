@@ -183,6 +183,42 @@ namespace Match3.Tests
         }
 
         [Test]
+        public void ConvertedGems_CountAsDetonated_NotAsCreated()
+        {
+            // A Hypercube + Flame on a real model: one Flame partner and two ordinary R's that
+            // the cube turns into Flames.
+            var grids = new TestGrids();
+            try
+            {
+                BoardModel board = grids.Build("RGR*R");
+                grids.SetPowers(board, "....F");
+                BoardModel.ClearResult result = board.ActivateCombo(new Vector2Int(4, 0), new Vector2Int(3, 0));
+                Assert.AreEqual(2, result.Converted.Count);
+
+                // Tell the stats what the Board would: PowerGemCreated for each gem a match made
+                // (none here; converted gems are reported through PowerGemConverted, which the
+                // stats don't listen to), and PowerGemDetonated for everything that went off.
+                var stats = new RoundStats();
+                foreach (BoardModel.Creation creation in result.Created)
+                {
+                    stats.PowerGemCreated(creation.Kind);
+                }
+                foreach (BoardModel.Detonation detonation in result.Detonations)
+                {
+                    stats.PowerGemDetonated(detonation.Kind);
+                }
+
+                Assert.AreEqual(0, stats.flamesCreated);
+                Assert.AreEqual(3, stats.flamesDetonated, "The partner and the two converted gems.");
+                Assert.AreEqual(1, stats.hypercubesDetonated);
+            }
+            finally
+            {
+                grids.DestroyAll();
+            }
+        }
+
+        [Test]
         public void Reset_GoesBackToZero()
         {
             var stats = new RoundStats();
