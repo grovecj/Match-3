@@ -19,6 +19,9 @@ namespace Match3
     ///   Dragging - the pointer has left the dead zone; the token follows it. Letting go here
     ///              swaps or springs back.
     ///   Selected - a token was clicked and is waiting for a click on a neighbor.
+    ///   Buffering - pressed while the board was still resolving. Nothing moves, but letting go
+    ///              records a swap (a drag) or a click in the <see cref="SwapBuffer"/>, and the
+    ///              swap is played the moment the board settles.
     ///
     /// It also notices when the player has gone a while without touching the board, and asks
     /// the Board to show a hint.
@@ -58,7 +61,7 @@ namespace Match3
         /// <summary>Which way a drag is locked to.</summary>
         public enum DragAxis { None, Horizontal, Vertical }
 
-        private enum State { Idle, Pressed, Dragging, Selected }
+        private enum State { Idle, Pressed, Dragging, Selected, Buffering }
 
         private Board board;
         private Camera cam;
@@ -86,6 +89,13 @@ namespace Match3
         // How long the board has been waiting for the player to do something, in seconds.
         private float idleTime;
 
+        // The one swap (or first click) made while the board was resolving. A plain C# class
+        // rather than more fields here, so its rules can be tested without a scene.
+        private readonly SwapBuffer buffer = new SwapBuffer();
+        // Whether the buffering press has left the dead zone, which makes letting go a drag
+        // rather than a click (even if the pointer has come back since).
+        private bool bufferPressDragged;
+
         private void Awake()
         {
             board = GetComponent<Board>();
@@ -99,12 +109,18 @@ namespace Match3
         {
             pressAction.Enable();
             pointAction.Enable();
+            board.NoMovesLeft += HandleNoMovesLeft;
         }
 
         private void OnDisable()
         {
             pressAction.Disable();
             pointAction.Disable();
+            board.NoMovesLeft -= HandleNoMovesLeft;
+
+            // A buffered swap must never run on a board the player has stopped playing: input is
+            // off because the game paused, the clock reached 0:00, or the Last Hurrah started.
+            buffer.Discard();
 
             // Input is switched off when the game pauses or the round ends. Put down whatever
             // the player was holding: a half-finished drag springs back rather than swapping.
@@ -116,6 +132,7 @@ namespace Match3
                 // A hint left pulsing on a paused or finished board would look like it's still
                 // in play. The wait starts over when input comes back.
                 board.ClearHint();
+                ShowBufferMarks();
             }
             state = State.Idle;
             idleTime = 0f;
@@ -124,12 +141,14 @@ namespace Match3
         private void Update()
         {
             // The board can let go of a token by itself (a new round rebuilds it), so if we
-            // think something's held but the board doesn't, start over.
-            if (state != State.Idle && !board.IsHolding)
+            // think something's held but the board doesn't, start over. (A buffering press
+            // never holds anything.)
+            if (state != State.Idle && state != State.Buffering && !board.IsHolding)
             {
                 state = State.Idle;
             }
 
+            PlayBufferIfSettled();
             UpdateHintTimer();
 
             switch (state)
@@ -139,8 +158,19 @@ namespace Match3
                     // so holding the button doesn't keep starting new presses.
                     if (pressAction.WasPressedThisFrame())
                     {
-                        PressWhileIdle();
+                        if (board.IsResolving)
+                        {
+                            PressWhileResolving();
+                        }
+                        else
+                        {
+                            PressWhileIdle();
+                        }
                     }
+                    break;
+
+                case State.Buffering:
+                    UpdateBufferedPress();
                     break;
 
                 case State.Selected:
@@ -164,8 +194,9 @@ namespace Match3
         private void UpdateHintTimer()
         {
             // Only time spent waiting on the player counts. Holding or selecting a token is
-            // doing something, and while the board resolves there's nothing they could do.
-            if (state != State.Idle || board.IsResolving)
+            // doing something, and so is having a swap waiting to be played. While the board
+            // resolves, a hint would point at tokens that are about to move.
+            if (state != State.Idle || board.IsResolving || !buffer.IsEmpty)
             {
                 idleTime = 0f;
                 return;
@@ -331,6 +362,155 @@ namespace Match3
             }
         }
 
+        // ---------------------------------------------------------------- Buffered swaps
+        //
+        // While the board resolves, TryPickUp refuses, so nothing can be held or dragged. Rather
+        // than ignore the player, a press then goes through the Buffering state: it works out
+        // the same drag direction as a real drag (with the same maths), but only records the
+        // result in the SwapBuffer and marks the cells. When the board settles,
+        // PlayBufferIfSettled plays it as an ordinary TrySwap. The Board never knows the swap
+        // was buffered; this component only uses its public methods, as for any other swap.
+
+        private void PressWhileResolving()
+        {
+            // A reshuffle throws the buffer away (HandleNoMovesLeft), and nothing made while the
+            // tokens are still shuffling is kept either.
+            if (board.IsReshuffling)
+            {
+                return;
+            }
+
+            // Cells, not tokens: a cell can be empty for a moment while tokens fall into it.
+            Vector2 world = PointerWorldPosition();
+            if (!board.TryWorldToGrid(world, out Vector2Int cell))
+            {
+                buffer.PressOutside();
+                ShowBufferMarks();
+                return;
+            }
+
+            pressCell = cell;
+            pressStartWorld = world;
+            lastPointerWorld = world;
+            pointerVelocity = Vector2.zero;
+            axis = DragAxis.None;
+            dragDirection = Vector2Int.zero;
+            bufferPressDragged = false;
+            state = State.Buffering;
+        }
+
+        /// <summary>
+        /// Follows a press made while the board was resolving. Nothing moves on screen; letting
+        /// go records a drag as a swap, or a click as a click, in the buffer.
+        /// </summary>
+        private void UpdateBufferedPress()
+        {
+            Vector2 world = PointerWorldPosition();
+            pointerVelocity = SmoothVelocity(pointerVelocity, world - lastPointerWorld,
+                Time.unscaledDeltaTime, VelocitySmoothing);
+            lastPointerWorld = world;
+            Vector2 delta = world - pressStartWorld;
+
+            float cellSize = board.CellSize;
+            axis = ChooseAxis(delta, deadZone * cellSize, axis);
+            if (axis != DragAxis.None)
+            {
+                bufferPressDragged = true;
+                dragDirection = DirectionAlong(delta, axis);
+            }
+
+            if (pressAction.IsPressed())
+            {
+                return;
+            }
+            state = State.Idle;
+
+            if (!bufferPressDragged)
+            {
+                buffer.Click(pressCell);
+            }
+            else
+            {
+                // The same test as letting go of a real drag. The neighbor only has to be on the
+                // board: whether a token will be in it is up to the board when it settles.
+                Vector2Int neighbor = pressCell + dragDirection;
+                bool hasNeighbor = dragDirection != Vector2Int.zero && board.IsInBounds(neighbor);
+                float along = Mathf.Max(0f, Vector2.Dot(delta, dragDirection)) / cellSize;
+                float speed = Vector2.Dot(pointerVelocity, dragDirection) / cellSize;
+                if (ShouldCommit(Mathf.Min(along, 1f), speed, hasNeighbor, commitThreshold, flickSpeed))
+                {
+                    buffer.Record(pressCell, neighbor);
+                }
+                // Too short a drag does nothing, just as it would spring back on a settled board.
+            }
+            ShowBufferMarks();
+        }
+
+        /// <summary>
+        /// Once the board has settled, plays the buffered swap as a normal TrySwap. A click
+        /// that was waiting for a neighbor becomes an ordinary selection instead.
+        /// </summary>
+        // Polling IsResolving every frame is enough here: the swap runs on the first frame the
+        // board is idle, which is as soon as any event could have told us.
+        private void PlayBufferIfSettled()
+        {
+            if (board.IsResolving || buffer.IsEmpty)
+            {
+                return;
+            }
+
+            if (buffer.TryTake(out Vector2Int first, out Vector2Int second))
+            {
+                // Whatever is in those cells now. If that isn't a valid move, the board swaps
+                // the tokens back with the invalid sound, like any bad move. SwapStarted fires
+                // here, so the stats count the swap when it runs, not when it was made.
+                board.TrySwap(first, second);
+                ShowBufferMarks();
+                return;
+            }
+
+            // Only a selection is left. Hand it over to the normal Selected state once the
+            // player isn't mid-press, so the next click on a neighbor swaps as usual.
+            if (state == State.Idle && buffer.Selected is Vector2Int selected)
+            {
+                buffer.Cancel();
+                ShowBufferMarks();
+                if (board.TryPickUp(selected))
+                {
+                    pressCell = selected;
+                    board.SetHeldSelected(true);
+                    state = State.Selected;
+                }
+            }
+        }
+
+        // Called by the Board just before it reshuffles: the cells are about to hold different
+        // tokens, so a swap planned on the old layout is thrown away, and so is a press in progress.
+        private void HandleNoMovesLeft()
+        {
+            buffer.Discard();
+            if (state == State.Buffering)
+            {
+                state = State.Idle;
+            }
+            ShowBufferMarks();
+        }
+
+        /// <summary>Marks exactly the cells the buffer is holding on to.</summary>
+        private void ShowBufferMarks()
+        {
+            board.ClearCellMarks();
+            if (buffer.HasSwap)
+            {
+                board.SetCellMarked(buffer.First, true);
+                board.SetCellMarked(buffer.Second, true);
+            }
+            if (buffer.Selected is Vector2Int selected)
+            {
+                board.SetCellMarked(selected, true);
+            }
+        }
+
         /// <summary>The cell under the pointer, if it's on the board and holds a token.</summary>
         private bool TryGetPressedToken(out Vector2Int cell)
         {
@@ -346,6 +526,20 @@ namespace Match3
             Vector2 screen = pointAction.ReadValue<Vector2>();
             return cam.ScreenToWorldPoint(new Vector3(screen.x, screen.y, 0f));
         }
+
+        // ---------------------------------------------------------------- Test hooks
+
+        // `internal`: only the Play Mode tests can see these (see AssemblyInfo.cs).
+
+        /// <summary>Records a buffered swap, as letting go of a drag made while the board resolves would.</summary>
+        internal void BufferSwapForTests(Vector2Int first, Vector2Int second)
+        {
+            buffer.Record(first, second);
+            ShowBufferMarks();
+        }
+
+        /// <summary>True while a buffered swap is waiting for the board to settle.</summary>
+        internal bool HasBufferedSwapForTests => buffer.HasSwap;
 
         // ---------------------------------------------------------------- Drag and hint math
         //

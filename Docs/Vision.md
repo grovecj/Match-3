@@ -60,3 +60,6 @@ Use these to decide what goes in. A feature should clearly serve at least one an
   (2026-10-17, #109) A Hypercube joins in: with a Flame or Star it turns that colour into the
   partner's power and sets them all off; two Hypercubes clear the board. Both are built, never
   dealt: a Hypercube needs a line of five.
+- **The board takes one swap at a time, and remembers the next** (2026-10-16, #111). Input
+  waits while the board resolves, but one swap made during that time is played when it
+  settles; if it is no longer a valid move by then, it swaps back like any other.

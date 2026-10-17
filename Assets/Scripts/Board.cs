@@ -26,6 +26,10 @@ namespace Match3
         [Header("Cell Visuals")]
         [Tooltip("Prefab with a SpriteRenderer, spawned once per cell as the background tile.")]
         [SerializeField] private SpriteRenderer cellPrefab;
+        [Tooltip("Colour a marked cell (one of a swap made while the board was resolving) is tinted toward.")]
+        [SerializeField] private Color markedCellColor = new Color(1f, 0.85f, 0.3f);
+        [Tooltip("How far (0 to 1) a marked cell is tinted toward the Marked Cell Color.")]
+        [SerializeField, Range(0f, 1f)] private float markedCellTint = 0.5f;
 
         [Header("Theme")]
         [Tooltip("Supplies the cell colors and token style. The board redraws itself when the theme changes.")]
@@ -204,6 +208,8 @@ namespace Match3
         // The cell background tiles, indexed [x, y], kept so a theme change can recolor them
         // in place instead of rebuilding the board.
         private SpriteRenderer[,] cells;
+        // Which cells are marked (see SetCellMarked), indexed [x, y] like the tiles.
+        private bool[,] markedCells;
         private Transform tokenContainer;
         private bool needsRebuild;
         private BoardState state = BoardState.Idle;
@@ -392,6 +398,7 @@ namespace Match3
             cellContainer = new GameObject("Cells").transform;
             cellContainer.SetParent(transform, false);
             cells = new SpriteRenderer[width, height];
+            markedCells = new bool[width, height];
 
             for (int x = 0; x < width; x++)
             {
@@ -448,15 +455,53 @@ namespace Match3
                     {
                         continue;
                     }
-                    if (theme == null)
-                    {
-                        cells[x, y].color = Color.white;
-                        continue;
-                    }
                     // Checkerboard: alternate colors like a chess board.
-                    cells[x, y].color = (x + y) % 2 == 0 ? theme.DarkCellColor : theme.LightCellColor;
+                    Color color = theme == null ? Color.white
+                        : (x + y) % 2 == 0 ? theme.DarkCellColor : theme.LightCellColor;
+                    if (markedCells[x, y])
+                    {
+                        // Lerp blends two colours: 0 is all the first, 1 all the second.
+                        color = Color.Lerp(color, markedCellColor, markedCellTint);
+                    }
+                    cells[x, y].color = color;
                 }
             }
+        }
+
+        // ---------------------------------------------------------------- Marked cells
+        //
+        // A swap made while the board is resolving is remembered by BoardInput and played when
+        // the board settles. Until then its two cells are marked, so the player can see it was
+        // taken. The mark is on the cell's background tile, not the token: the tokens may still
+        // be falling, and what gets swapped is whatever lands in those cells.
+
+        /// <summary>Tints (or stops tinting) the background tile of <paramref name="cell"/>. Does nothing off the board.</summary>
+        public void SetCellMarked(Vector2Int cell, bool marked)
+        {
+            if (markedCells == null || !IsInBounds(cell) || markedCells[cell.x, cell.y] == marked)
+            {
+                return;
+            }
+            markedCells[cell.x, cell.y] = marked;
+            ApplyCellColors();
+        }
+
+        /// <summary>Unmarks every cell.</summary>
+        public void ClearCellMarks()
+        {
+            if (markedCells == null)
+            {
+                return;
+            }
+            // Array.Clear sets every element back to its default: false for a bool.
+            System.Array.Clear(markedCells, 0, markedCells.Length);
+            ApplyCellColors();
+        }
+
+        /// <summary>Whether <paramref name="cell"/> is marked. False off the board.</summary>
+        public bool IsCellMarked(Vector2Int cell)
+        {
+            return markedCells != null && IsInBounds(cell) && markedCells[cell.x, cell.y];
         }
 
         /// <summary>The token style currently selected, or null if there's no ThemeManager.</summary>
