@@ -23,6 +23,8 @@ well-explained code over polish. Explain Unity concepts when introducing them.
   PowerGemEffects, ScorePopups, PowerGemSounds and ScreenShake listeners in the scene), and
   `Match3 > Build Round Summary` (the "Best" line under the score and the round summary card;
   run it after the Achievements builder; see `Docs/RoundSummary.md`), and
+  `Match3 > Build How To Play` (the How to play card, saved as `Assets/Prefabs/UI/HowToPlay.prefab`,
+  plus its buttons in the side panel and on the pause overlay; run it after the menu builders), and
   `Match3 > Build Responsive Layout` (the ResponsiveLayout that switches to the portrait layout
   for phones; run it after the menu builders; see `Docs/WebBuild.md#portrait-layout`)) live in
   `Assets/Editor/`, sharing

@@ -23,7 +23,7 @@ public static class ResponsiveLayoutBuilder
     // Left to right along the bottom of the portrait panel.
     private static readonly string[] MenuButtons =
     {
-        "AchievementsButton", "AccountButton", "LeaderboardButton", "SettingsButton",
+        "HowToPlayButton", "AchievementsButton", "AccountButton", "LeaderboardButton", "SettingsButton",
     };
 
     // Paths from the Canvas to each modal window (made by the other menu builders).
@@ -34,6 +34,7 @@ public static class ResponsiveLayoutBuilder
         "Leaderboard/Prompt/Window",
         "Achievements/Panel/Window",
         "Account/Panel/Window",
+        "HowToPlay/Panel/Window",
     };
 
     [MenuItem("Match3/Build Responsive Layout")]

@@ -35,7 +35,8 @@ namespace Match3
     ///                Again" button are shown.
     /// Clicking the button in Ready or RoundOver starts a new round (-> Playing).
     /// The Settings menu (gear button), the Leaderboard and the Account menu are only available
-    /// in Ready and RoundOver. A RoundOver score that makes the top 10 is offered to the leaderboard, which
+    /// in Ready and RoundOver. So is the How to play card, which can also be opened from the
+    /// Paused overlay; the game stays paused while it's open. A RoundOver score that makes the top 10 is offered to the leaderboard, which
     /// asks for the player's initials. A signed-in player's rounds are also posted to the global
     /// leaderboard.
     ///
@@ -108,6 +109,10 @@ namespace Match3
         [Header("Achievements")]
         [Tooltip("Shown between rounds only, like Settings. Optional: leave empty if the scene has no Achievements menu.")]
         [SerializeField] private AchievementsMenu achievementsMenu;
+
+        [Header("How to play")]
+        [Tooltip("The How to play card. Its side panel button is shown between rounds only; it also opens from the pause overlay. Optional, like Achievements.")]
+        [SerializeField] private HowToPlayMenu howToPlayMenu;
 
         private enum GameState { Ready, Playing, LastHurrah, Paused, RoundOver }
 
@@ -248,7 +253,9 @@ namespace Match3
                     break;
 
                 case GameState.Paused:
-                    if (pausePressed)
+                    // While the How to play card is open over the pause overlay, Esc/P doesn't
+                    // resume: the round would carry on under the card. Its Close button comes first.
+                    if (pausePressed && !IsHowToPlayOpen)
                     {
                         Resume();
                     }
@@ -335,6 +342,7 @@ namespace Match3
             leaderboardMenu.SetAvailable(false);
             accountMenu.SetAvailable(false);
             SetAchievementsAvailable(false);
+            SetHowToPlayAvailable(false);
             // For a signed-in player, this registers the round with the global leaderboard (in
             // the background), so its score can be posted when it ends.
             leaderboardMenu.RoundStarted();
@@ -398,6 +406,7 @@ namespace Match3
             leaderboardMenu.SetAvailable(true);
             accountMenu.SetAvailable(true);
             SetAchievementsAvailable(true);
+            SetHowToPlayAvailable(true);
         }
 
         // Called on the same frame the Board started the hurrah. The Board waits a moment
@@ -424,6 +433,7 @@ namespace Match3
             leaderboardMenu.SetAvailable(true);
             accountMenu.SetAvailable(true);
             SetAchievementsAvailable(true);
+            SetHowToPlayAvailable(true);
 
             // If the score makes the local top 10, this pops up the initials prompt over the
             // round-end screen. A signed-in player's score also goes to the global leaderboard.
@@ -494,6 +504,17 @@ namespace Match3
                 achievementsMenu.SetAvailable(available);
             }
         }
+
+        // Optional too, for the same reason.
+        private void SetHowToPlayAvailable(bool available)
+        {
+            if (howToPlayMenu != null)
+            {
+                howToPlayMenu.SetAvailable(available);
+            }
+        }
+
+        private bool IsHowToPlayOpen => howToPlayMenu != null && howToPlayMenu.IsOpen;
 
         private void ShowButton(string label)
         {
