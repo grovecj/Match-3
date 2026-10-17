@@ -33,6 +33,14 @@ submission wait for all of it. No new rule or number is involved, so the scoring
 the server's checks are unchanged: hurrah points arrive in `blastedGems`, the run counts and
 `basePointsAtMultiplier` like any others.
 
+**Combos** (#108). Swapping a Flame or Star with an adjacent Flame or Star sets off one bigger
+blast, centred on the cell the moved gem lands in: the 5x5 for two Flames, three whole rows and
+three whole columns for any pair with a Star. It scores like a swapped Hypercube: it is step 0
+(x1), every other gem it destroys is a blasted gem (250), and the two combo gems themselves
+score nothing, just as a swapped Hypercube's own cell doesn't. Power gems it catches go off in
+the next wave as usual. No new rule or number is involved, so `ScoreRules.Version` stays at 2
+and the server's checks are unchanged; each combo gem counts as detonated by its own kind.
+
 So a run of 3 whose Flame destroys 8 more gems is worth 1,000 + 8 x 250 = 3,000 as the
 player's own match, and 6,000 on the first cascade.
 

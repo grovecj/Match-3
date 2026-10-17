@@ -977,6 +977,86 @@ namespace Match3.Tests
             AssertBoardIsFullAndSettled();
         }
 
+        // ---------------------------------------------------------------- Combos
+        //
+        // The rules are covered in Edit Mode (BoardModelComboTests). These check the running
+        // Board: a combo swap is never rejected, it's step 0 at x1, and it scores.
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator ComboSwap_TwoFlames_ClearsThe5x5AndScoresThroughTheScoreKeeper()
+        {
+            // The top-left pair makes no match, but as two Flames it's a combo. The gem moved
+            // from (0,4) lands in (1,4), and the 5x5 around that is x 0..3, y 2..4 on this board:
+            // 12 cells, two of them the combo gems themselves.
+            board.SetPowerForTests(NoMatchA, PowerKind.Flame);
+            board.SetPowerForTests(NoMatchB, PowerKind.Flame);
+
+            var keeperObject = new GameObject("Score Keeper");
+            keeperObject.SetActive(false);
+            ScoreKeeper keeper = keeperObject.AddComponent<ScoreKeeper>();
+            keeper.ConfigureForTests(board);
+            RoundStatsTracker tracker = keeperObject.AddComponent<RoundStatsTracker>();
+            tracker.ConfigureForTests(board);
+            keeperObject.SetActive(true);
+
+            var steps = new List<ClearStep>();
+            board.ClearStepScored += steps.Add;
+            var detonatingWhenWentOff = new List<bool>();
+            board.PowerGemDetonated += (kind, cell, wave) => detonatingWhenWentOff.Add(board.IsDetonating);
+
+            Assert.IsTrue(board.TrySwap(NoMatchA, NoMatchB));
+            yield return WaitUntilIdle();
+
+            Assert.AreEqual(new[] { "started" }, swapEvents, "A combo is a valid move: it mustn't be rejected.");
+            Assert.That(blasts, Is.Not.Empty, "PowerGemBlastStarted never fired.");
+            Assert.AreEqual(PowerCombo.BigFlame, blasts[0].Combo);
+            Assert.AreEqual(NoMatchB, blasts[0].Cell, "The combo is centred where the moved gem landed.");
+            Assert.AreEqual(10, blasts[0].Blasted.Count);
+            Assert.IsTrue(blasts[1].IsComboPartner);
+            Assert.That(blasts[1].Blasted, Is.Empty);
+            Assert.That(detonatingWhenWentOff, Is.All.True, "The clock is held while the combo plays.");
+
+            Assert.AreEqual(0, steps[0].CascadeIndex);
+            Assert.That(steps[0].RunLengths, Is.Empty);
+            Assert.AreEqual(10, steps[0].BlastedGems, "The combo gems aren't counted as blasted.");
+            Assert.AreEqual(10 * ScoreRules.PointsPerBlastedGem, steps[0].Points);
+
+            int expected = 0;
+            foreach (ClearStep step in steps)
+            {
+                expected += step.Points;
+            }
+            Assert.AreEqual(expected, keeper.Total);
+            Assert.That(tracker.Stats.flamesDetonated, Is.GreaterThanOrEqualTo(2), "Each combo gem counts as a Flame going off.");
+
+            AssertBoardIsFullAndSettled();
+            AssertNoMatchesLeft();
+            Object.Destroy(keeperObject);
+            yield return WaitUntilNoBursts();
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator ComboSwap_ThatAlsoMakesARun_IsTheComboOnly()
+        {
+            // MatchA/MatchB line up AAA along the bottom row. As two Flames, the swap is the
+            // combo instead: no run is cleared as the swap's own match.
+            board.SetPowerForTests(MatchA, PowerKind.Flame);
+            board.SetPowerForTests(MatchB, PowerKind.Flame);
+
+            Assert.IsTrue(board.TrySwap(MatchA, MatchB));
+            yield return WaitUntilIdle();
+
+            Assert.AreEqual(new[] { "started" }, swapEvents);
+            Assert.That(blasts, Is.Not.Empty);
+            Assert.AreEqual(PowerCombo.BigFlame, blasts[0].Combo);
+            foreach ((int longestRun, int cascadeIndex) step in clearSteps)
+            {
+                Assert.That(step.cascadeIndex, Is.GreaterThan(0), "Runs after a combo are cascades.");
+            }
+            AssertBoardIsFullAndSettled();
+            yield return WaitUntilNoBursts();
+        }
+
         // ---------------------------------------------------------------- Chain reactions
         //
         // The rules are covered in Edit Mode (BoardModelChainTests). This checks the running

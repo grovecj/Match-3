@@ -44,8 +44,22 @@ namespace Match3
         /// </summary>
         public IReadOnlyList<float> Delays { get; }
 
+        /// <summary>
+        /// The combo this blast is, if the gem was the one the player moved in a combo swap
+        /// (see <see cref="BoardModel.ActivateCombo"/>): then <see cref="Blasted"/> is the whole
+        /// combined blast, centred on <see cref="Cell"/>. None for any other blast.
+        /// </summary>
+        public PowerCombo Combo { get; }
+
+        /// <summary>
+        /// True for the other gem of a combo swap. It goes off (so it's still drawn and heard)
+        /// but blasts nothing of its own: <see cref="Blasted"/> is empty.
+        /// </summary>
+        public bool IsComboPartner { get; }
+
         public PowerGemBlast(PowerKind kind, Vector2Int cell, int waveIndex, TokenType colour,
-            IReadOnlyList<Vector2Int> blasted, IReadOnlyList<float> delays)
+            IReadOnlyList<Vector2Int> blasted, IReadOnlyList<float> delays,
+            PowerCombo combo = PowerCombo.None, bool isComboPartner = false)
         {
             Kind = kind;
             Cell = cell;
@@ -53,6 +67,8 @@ namespace Match3
             Colour = colour;
             Blasted = blasted;
             Delays = delays;
+            Combo = combo;
+            IsComboPartner = isComboPartner;
         }
     }
 }

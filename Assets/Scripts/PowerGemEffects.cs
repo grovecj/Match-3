@@ -12,6 +12,7 @@ namespace Match3
     /// <item>A Flame: a fast burst of embers over the 3x3 it clears.</item>
     /// <item>A Star: a burst on the gem and beams that race along its row and column (<see cref="StarBeam"/>).</item>
     /// <item>A Hypercube: a crackling arc to each gem of the colour (<see cref="HypercubeZap"/>), with a spark on each as it's hit.</item>
+    /// <item>A combo: a Flame burst scaled up to the 5x5, or a Star burst with three beams per axis.</item>
     /// </list>
     ///
     /// It only listens to the <see cref="Board"/>'s events (<see cref="Board.PowerGemCreated"/>
@@ -40,6 +41,12 @@ namespace Match3
 
         /// <summary>How much white is mixed into a gem's colour for its beam or bolts (0 = none, 1 = all white).</summary>
         public const float BeamWhiteness = 0.6f;
+
+        /// <summary>
+        /// How much bigger a <see cref="PowerCombo.BigFlame"/>'s burst is than a Flame's: the
+        /// prefab covers a 3x3, and the combo clears a 5x5.
+        /// </summary>
+        public const float BigFlameScale = 5f / 3f;
 
         // Beams and bolts are drawn this far in front of the tokens: above a picked-up token and
         // its overlay, so nothing on the board covers them. (The particle prefabs set their own
@@ -94,6 +101,27 @@ namespace Match3
         {
             Color color = board.GemColorFor(blast.Colour);
             Vector3 origin = board.GridToWorld(blast.Cell.x, blast.Cell.y);
+
+            // A combo is drawn with the same prefabs as a single gem, just more of them or
+            // bigger: the moved gem draws the whole combined blast...
+            switch (blast.Combo)
+            {
+                case PowerCombo.BigFlame:
+                    PlayEffect(flameBlastPrefab, origin, color, BigFlameScale);
+                    return;
+                case PowerCombo.StarCross:
+                    PlayEffect(starBurstPrefab, origin, color);
+                    FireCrossBeams(blast.Cell, Color.Lerp(color, Color.white, BeamWhiteness));
+                    return;
+            }
+
+            // ...and its partner only flares in its own cell: its blast is part of that one.
+            if (blast.IsComboPartner)
+            {
+                PlayEffect(blast.Kind == PowerKind.Star ? starBurstPrefab : flameBlastPrefab, origin, color);
+                return;
+            }
+
             switch (blast.Kind)
             {
                 case PowerKind.Flame:
@@ -114,7 +142,7 @@ namespace Match3
         /// Fires a Star's beam from <paramref name="cell"/> to the four edges of the board. The
         /// beam travels at the Board's beam speed, so it reaches each gem as that gem pops.
         /// </summary>
-        private void FireBeam(Vector2Int cell, Color color)
+        private void FireBeam(Vector2Int cell, Color color, bool alongRow = true, bool alongColumn = true)
         {
             // No prefab: the beam is simple enough to build in code. Parented here to keep the
             // Hierarchy tidy; it destroys itself when it's done.
@@ -126,14 +154,39 @@ namespace Match3
             SpriteRenderer tokenRenderer = board.TokenRenderer;
             int order = (tokenRenderer != null ? tokenRenderer.sortingOrder : 0) + BeamOrderOffset;
             // Each arm starts in the middle of the gem's cell, so it has half a cell to cross
-            // before it even leaves that cell, then one whole cell for each cell beyond it.
+            // before it even leaves that cell, then one whole cell for each cell beyond it. An
+            // arm that isn't wanted is given no reach at all, so it never grows.
             beam.Play(color, board.CellSize, board.BeamSpeed,
-                reachRight: board.Width - cell.x - 0.5f,
-                reachUp: board.Height - cell.y - 0.5f,
-                reachLeft: cell.x + 0.5f,
-                reachDown: cell.y + 0.5f,
+                reachRight: alongRow ? board.Width - cell.x - 0.5f : 0f,
+                reachUp: alongColumn ? board.Height - cell.y - 0.5f : 0f,
+                reachLeft: alongRow ? cell.x + 0.5f : 0f,
+                reachDown: alongColumn ? cell.y + 0.5f : 0f,
                 drawLike: tokenRenderer,
                 sortingOrder: order);
+        }
+
+        /// <summary>
+        /// A <see cref="PowerCombo.StarCross"/>'s beams: three along rows and three along
+        /// columns, through the 3x3 around <paramref name="centre"/>. Each row's beam starts in
+        /// the centre's column and each column's beam in the centre's row, which is where
+        /// <see cref="Board.BlastDelay"/> measures from. A row or column off the board is skipped.
+        /// </summary>
+        private void FireCrossBeams(Vector2Int centre, Color color)
+        {
+            for (int offset = -1; offset <= 1; offset++)
+            {
+                int row = centre.y + offset;
+                if (row >= 0 && row < board.Height)
+                {
+                    FireBeam(new Vector2Int(centre.x, row), color, alongRow: true, alongColumn: false);
+                }
+
+                int column = centre.x + offset;
+                if (column >= 0 && column < board.Width)
+                {
+                    FireBeam(new Vector2Int(column, centre.y), color, alongRow: false, alongColumn: true);
+                }
+            }
         }
 
         /// <summary>
@@ -172,7 +225,11 @@ namespace Match3
         /// board's cells and tinted <paramref name="color"/>. Does nothing if the prefab hasn't
         /// been built and assigned yet.
         /// </summary>
-        private void PlayEffect(ParticleEffect prefab, Vector3 position, Color color)
+        /// <param name="scale">
+        /// How much bigger than one cell's worth to draw it: 1 for the effect as built, more for
+        /// a combo's bigger blast. Set again every time, so a pooled copy never keeps an old size.
+        /// </param>
+        private void PlayEffect(ParticleEffect prefab, Vector3 position, Color color, float scale = 1f)
         {
             if (prefab == null)
             {
@@ -183,7 +240,7 @@ namespace Match3
             ParticleEffect effect = pool.Get();
             effect.transform.position = position;
             // The prefabs are built for a 1-unit cell; scaling one scales the whole effect.
-            effect.transform.localScale = Vector3.one * board.CellSize;
+            effect.transform.localScale = Vector3.one * (board.CellSize * scale);
             effect.Play(color);
         }
 

@@ -122,13 +122,26 @@ namespace Match3
             /// rather than a colour (and for a Hypercube that found no coloured gem to pick).
             /// </summary>
             public readonly TokenType Target;
+            /// <summary>
+            /// For the gem the player moved in a combo swap (see <see cref="ActivateCombo"/>), the
+            /// combo it set off: its <see cref="Blasted"/> is the combined blast. None otherwise.
+            /// </summary>
+            public readonly PowerCombo Combo;
+            /// <summary>
+            /// True for the other gem of a combo swap: it was used up by the combo, so it blasts
+            /// nothing of its own (<see cref="Blasted"/> is empty).
+            /// </summary>
+            public readonly bool IsComboPartner;
 
-            public Detonation(Vector2Int cell, Piece piece, IReadOnlyList<Vector2Int> blasted, TokenType target = null)
+            public Detonation(Vector2Int cell, Piece piece, IReadOnlyList<Vector2Int> blasted, TokenType target = null,
+                PowerCombo combo = PowerCombo.None, bool isComboPartner = false)
             {
                 Cell = cell;
                 Piece = piece;
                 Blasted = blasted;
                 Target = target;
+                Combo = combo;
+                IsComboPartner = isComboPartner;
             }
 
             /// <summary>Which power gem went off: shorthand for <c>Piece.Power</c>.</summary>
@@ -139,7 +152,7 @@ namespace Match3
         /// Everything one clear step did to the board, split into the three things the
         /// <see cref="Board"/> shows separately: gems that matched, power gems that appeared, and
         /// gems caught in a blast. <see cref="ClearMatches"/> and
-        /// <see cref="ActivateHypercube"/> make these.
+        /// <see cref="ActivateHypercube"/> make these, as do <see cref="ActivateCombo"/> and <see cref="DetonatePowerGem"/>.
         /// </summary>
         // The model does the whole step at once and hands back a description of it, the same way
         // Collapse hands back a list of Falls. The Board can then take as long as it likes
@@ -191,6 +204,8 @@ namespace Match3
         /// A power gem that has been set off but hasn't blasted anything yet: it's waiting for
         /// its wave. <see cref="Target"/> is only for a Hypercube the player swapped, whose
         /// colour was chosen by the swap; null means "work it out when the gem goes off".
+        /// <see cref="Combo"/> and <see cref="IsComboPartner"/> are only for the two gems of a
+        /// combo swap: see <see cref="Detonation"/>.
         /// </summary>
         // `private`: only ResolveWaves and its callers need this. By the time a gem is pending
         // it's already off the grid, which is why what it was has to be remembered here.
@@ -199,12 +214,17 @@ namespace Match3
             public readonly Vector2Int Cell;
             public readonly Piece Piece;
             public readonly TokenType Target;
+            public readonly PowerCombo Combo;
+            public readonly bool IsComboPartner;
 
-            public PendingGem(Vector2Int cell, Piece piece, TokenType target = null)
+            public PendingGem(Vector2Int cell, Piece piece, TokenType target = null,
+                PowerCombo combo = PowerCombo.None, bool isComboPartner = false)
             {
                 Cell = cell;
                 Piece = piece;
                 Target = target;
+                Combo = combo;
+                IsComboPartner = isComboPartner;
             }
         }
 
@@ -608,8 +628,8 @@ namespace Match3
 
         /// <summary>
         /// True if some pair of neighboring tokens can be swapped: the swap would make a match,
-        /// or it would set off a Hypercube (see <see cref="IsHypercubeSwap"/>). Meant for a
-        /// settled board (one with no matches on it already).
+        /// set off a Hypercube (see <see cref="IsHypercubeSwap"/>), or set off a combo (see
+        /// <see cref="IsComboSwap"/>). Meant for a settled board (one with no matches on it already).
         /// </summary>
         public bool HasValidMove()
         {
@@ -657,12 +677,13 @@ namespace Match3
         /// <summary>
         /// True if the player may swap the tokens in <paramref name="a"/> and
         /// <paramref name="b"/>: doing so would leave a match on the board, or it's a Hypercube
-        /// swap. Nothing is changed.
+        /// swap or a combo swap. Nothing is changed.
         /// </summary>
-        // The rule used to be just "a swap is valid only if it makes a run". The Hypercube breaks
-        // that, so the rule became "a run, OR a Hypercube swap", and it lives in this one method.
-        // Everything that asks "can the player move?" (hints, the no-moves check, shuffling) goes
-        // through here, so none of it had to change to learn about the new gem.
+        // The rule used to be just "a swap is valid only if it makes a run". The Hypercube broke
+        // that, so the rule became "a run, OR a Hypercube swap"; combos made it "a run, OR a
+        // Hypercube swap, OR a combo swap". Each time the new case was one more line here and
+        // nowhere else: everything that asks "can the player move?" (hints, the no-moves check,
+        // shuffling) goes through this method, so none of it had to change.
         private bool IsValidSwap(Vector2Int a, Vector2Int b)
         {
             if (!IsInBounds(a) || !IsInBounds(b))
@@ -670,8 +691,8 @@ namespace Match3
                 return false;
             }
 
-            // Checked first: a Hypercube swap needs no run, so there's nothing to try out.
-            if (IsHypercubeSwap(a, b))
+            // Checked first: neither of these needs a run, so there's nothing to try out.
+            if (IsComboSwap(a, b) || IsHypercubeSwap(a, b))
             {
                 return true;
             }
@@ -707,6 +728,37 @@ namespace Match3
             // that it has a colour for the Hypercube to take.
             return (pieceA.Power == PowerKind.Hypercube && pieceB.Colour != null)
                 || (pieceB.Power == PowerKind.Hypercube && pieceA.Colour != null);
+        }
+
+        /// <summary>
+        /// True if cells <paramref name="a"/> and <paramref name="b"/> each hold a Flame or a
+        /// Star, whatever their colours. Swapping those two is always a valid move: it sets off
+        /// one bigger blast (see <see cref="ActivateCombo"/>). Like
+        /// <see cref="IsHypercubeSwap"/>, the order of the cells doesn't matter, it can be asked
+        /// before or after the swap, and it doesn't check that the cells are neighbors.
+        /// </summary>
+        public bool IsComboSwap(Vector2Int a, Vector2Int b)
+        {
+            return ComboFor(PieceAt(a).Power, PieceAt(b).Power) != PowerCombo.None;
+        }
+
+        /// <summary>
+        /// The combo two power gems of <paramref name="a"/> and <paramref name="b"/> make when
+        /// swapped together: two Flames make a <see cref="PowerCombo.BigFlame"/>, and any pair
+        /// with a Star in it a <see cref="PowerCombo.StarCross"/>. Anything else (an ordinary
+        /// gem, a Hypercube, an empty cell) makes no combo.
+        /// </summary>
+        // The one place that knows which pairs combine and into what. A Hypercube pair (#109)
+        // would be one more case here.
+        public static PowerCombo ComboFor(PowerKind a, PowerKind b)
+        {
+            bool aCombines = a == PowerKind.Flame || a == PowerKind.Star;
+            bool bCombines = b == PowerKind.Flame || b == PowerKind.Star;
+            if (!aCombines || !bCombines)
+            {
+                return PowerCombo.None;
+            }
+            return a == PowerKind.Flame && b == PowerKind.Flame ? PowerCombo.BigFlame : PowerCombo.StarCross;
         }
 
         // ------------------------------------------------------------ Shuffling
@@ -851,10 +903,30 @@ namespace Match3
         /// </summary>
         public List<Vector2Int> FlameBlastCells(Vector2Int centre)
         {
+            return SquareCells(centre, 1);
+        }
+
+        /// <summary>
+        /// The cells a <see cref="PowerCombo.BigFlame"/> centred on <paramref name="centre"/>
+        /// blasts: the 5x5 block around it, clipped at the edges like a Flame's 3x3. So 25 cells
+        /// in the middle and 9 in a corner. Listed column by column, bottom to top.
+        /// </summary>
+        public List<Vector2Int> BigFlameBlastCells(Vector2Int centre)
+        {
+            return SquareCells(centre, 2);
+        }
+
+        /// <summary>
+        /// The square of cells reaching <paramref name="radius"/> cells out from
+        /// <paramref name="centre"/> in every direction, minus whatever is off the board.
+        /// Column by column, bottom to top.
+        /// </summary>
+        private List<Vector2Int> SquareCells(Vector2Int centre, int radius)
+        {
             var cells = new List<Vector2Int>();
-            for (int x = centre.x - 1; x <= centre.x + 1; x++)
+            for (int x = centre.x - radius; x <= centre.x + radius; x++)
             {
-                for (int y = centre.y - 1; y <= centre.y + 1; y++)
+                for (int y = centre.y - radius; y <= centre.y + radius; y++)
                 {
                     var cell = new Vector2Int(x, y);
                     if (IsInBounds(cell))
@@ -864,6 +936,62 @@ namespace Match3
                 }
             }
             return cells;
+        }
+
+        /// <summary>
+        /// The cells a <see cref="PowerCombo.StarCross"/> centred on <paramref name="centre"/>
+        /// blasts: the three whole rows and three whole columns through the 3x3 around it. A row
+        /// or column that would be off the board is simply left out, so at an edge it's two of
+        /// each. Every cell is listed once: the rows first (bottom to top, each left to right),
+        /// then whatever the columns add (left to right, each bottom to top).
+        /// </summary>
+        public List<Vector2Int> StarCrossBlastCells(Vector2Int centre)
+        {
+            var cells = new List<Vector2Int>();
+            for (int y = centre.y - 1; y <= centre.y + 1; y++)
+            {
+                if (y < 0 || y >= Height)
+                {
+                    continue;
+                }
+                for (int x = 0; x < Width; x++)
+                {
+                    cells.Add(new Vector2Int(x, y));
+                }
+            }
+
+            for (int x = centre.x - 1; x <= centre.x + 1; x++)
+            {
+                if (x < 0 || x >= Width)
+                {
+                    continue;
+                }
+                for (int y = 0; y < Height; y++)
+                {
+                    // The rows already listed the cells where this column crosses them.
+                    if (Mathf.Abs(y - centre.y) > 1)
+                    {
+                        cells.Add(new Vector2Int(x, y));
+                    }
+                }
+            }
+            return cells;
+        }
+
+        /// <summary>
+        /// The cells <paramref name="combo"/> blasts around <paramref name="centre"/>: see
+        /// <see cref="BigFlameBlastCells"/> and <see cref="StarCrossBlastCells"/>. Empty for
+        /// <see cref="PowerCombo.None"/>.
+        /// </summary>
+        // The combo counterpart of BlastCells: the one place that knows each combo's shape.
+        public List<Vector2Int> ComboBlastCells(PowerCombo combo, Vector2Int centre)
+        {
+            switch (combo)
+            {
+                case PowerCombo.BigFlame: return BigFlameBlastCells(centre);
+                case PowerCombo.StarCross: return StarCrossBlastCells(centre);
+                default: return new List<Vector2Int>();
+            }
         }
 
         /// <summary>
@@ -1078,6 +1206,48 @@ namespace Match3
         }
 
         /// <summary>
+        /// Sets off the combo of the two power gems the player just swapped (see
+        /// <see cref="IsComboSwap"/>): both gems are emptied, and one blast of the combo's shape
+        /// (see <see cref="ComboBlastCells"/>), centred on <paramref name="moved"/>, empties
+        /// everything else it covers. Power gems it catches go off in the next wave, the same
+        /// chain reaction as in <see cref="ClearMatches"/>.
+        ///
+        /// Like <see cref="ActivateHypercube"/> this is a clear step of its own: nothing is
+        /// matched or made. The result's first wave is two detonations: the moved gem, carrying
+        /// the whole blast (its <see cref="Detonation.Combo"/> says which), then the partner,
+        /// which blasts nothing of its own (<see cref="Detonation.IsComboPartner"/>). Neither
+        /// gem's own cell is in any <see cref="Detonation.Blasted"/> list, so neither is scored
+        /// as a blasted gem. Call <see cref="Collapse"/> afterwards.
+        /// </summary>
+        /// <param name="moved">
+        /// Where the gem the player moved is now, after the swap. The blast is centred here.
+        /// </param>
+        /// <param name="partner">Where the gem it was swapped with is now.</param>
+        public ClearResult ActivateCombo(Vector2Int moved, Vector2Int partner)
+        {
+            Piece movedGem = PieceAt(moved);
+            Piece partnerGem = PieceAt(partner);
+            PowerCombo combo = ComboFor(movedGem.Power, partnerGem.Power);
+            if (combo == PowerCombo.None)
+            {
+                throw new System.ArgumentException(
+                    $"Cells ({moved.x},{moved.y}) and ({partner.x},{partner.y}) don't hold a Flame/Star pair.");
+            }
+
+            // Both gems come off the board before anything blasts, so the blast passes over
+            // their cells (they're empty) and neither is counted as a blasted gem.
+            grid[moved.x, moved.y] = Piece.Empty;
+            grid[partner.x, partner.y] = Piece.Empty;
+            var firstWave = new List<PendingGem>
+            {
+                new PendingGem(moved, movedGem, combo: combo),
+                new PendingGem(partner, partnerGem, isComboPartner: true),
+            };
+            return new ClearResult(new List<Vector2Int>(), new List<Creation>(),
+                ResolveWaves(firstWave, new HashSet<Vector2Int>()));
+        }
+
+        /// <summary>
         /// Looks for a power gem on the board, row by row from the bottom, each row left to
         /// right: so the bottom-left corner is looked at first and the top-right corner last.
         /// Returns false (and <paramref name="cell"/> is meaningless) if there isn't one.
@@ -1171,6 +1341,15 @@ namespace Match3
                         target = gem.Target ?? MostCommonColour();
                         reach = CellsOfColour(target);
                     }
+                    else if (gem.IsComboPartner)
+                    {
+                        // Its blast is part of the moved gem's combo blast.
+                        reach = new List<Vector2Int>();
+                    }
+                    else if (gem.Combo != PowerCombo.None)
+                    {
+                        reach = ComboBlastCells(gem.Combo, gem.Cell);
+                    }
                     else
                     {
                         reach = BlastCells(gem.Piece.Power, gem.Cell);
@@ -1194,7 +1373,7 @@ namespace Match3
                             next.Add(new PendingGem(cell, hit));
                         }
                     }
-                    wave.Add(new Detonation(gem.Cell, gem.Piece, blasted, target));
+                    wave.Add(new Detonation(gem.Cell, gem.Piece, blasted, target, gem.Combo, gem.IsComboPartner));
                 }
 
                 waves.Add(wave);

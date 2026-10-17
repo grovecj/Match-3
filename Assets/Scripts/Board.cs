@@ -768,7 +768,7 @@ namespace Match3
 
         /// <summary>
         /// Swaps the tokens in two orthogonally adjacent cells and resolves the result: if the
-        /// swap makes a match or sets off a Hypercube, tokens are cleared and the board refills
+        /// swap makes a match or sets off a Hypercube or a combo, tokens are cleared and the board refills
         /// (with cascades); otherwise the tokens swap back. Returns false (and does nothing) if the cells aren't
         /// valid neighbors or the board is still resolving a previous swap.
         ///
@@ -840,11 +840,25 @@ namespace Match3
             int cascadeIndex = 0;
             List<MatchGroup> groups;
 
-            // There are two ways a swap can be a valid move, and the Hypercube's is asked about
-            // first. It has to be: the gem that changed places with the cube may also have
-            // landed in a run, and looking for runs first would clear just that run (maybe even
-            // leaving a new power gem) instead of every gem of the colour.
-            if (model.IsHypercubeSwap(a, b))
+            // There are three ways a swap can be a valid move, and the two that need no run (a
+            // combo and a Hypercube) are asked about first. They have to be: the gems that changed
+            // places may also have landed in a run, and looking for runs first would clear just
+            // that run (maybe even leaving a new power gem) instead of setting off the big blast.
+            if (model.IsComboSwap(a, b))
+            {
+                // `a` is the cell the player picked up (or selected first), so the gem they moved
+                // now sits in `b`: that's where the combo is centred. Otherwise it plays out just
+                // like the Hypercube's step 0 below.
+                BoardModel.ClearResult combo = model.ActivateCombo(b, a);
+                // Nothing was matched, so both gems' tokens are still on the board.
+                yield return StartCoroutine(PlayWaves(combo.Waves, firstGemsOnBoard: true));
+                ClearStepScored?.Invoke(ClearStep.From(combo, new List<MatchGroup>(), cascadeIndex));
+                CollapseAndRefill();
+                yield return StartCoroutine(AnimateFalls());
+                groups = model.FindMatchGroups();
+                cascadeIndex = 1;
+            }
+            else if (model.IsHypercubeSwap(a, b))
             {
                 // Step 0 of this turn is the cube going off rather than a match. After it the
                 // board falls and refills exactly as after any clear, and whatever that lines up
@@ -1443,7 +1457,7 @@ namespace Match3
                     Vector2Int cell = detonation.Blasted[i];
                     float delay = isCube
                         ? ZapDelay(i, zapInterval)
-                        : BlastDelay(detonation.Kind, detonation.Cell, cell, beamSpeed);
+                        : BlastDelay(detonation.Kind, detonation.Cell, cell, beamSpeed, detonation.Combo);
                     delays.Add(delay);
 
                     // A power gem caught in this blast doesn't pop with the rest: it stays put
@@ -1471,7 +1485,7 @@ namespace Match3
                 // The pictures (the Flame's burst, the Star's beam, the Hypercube's bolts) and
                 // the sounds are all drawn by listeners, from the same delays the pops use.
                 PowerGemBlastStarted?.Invoke(new PowerGemBlast(detonation.Kind, detonation.Cell, waveIndex,
-                    colour, detonation.Blasted, delays));
+                    colour, detonation.Blasted, delays, detonation.Combo, detonation.IsComboPartner));
                 PowerGemDetonated?.Invoke(detonation.Kind, detonation.Cell, waveIndex);
             }
             return removed;
@@ -1483,21 +1497,46 @@ namespace Match3
         /// hits everything at once (0). A Star's beam travels outward at
         /// <paramref name="beamSpeed"/> cells per second, so a cell 3 away waits 3 times as long
         /// as the one next to the gem.
+        ///
+        /// A combo (<paramref name="combo"/>) goes by its own shape, whichever gem was moved: a
+        /// <see cref="PowerCombo.BigFlame"/> hits everything at once, and a
+        /// <see cref="PowerCombo.StarCross"/> fires a beam along each of its three rows and three
+        /// columns, each starting level with the centre, so a cell waits for the nearest beam
+        /// that reaches it.
         /// </summary>
         // This is how an effect is sequenced across cells: the whole blast is decided up front,
         // and each cell is just given its own start time. Nothing has to "step" along the row.
         // `public static` so the Edit Mode tests can check it without a scene.
-        public static float BlastDelay(PowerKind kind, Vector2Int gemCell, Vector2Int cell, float beamSpeed)
+        public static float BlastDelay(PowerKind kind, Vector2Int gemCell, Vector2Int cell, float beamSpeed,
+            PowerCombo combo = PowerCombo.None)
         {
-            if (kind != PowerKind.Star)
+            int dx = Mathf.Abs(cell.x - gemCell.x);
+            int dy = Mathf.Abs(cell.y - gemCell.y);
+
+            if (combo == PowerCombo.StarCross)
+            {
+                // A row beam (one of the three rows) reaches this cell after dx cells, a column
+                // beam after dy. The 3x3 in the middle is on both, so it takes the sooner.
+                int distance = int.MaxValue;
+                if (dy <= 1)
+                {
+                    distance = dx;
+                }
+                if (dx <= 1)
+                {
+                    distance = Mathf.Min(distance, dy);
+                }
+                return distance / beamSpeed;
+            }
+
+            if (combo != PowerCombo.None || kind != PowerKind.Star)
             {
                 return 0f;
             }
 
             // A cell in the Star's row or column differs from it in only x or only y, so adding
             // the two differences gives its distance along the beam, in cells.
-            int distance = Mathf.Abs(cell.x - gemCell.x) + Mathf.Abs(cell.y - gemCell.y);
-            return distance / beamSpeed;
+            return (dx + dy) / beamSpeed;
         }
 
         /// <summary>
