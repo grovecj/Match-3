@@ -1,7 +1,8 @@
 # Vision
 
-> **Status: draft.** Proposed 2026-10-10. The decisions at the bottom are agreed; the
-> statement and pillars have not been explicitly signed off yet.
+> **Status: agreed.** Proposed 2026-10-10; the statement and pillars were signed off on
+> 2026-10-16. The decisions at the bottom are agreed. Change any of it on purpose, in its own
+> pull request.
 
 ## Statement
 
