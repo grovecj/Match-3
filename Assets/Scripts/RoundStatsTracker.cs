@@ -38,6 +38,7 @@ namespace Match3
             // need, so they go through small methods of our own.
             board.SwapStarted += stats.SwapStarted;
             board.LastHurrahStarted += stats.LastHurrahStarted;
+            board.ComboSwapped += stats.ComboSwapped;
             board.MatchCleared += stats.RunCleared;
             board.ClearStepScored += stats.StepScored;
             board.PowerGemCreated += OnPowerGemCreated;
@@ -50,6 +51,7 @@ namespace Match3
             {
                 board.SwapStarted -= stats.SwapStarted;
                 board.LastHurrahStarted -= stats.LastHurrahStarted;
+                board.ComboSwapped -= stats.ComboSwapped;
                 board.MatchCleared -= stats.RunCleared;
                 board.ClearStepScored -= stats.StepScored;
                 board.PowerGemCreated -= OnPowerGemCreated;

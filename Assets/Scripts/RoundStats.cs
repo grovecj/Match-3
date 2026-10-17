@@ -4,9 +4,9 @@ namespace Match3
 {
     /// <summary>
     /// What happened in one round, counted as it's played: how many swaps, how many matches of
-    /// each size, the longest match and the longest chain, the power gems made and set off, and
-    /// how the score was built up. It's sent to the server with the
-    /// round's score, and the server works out the player's achievements from it (see
+    /// each size, the longest match and the longest chain, the power gems made and set off, the
+    /// combos swapped, and how the score was built up. It's sent to the server with the round's
+    /// score, and the server works out the player's achievements from it (see
     /// Docs/Achievements.md).
     ///
     /// A plain class with no Unity in it, so the Edit Mode tests can drive it directly. The
@@ -65,6 +65,13 @@ namespace Match3
         public int hypercubesDetonated;
         /// <summary>The most gems one swap cleared, counting every cascade it set off.</summary>
         public int mostGemsOneSwap;
+        /// <summary>
+        /// Swaps that put two power gems together and set off a combo (Flame + Flame, anything
+        /// with a Star, or anything with a Hypercube). One per swap, however much it blew up.
+        /// </summary>
+        // Added after scoring version 2 without a new version: it isn't part of the score, so
+        // the server treats a round without it as 0 combos (see Docs/Achievements.md).
+        public int combos;
 
         // The gems the current swap has cleared so far. Only needed while counting, so it isn't
         // sent: [NonSerialized] tells JsonUtility to leave a field out. (It would skip a private
@@ -92,6 +99,7 @@ namespace Match3
             starsDetonated = 0;
             hypercubesDetonated = 0;
             mostGemsOneSwap = 0;
+            combos = 0;
             gemsThisSwap = 0;
             inLastHurrah = false;
         }
@@ -102,6 +110,15 @@ namespace Match3
             swaps++;
             gemsThisSwap = 0;
             inLastHurrah = false;
+        }
+
+        /// <summary>
+        /// The swap that just started was a power gem combo. Comes after its
+        /// <see cref="SwapStarted"/>; the Last Hurrah never sends it, since no swap sets it off.
+        /// </summary>
+        public void ComboSwapped()
+        {
+            combos++;
         }
 
         /// <summary>
