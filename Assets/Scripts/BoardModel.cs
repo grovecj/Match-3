@@ -204,8 +204,10 @@ namespace Match3
         /// A power gem that has been set off but hasn't blasted anything yet: it's waiting for
         /// its wave. <see cref="Target"/> is only for a Hypercube the player swapped, whose
         /// colour was chosen by the swap; null means "work it out when the gem goes off".
-        /// <see cref="Combo"/> and <see cref="IsComboPartner"/> are only for the two gems of a
-        /// combo swap: see <see cref="Detonation"/>.
+        /// <see cref="Reach"/>, if set, is the cells its blast covers, worked out by whoever set
+        /// it off; null means "the usual blast for its power". <see cref="Combo"/> and
+        /// <see cref="IsComboPartner"/> are only for the two gems of a combo swap: see
+        /// <see cref="Detonation"/>.
         /// </summary>
         // `private`: only ResolveWaves and its callers need this. By the time a gem is pending
         // it's already off the grid, which is why what it was has to be remembered here.
@@ -216,15 +218,17 @@ namespace Match3
             public readonly TokenType Target;
             public readonly PowerCombo Combo;
             public readonly bool IsComboPartner;
+            public readonly List<Vector2Int> Reach;
 
             public PendingGem(Vector2Int cell, Piece piece, TokenType target = null,
-                PowerCombo combo = PowerCombo.None, bool isComboPartner = false)
+                PowerCombo combo = PowerCombo.None, bool isComboPartner = false, List<Vector2Int> reach = null)
             {
                 Cell = cell;
                 Piece = piece;
                 Target = target;
                 Combo = combo;
                 IsComboPartner = isComboPartner;
+                Reach = reach;
             }
         }
 
@@ -1240,8 +1244,10 @@ namespace Match3
             grid[partner.x, partner.y] = Piece.Empty;
             var firstWave = new List<PendingGem>
             {
-                new PendingGem(moved, movedGem, combo: combo),
-                new PendingGem(partner, partnerGem, isComboPartner: true),
+                // The moved gem carries the whole combined blast; the partner's is part of it,
+                // so it reaches nothing of its own.
+                new PendingGem(moved, movedGem, combo: combo, reach: ComboBlastCells(combo, moved)),
+                new PendingGem(partner, partnerGem, isComboPartner: true, reach: new List<Vector2Int>()),
             };
             return new ClearResult(new List<Vector2Int>(), new List<Creation>(),
                 ResolveWaves(firstWave, new HashSet<Vector2Int>()));
@@ -1333,22 +1339,18 @@ namespace Match3
                     // A Hypercube clears a colour; a Flame or Star clears a shape around itself.
                     TokenType target = null;
                     List<Vector2Int> reach;
-                    if (gem.Piece.Power == PowerKind.Hypercube)
+                    if (gem.Reach != null)
+                    {
+                        // Whoever set this gem off already said what it blasts (a combo).
+                        reach = gem.Reach;
+                    }
+                    else if (gem.Piece.Power == PowerKind.Hypercube)
                     {
                         // `??` means "the left side, unless it's null, then the right side". The
                         // colour is counted now, when the cube goes off, not when it was caught:
                         // the gems that went off before it have changed what's left.
                         target = gem.Target ?? MostCommonColour();
                         reach = CellsOfColour(target);
-                    }
-                    else if (gem.IsComboPartner)
-                    {
-                        // Its blast is part of the moved gem's combo blast.
-                        reach = new List<Vector2Int>();
-                    }
-                    else if (gem.Combo != PowerCombo.None)
-                    {
-                        reach = ComboBlastCells(gem.Combo, gem.Cell);
                     }
                     else
                     {

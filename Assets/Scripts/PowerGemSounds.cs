@@ -24,6 +24,11 @@ namespace Match3
         private readonly Dictionary<PowerKind, int> lastFramePlayed =
             new Dictionary<PowerKind, int>();
 
+        // Set by PowerGemBlastStarted, which the Board fires just before each PowerGemDetonated:
+        // whether the gem about to go off is the partner of a combo swap. The two gems of a
+        // combo are one deliberate play, so the partner is heard even when it's the same kind.
+        private bool nextIsComboPartner;
+
         private void OnEnable()
         {
             if (board == null || audioManager == null)
@@ -33,6 +38,7 @@ namespace Match3
             }
             board.PowerGemCreated += OnPowerGemCreated;
             board.PowerGemDetonated += OnPowerGemDetonated;
+            board.PowerGemBlastStarted += OnBlastStarted;
         }
 
         private void OnDisable()
@@ -41,6 +47,7 @@ namespace Match3
             {
                 board.PowerGemCreated -= OnPowerGemCreated;
                 board.PowerGemDetonated -= OnPowerGemDetonated;
+                board.PowerGemBlastStarted -= OnBlastStarted;
             }
         }
 
@@ -49,10 +56,18 @@ namespace Match3
             audioManager.Play(SoundId.PowerGemCreated);
         }
 
+        private void OnBlastStarted(PowerGemBlast blast)
+        {
+            nextIsComboPartner = blast.IsComboPartner;
+        }
+
         private void OnPowerGemDetonated(PowerKind kind, Vector2Int cell, int waveIndex)
         {
+            bool isComboPartner = nextIsComboPartner;
+            nextIsComboPartner = false;
+
             // TryGetValue is false (and leaves `frame` at 0) for a kind not played yet.
-            if (lastFramePlayed.TryGetValue(kind, out int frame) && frame == Time.frameCount)
+            if (!isComboPartner && lastFramePlayed.TryGetValue(kind, out int frame) && frame == Time.frameCount)
             {
                 return;
             }

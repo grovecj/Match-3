@@ -848,13 +848,8 @@ namespace Match3
             {
                 // `a` is the cell the player picked up (or selected first), so the gem they moved
                 // now sits in `b`: that's where the combo is centred. Otherwise it plays out just
-                // like the Hypercube's step 0 below.
-                BoardModel.ClearResult combo = model.ActivateCombo(b, a);
-                // Nothing was matched, so both gems' tokens are still on the board.
-                yield return StartCoroutine(PlayWaves(combo.Waves, firstGemsOnBoard: true));
-                ClearStepScored?.Invoke(ClearStep.From(combo, new List<MatchGroup>(), cascadeIndex));
-                CollapseAndRefill();
-                yield return StartCoroutine(AnimateFalls());
+                // like the Hypercube's step 0 below (see PlaySwapStep).
+                yield return StartCoroutine(PlaySwapStep(model.ActivateCombo(b, a)));
                 groups = model.FindMatchGroups();
                 cascadeIndex = 1;
             }
@@ -870,14 +865,7 @@ namespace Match3
 
                 // As in the cascade loop below: the model clears everything right now (the
                 // colour, and whatever chain reaction that starts) and describes what it did.
-                // There's no run to report, so no MatchCleared or ClearStepResolved here, but
-                // the zapped gems are worth points, so the step is still scored.
-                BoardModel.ClearResult zapped = model.ActivateHypercube(cube, colour);
-                // The cube wasn't matched, so unlike a matched gem its token is still there.
-                yield return StartCoroutine(PlayWaves(zapped.Waves, firstGemsOnBoard: true));
-                ClearStepScored?.Invoke(ClearStep.From(zapped, new List<MatchGroup>(), cascadeIndex));
-                CollapseAndRefill();
-                yield return StartCoroutine(AnimateFalls());
+                yield return StartCoroutine(PlaySwapStep(model.ActivateHypercube(cube, colour)));
                 groups = model.FindMatchGroups();
                 cascadeIndex = 1;
             }
@@ -904,6 +892,22 @@ namespace Match3
             yield return StartCoroutine(ReshuffleIfStuck());
 
             state = BoardState.Idle;
+        }
+
+        /// <summary>
+        /// Step 0 of a swap that sets gems off without a match (a Hypercube or a combo): plays
+        /// <paramref name="result"/>'s waves, scores the step at x1, then lets the board fall and
+        /// refill. Whatever that lines up is the turn's first cascade.
+        /// </summary>
+        private IEnumerator PlaySwapStep(BoardModel.ClearResult result)
+        {
+            // Nothing was matched, so the swapped gems' tokens are still on the board. There's
+            // no run to report either (no MatchCleared or ClearStepResolved), but what the
+            // blast destroyed is worth points, so the step is still scored.
+            yield return StartCoroutine(PlayWaves(result.Waves, firstGemsOnBoard: true));
+            ClearStepScored?.Invoke(ClearStep.From(result, new List<MatchGroup>(), cascadeIndex: 0));
+            CollapseAndRefill();
+            yield return StartCoroutine(AnimateFalls());
         }
 
         /// <summary>

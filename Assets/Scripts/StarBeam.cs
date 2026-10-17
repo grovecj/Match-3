@@ -71,6 +71,13 @@ namespace Match3
                 fullLengths[i] = Mathf.Max(0f, reaches[i]) * cellSize;
                 travelDuration = Mathf.Max(travelDuration, fullLengths[i] / speed);
 
+                // An arm with nowhere to go (a combo's row-only or column-only beam) is never
+                // built: Redraw skips arms that don't exist.
+                if (arms[i] == null && fullLengths[i] <= 0f)
+                {
+                    continue;
+                }
+
                 if (arms[i] == null)
                 {
                     var armObject = new GameObject($"Arm {i}");
