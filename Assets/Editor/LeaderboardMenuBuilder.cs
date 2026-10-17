@@ -78,6 +78,8 @@ public static class LeaderboardMenuBuilder
         SetReference(gameManager, "leaderboardMenu", menu);
 
         Undo.RegisterCreatedObjectUndo(root, "Build Leaderboard Menu");
+        // The portrait layout (issue #114) points at the button and window just replaced.
+        ResponsiveLayoutBuilder.RewireIfPresent();
         // Tell Unity the scene has unsaved changes (the * in the Hierarchy) so Ctrl+S saves them.
         EditorSceneManager.MarkSceneDirty(canvas.gameObject.scene);
         Selection.activeGameObject = root;

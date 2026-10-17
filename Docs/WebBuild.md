@@ -82,8 +82,43 @@ Load times over localhost are mostly decompression and startup. Over a real netw
   evaluated as JavaScript, even in comments. Both fail the build with a
   "Preprocessor error" at the very end. The template writes `canvas#unity-canvas` for this
   reason.
-- **Desktop only.** Touch input is out of scope. Unity doesn't officially support mobile
-  browsers for this project's setup.
+- **Phones.** The build runs in Safari on iPhone and Chrome on Android, in portrait and
+  landscape (issue #114). Touch works through the Input System's `<Pointer>` bindings, so
+  dragging or tapping two tokens swaps them. The template sets `touch-action: none` on the
+  canvas so the browser doesn't turn those touches into scrolling or zooming, and sizes the
+  page with `100dvh` so it follows Safari's toolbar as it slides in and out. See
+  [Portrait layout](#portrait-layout) below.
+
+## Portrait layout
+
+`ResponsiveLayout` (on the Canvas) picks a layout from the screen's shape every time the screen
+size or safe area changes: a rotation, the browser toolbar showing or hiding, or a desktop window
+being resized. The rules are in `LayoutRules`, which has Edit Mode tests.
+
+| | Landscape (width ≥ height) | Portrait (width < height) |
+|---|---|---|
+| Side panel | Docked right, 447 units wide (as designed in the scene) | Docked to the bottom, 520 units tall |
+| Canvas Scaler | 1920×1080 reference, matches **height** | 1080×1920 reference, matches **width** |
+| Board | Fitted into the space left of the panel | Full width, above the panel |
+
+- In portrait, the panel is one "SCORE · TIME" row, the round-over message, a full-width
+  Start Round button and a row of Achievements, Account, Leaderboard and Settings buttons
+  (130 units tall: about 47 points on a 390-point-wide phone, above the 44-point minimum tap
+  target). On an iPhone-sized 390×844 screen it takes 22% of the height.
+- Switching only moves UI. The round, the timer and any swap or cascade carry on untouched.
+- Nothing is placed outside `Screen.safeArea` (notch, rounded corners, home indicator).
+  The template leaves `viewport-fit` at its default, so in the browser Safari already keeps the
+  page clear of the notch. The safe area matters most in the Editor's Device Simulator and in
+  any future native build.
+- Windows (Settings, Leaderboard, Achievements, Account, the initials prompt) are shrunk to
+  fit if they're bigger than the screen. Most aren't: a portrait canvas is 1080 units wide and
+  at least 1080 tall, and they were designed for 1920×1080.
+- The scene itself stays in the landscape layout; `ResponsiveLayout` only re-arranges it in
+  Play mode. **Match3 → Build Responsive Layout** adds it to the Canvas and wires it up (run
+  it after the other menu builders; they re-wire it themselves when re-run).
+- To try it in the Editor, pick a portrait resolution in the Game view's size menu (add one,
+  e.g. 390×844), or switch the Game view to **Simulator** and choose a phone to see the safe
+  area too.
 
 ## Test results
 
@@ -103,10 +138,20 @@ server sends no `Content-Encoding` header, so Decompression Fallback was exercis
 | Leaderboard survives a reload (`leaderboard.json` in IndexedDB) | ✅ | _TBD_ |
 | No console errors | ✅ | _TBD_ |
 
+Phones (issue #114):
+
+| Check | iOS Safari | Android Chrome |
+|---|---|---|
+| Portrait: board full width, panel below, all buttons tappable | _TBD_ | _TBD_ |
+| Rotating mid-round switches layout without pausing or resetting | _TBD_ | _TBD_ |
+| Toolbar showing/hiding keeps the layout | _TBD_ | _TBD_ |
+| Nothing under the notch or home indicator | _TBD_ | _TBD_ |
+| Every window fits and closes | _TBD_ | _TBD_ |
+| Swap by drag and by tap | _TBD_ | _TBD_ |
+| Landscape phone: board fully visible beside the panel | _TBD_ | _TBD_ |
+
 ## Known issues
 
-- **Narrow windows.** In a tall, narrow window (portrait), the side panel covers most of
-  the board. Fine at common desktop sizes, but the layout doesn't adapt to portrait.
 - **Download size.** The 12 MB `.wasm` is most of the download. Worth trying later:
   Managed Stripping Level *High* and IL2CPP Code Generation *Optimize for size*. Both
   need a full retest, because stripping can remove code that's only reached via reflection.

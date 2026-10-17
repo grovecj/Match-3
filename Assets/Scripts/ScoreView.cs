@@ -75,15 +75,19 @@ namespace Match3
 
         /// <summary>
         /// Makes the multiplier's text by copying <paramref name="source"/> (so it has the same
-        /// font and size, and sits on the same line) and aligning the copy to the right-hand end
-        /// of that row.
+        /// font and size), placing the copy inside it and aligning it to the right-hand end, so it
+        /// sits on the same line and moves with the score when the layout changes (issue #114).
         /// </summary>
         // Instantiate works on any GameObject, not just prefabs: it clones it, children and all.
-        // Passing a parent puts the clone under it; `false` keeps the clone's local position,
-        // anchors and size the same as the original's, which is what we want here.
         private TMP_Text CreateMultiplierText(TMP_Text source)
         {
-            TMP_Text text = Instantiate(source, source.transform.parent, false);
+            TMP_Text text = Instantiate(source, source.transform, false);
+            // Fill the score's own rectangle exactly.
+            RectTransform rt = text.rectTransform;
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = Vector2.zero;
             text.name = "MultiplierValue";
             // The score is centred across the row, so the right-hand end of it is free.
             text.horizontalAlignment = HorizontalAlignmentOptions.Right;

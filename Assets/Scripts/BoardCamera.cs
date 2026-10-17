@@ -14,15 +14,13 @@ namespace Match3
         [SerializeField] private Board board;
         [Tooltip("Empty space around the board, in world units (1 unit = 1 cell at default cell size).")]
         [SerializeField, Min(0f)] private float padding = 1f;
-        [Tooltip("Optional UI panel docked to the right edge of the screen. The board is fitted " +
-                 "into the space to its left so the two never overlap.")]
-        [SerializeField] private RectTransform rightPanel;
+        [Tooltip("Says which part of the screen the side panel leaves free (to its left in " +
+                 "landscape, above it in portrait). Optional: without one the board uses the whole screen.")]
+        [SerializeField] private ResponsiveLayout layout;
         [Tooltip("Supplies the background color. Optional: without one the camera keeps its own color.")]
         [SerializeField] private ThemeManager themeManager;
 
         private Camera cam;
-        // Reused buffer for RectTransform.GetWorldCorners, so we don't allocate every frame.
-        private readonly Vector3[] panelCorners = new Vector3[4];
 
         private void Awake()
         {
@@ -70,7 +68,7 @@ namespace Match3
         }
 
         // LateUpdate runs after every Update, so the camera reacts to anything that changed
-        // this frame (board resized in the Inspector, game window resized, etc).
+        // this frame (board resized in the Inspector, game window resized, phone rotated, etc).
         private void LateUpdate()
         {
             if (board == null)
@@ -78,47 +76,26 @@ namespace Match3
                 return;
             }
 
-            // The board only gets the part of the screen the right panel doesn't cover.
-            // boardFraction is that part's share of the screen width (1 = whole screen).
-            float panelFraction = GetRightPanelScreenFraction();
-            float boardFraction = 1f - panelFraction;
-
-            // orthographicSize is HALF the visible height in world units.
-            // The visible width is that times the aspect ratio (width / height), and the board
-            // only gets boardFraction of it, so to fit the board horizontally we divide the
-            // needed half-width by both.
-            Vector2 halfExtents = board.WorldSize / 2f + Vector2.one * padding;
-            float sizeToFitHeight = halfExtents.y;
-            float sizeToFitWidth = halfExtents.x / (cam.aspect * boardFraction);
-            float size = Mathf.Max(sizeToFitHeight, sizeToFitWidth);
-            cam.orthographicSize = size;
-
-            // Put the board in the middle of the free area rather than the middle of the screen:
-            // shift the camera right by half the panel's width in world units. (The visible
-            // world width is size * 2 * aspect, so half the panel is size * aspect * fraction.)
-            // Keep the camera's own z so it stays in front of the sprites.
-            Vector3 boardCenter = board.transform.position;
-            float offsetX = size * cam.aspect * panelFraction;
-            transform.position = new Vector3(boardCenter.x + offsetX, boardCenter.y, transform.position.z);
-        }
-
-        /// <summary>
-        /// How much of the screen's width (0..1) the right panel covers, or 0 if there's no panel.
-        /// </summary>
-        private float GetRightPanelScreenFraction()
-        {
-            if (rightPanel == null || !rightPanel.gameObject.activeInHierarchy)
+            // The board only gets the part of the screen the panel doesn't cover, in pixels.
+            var screenSize = new Vector2(cam.pixelWidth, cam.pixelHeight);
+            Rect boardRect = layout != null ? layout.BoardRect : new Rect(Vector2.zero, screenSize);
+            if (boardRect.width <= 0f || boardRect.height <= 0f)
             {
-                return 0f;
+                return;
             }
 
-            // For a Screen Space - Overlay canvas, UI "world" corners are in screen pixels, so
-            // this gives the panel's on-screen width after the Canvas Scaler has done its work.
-            // Corners are ordered bottom-left, top-left, top-right, bottom-right.
-            rightPanel.GetWorldCorners(panelCorners);
-            float panelWidth = panelCorners[2].x - panelCorners[0].x;
-            // Clamp so a misconfigured, huge panel can't leave the board zero (or negative) room.
-            return Mathf.Clamp(panelWidth / cam.pixelWidth, 0f, 0.9f);
+            // orthographicSize is HALF the visible height in world units. LayoutRules picks the
+            // largest zoom at which the board plus padding fits inside boardRect on both axes.
+            Vector2 halfExtents = board.WorldSize / 2f + Vector2.one * padding;
+            float size = LayoutRules.FitOrthographicSize(halfExtents, boardRect, screenSize.y);
+            cam.orthographicSize = size;
+
+            // Put the board in the middle of the free area rather than the middle of the screen
+            // by moving the camera the other way. Keep the camera's own z so it stays in front
+            // of the sprites.
+            Vector3 boardCenter = board.transform.position;
+            Vector2 offset = LayoutRules.CameraOffset(boardRect, screenSize, size);
+            transform.position = new Vector3(boardCenter.x + offset.x, boardCenter.y + offset.y, transform.position.z);
         }
     }
 }

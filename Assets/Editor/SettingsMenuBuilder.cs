@@ -75,6 +75,8 @@ public static class SettingsMenuBuilder
         FillSoundSetsIfEmpty(audioManager);
         AddPreferencesSync(settingsMenu, themeManager, audioManager);
 
+        // The portrait layout (issue #114) points at the button and window just replaced.
+        ResponsiveLayoutBuilder.RewireIfPresent();
         // Tell Unity the scene has unsaved changes (the * in the Hierarchy) so Ctrl+S saves them.
         EditorSceneManager.MarkSceneDirty(canvas.gameObject.scene);
         Selection.activeGameObject = settingsMenu.gameObject;
