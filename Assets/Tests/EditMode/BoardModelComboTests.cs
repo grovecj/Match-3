@@ -122,13 +122,20 @@ namespace Match3.Tests
         }
 
         [Test]
-        public void ComboFor_AnythingWithAnOrdinaryGemOrAHypercube_IsNone()
+        public void ComboFor_PairsWithAHypercube()
+        {
+            Assert.AreEqual(PowerCombo.Conversion, BoardModel.ComboFor(PowerKind.Hypercube, PowerKind.Flame));
+            Assert.AreEqual(PowerCombo.Conversion, BoardModel.ComboFor(PowerKind.Star, PowerKind.Hypercube));
+            Assert.AreEqual(PowerCombo.ClearBoard, BoardModel.ComboFor(PowerKind.Hypercube, PowerKind.Hypercube));
+        }
+
+        [Test]
+        public void ComboFor_AnythingWithAnOrdinaryGem_IsNone()
         {
             Assert.AreEqual(PowerCombo.None, BoardModel.ComboFor(PowerKind.Flame, PowerKind.None));
             Assert.AreEqual(PowerCombo.None, BoardModel.ComboFor(PowerKind.None, PowerKind.Star));
-            Assert.AreEqual(PowerCombo.None, BoardModel.ComboFor(PowerKind.Hypercube, PowerKind.Flame));
-            Assert.AreEqual(PowerCombo.None, BoardModel.ComboFor(PowerKind.Star, PowerKind.Hypercube));
-            Assert.AreEqual(PowerCombo.None, BoardModel.ComboFor(PowerKind.Hypercube, PowerKind.Hypercube));
+            Assert.AreEqual(PowerCombo.None, BoardModel.ComboFor(PowerKind.Hypercube, PowerKind.None));
+            Assert.AreEqual(PowerCombo.None, BoardModel.ComboFor(PowerKind.None, PowerKind.None));
         }
 
         [Test]
@@ -151,10 +158,20 @@ namespace Match3.Tests
         }
 
         [Test]
-        public void IsComboSwap_FlameAndHypercube_IsFalse_ItStaysAHypercubeSwap()
+        public void IsComboSwap_FlameAndHypercube_IsTrue_AsWellAsAHypercubeSwap()
         {
             BoardModel board = grids.Build("R*");
             grids.SetPowers(board, "F.");
+
+            // Both are true; the Board asks about the combo first, so the combo wins.
+            Assert.IsTrue(board.IsComboSwap(Cell(0, 0), Cell(1, 0)));
+            Assert.IsTrue(board.IsHypercubeSwap(Cell(0, 0), Cell(1, 0)));
+        }
+
+        [Test]
+        public void IsComboSwap_HypercubeAndOrdinaryGem_IsFalse_ItStaysAHypercubeSwap()
+        {
+            BoardModel board = grids.Build("R*");
 
             Assert.IsFalse(board.IsComboSwap(Cell(0, 0), Cell(1, 0)));
             Assert.IsTrue(board.IsHypercubeSwap(Cell(0, 0), Cell(1, 0)));
@@ -400,6 +417,273 @@ namespace Match3.Tests
 
             // (4,3) is an ordinary gem.
             Assert.Throws<System.ArgumentException>(() => board.ActivateCombo(Cell(3, 3), Cell(4, 3)));
+        }
+
+        // ---------------------------------------------------------------- Hypercube combos
+
+        /// <summary>
+        /// An 8x8 board with no matches, the same trick as <see cref="Quiet"/>: each row is the one
+        /// below shifted two places, so no letter repeats along a row or next to itself up a column.
+        /// </summary>
+        private BoardModel Quiet8x8()
+        {
+            const string letters = "ABCDEFGH";
+            var rows = new string[8];
+            for (int y = 0; y < 8; y++)
+            {
+                var row = new char[8];
+                for (int x = 0; x < 8; x++)
+                {
+                    row[x] = letters[(x + 2 * y) % 8];
+                }
+                // rows[0] is the top row.
+                rows[7 - y] = new string(row);
+            }
+            return grids.Build(rows);
+        }
+
+        [Test]
+        public void HasValidMove_TwoAdjacentHypercubes_IsAMove()
+        {
+            // Nothing but the two cubes: before #109 this board had no move at all.
+            BoardModel board = grids.Build("**");
+
+            Assert.IsTrue(board.HasValidMove());
+            Assert.IsTrue(board.TryFindValidMove(out Vector2Int a, out Vector2Int b));
+            Assert.AreEqual(Cell(0, 0), a);
+            Assert.AreEqual(Cell(1, 0), b);
+        }
+
+        [Test]
+        public void HasValidMove_TwoHypercubesNotNextToEachOther_IsNoMove()
+        {
+            BoardModel board = grids.Build("*.*");
+
+            Assert.IsFalse(board.HasValidMove());
+        }
+
+        [Test]
+        public void Conversion_TurnsTheColourIntoFlames_ThenTheCubeSetsThemAllOff()
+        {
+            // Quiet has one A in every row: seven in all. The Flame partner is the A at (0,0),
+            // the cube sits next to it, and the A at (1,3) is already a Star.
+            BoardModel board = grids.Build(Quiet);
+            TokenType a = grids.Type('A');
+            board.SetPieceAt(0, 0, new Piece(a, PowerKind.Flame));
+            board.SetPieceAt(1, 0, Piece.Hypercube);
+            board.SetPieceAt(1, 3, new Piece(a, PowerKind.Star));
+            List<Vector2Int> allAs = board.CellsOfColour(a);
+            Assert.AreEqual(7, allAs.Count);
+
+            // The Flame is the gem the player moved: the cube goes off all the same.
+            BoardModel.ClearResult result = board.ActivateCombo(Cell(0, 0), Cell(1, 0));
+
+            // The five ordinary A's became Flames; the partner and the Star aren't listed.
+            Assert.AreEqual(5, result.Converted.Count);
+            foreach (BoardModel.Creation conversion in result.Converted)
+            {
+                Assert.AreEqual(PowerKind.Flame, conversion.Kind);
+                Assert.AreEqual(a, conversion.Piece.Colour);
+                Assert.AreNotEqual(Cell(0, 0), conversion.Cell);
+                Assert.AreNotEqual(Cell(1, 3), conversion.Cell);
+            }
+            Assert.That(result.Matched, Is.Empty);
+            Assert.That(result.Created, Is.Empty, "Converted gems are not made gems.");
+
+            // Wave 0: the cube alone, zapping every A.
+            Assert.AreEqual(1, result.Waves[0].Count);
+            BoardModel.Detonation cube = result.Waves[0][0];
+            Assert.AreEqual(PowerKind.Hypercube, cube.Kind);
+            Assert.AreEqual(Cell(1, 0), cube.Cell);
+            Assert.AreEqual(PowerCombo.Conversion, cube.Combo);
+            Assert.AreEqual(a, cube.Target);
+            CollectionAssert.AreEquivalent(allAs, cube.Blasted);
+
+            // Wave 1: every one of them goes off, the Star still as a Star.
+            Assert.AreEqual(7, result.Waves[1].Count);
+            int flames = 0;
+            foreach (BoardModel.Detonation detonation in result.Waves[1])
+            {
+                if (detonation.Cell == Cell(1, 3))
+                {
+                    Assert.AreEqual(PowerKind.Star, detonation.Kind, "A Star of the colour keeps its power.");
+                }
+                else
+                {
+                    Assert.AreEqual(PowerKind.Flame, detonation.Kind);
+                    flames++;
+                }
+            }
+            Assert.AreEqual(6, flames, "The five converted gems and the partner.");
+        }
+
+        [Test]
+        public void Conversion_EachGemOfTheColourIsABlastedGem_TheCubeIsNot()
+        {
+            BoardModel board = grids.Build(Quiet);
+            board.SetPieceAt(0, 0, new Piece(grids.Type('A'), PowerKind.Flame));
+            board.SetPieceAt(1, 0, Piece.Hypercube);
+
+            BoardModel.ClearResult result = board.ActivateCombo(Cell(1, 0), Cell(0, 0));
+            ClearStep step = ClearStep.From(result, new List<MatchGroup>(), cascadeIndex: 0);
+
+            foreach (BoardModel.Detonation detonation in result.Detonations)
+            {
+                CollectionAssert.DoesNotContain(detonation.Blasted, Cell(1, 0));
+            }
+            // At least the seven A's; their Flames' 3x3s add more.
+            Assert.That(step.BlastedGems, Is.GreaterThanOrEqualTo(7));
+            Assert.AreEqual(step.BlastedGems * ScoreRules.PointsPerBlastedGem, step.Points, "Step 0 is x1.");
+        }
+
+        [Test]
+        public void Conversion_WithNoOtherGemOfTheColour_ConvertsOnlyThePartner()
+        {
+            // The R Flame is the only R on the board.
+            BoardModel board = grids.Build("GR*");
+            grids.SetPowers(board, ".F.");
+
+            BoardModel.ClearResult result = board.ActivateCombo(Cell(2, 0), Cell(1, 0));
+
+            Assert.That(result.Converted, Is.Empty, "The partner already was a Flame.");
+            CollectionAssert.AreEqual(new[] { Cell(1, 0) }, result.Waves[0][0].Blasted);
+            Assert.AreEqual(2, result.Waves.Count);
+            Assert.AreEqual(PowerKind.Flame, result.Waves[1][0].Kind);
+            // The Flame's 3x3 takes the G with it.
+            CollectionAssert.AreEqual(new[] { Cell(0, 0) }, result.Waves[1][0].Blasted);
+        }
+
+        [Test]
+        public void Conversion_SwapThatAlsoLinesUpARun_IsTheComboOnly()
+        {
+            // As the board is after the swap: the R Flame at (3,3) has landed at the end of a
+            // line of four R's, and the cube is next to it. A run, a Hypercube swap and a combo
+            // all at once: the combo comes first.
+            BoardModel board = grids.Build(
+                "FGABCDE",
+                "DEFGABC",
+                "BCDEFGA",
+                "RRRR*EF", // y = 3
+                "EFGABCD",
+                "CDEFGAB",
+                "ABCDEFG");
+            board.SetPieceAt(3, 3, new Piece(grids.Type('R'), PowerKind.Flame));
+            Assert.That(board.FindMatchGroups(Cell(4, 3), Cell(3, 3)), Is.Not.Empty, "The swap does line up a run.");
+            Assert.IsTrue(board.IsHypercubeSwap(Cell(4, 3), Cell(3, 3)));
+            Assert.IsTrue(board.IsComboSwap(Cell(4, 3), Cell(3, 3)));
+
+            BoardModel.ClearResult result = board.ActivateCombo(Cell(3, 3), Cell(4, 3));
+
+            Assert.That(result.Matched, Is.Empty, "Nothing is cleared as a match.");
+            Assert.That(result.Created, Is.Empty, "No power gem is made.");
+            // A plain Hypercube swap wouldn't have converted the three ordinary R's.
+            Assert.AreEqual(3, result.Converted.Count);
+            Assert.AreEqual(PowerCombo.Conversion, result.Waves[0][0].Combo);
+        }
+
+        [Test]
+        public void ClearBoard_DestroysAll62OtherPieces_AndCaughtPowerGemsBlastNothing()
+        {
+            BoardModel board = Quiet8x8();
+            board.SetPieceAt(3, 3, Piece.Hypercube);
+            board.SetPieceAt(4, 3, Piece.Hypercube);
+            // Caught power gems of every kind, including a third Hypercube.
+            board.SetPieceAt(0, 0, new Piece(board.TypeAt(0, 0), PowerKind.Flame));
+            board.SetPieceAt(5, 5, new Piece(board.TypeAt(5, 5), PowerKind.Star));
+            board.SetPieceAt(7, 7, Piece.Hypercube);
+
+            BoardModel.ClearResult result = board.ActivateCombo(Cell(4, 3), Cell(3, 3));
+
+            Assert.AreEqual(0, CountNonEmpty(board), "Nothing is left.");
+            Assert.AreEqual(2, result.Waves.Count);
+
+            BoardModel.Detonation moved = result.Waves[0][0];
+            Assert.AreEqual(Cell(4, 3), moved.Cell);
+            Assert.AreEqual(PowerCombo.ClearBoard, moved.Combo);
+            Assert.AreEqual(62, moved.Blasted.Count);
+            CollectionAssert.DoesNotContain(moved.Blasted, Cell(3, 3));
+
+            BoardModel.Detonation partner = result.Waves[0][1];
+            Assert.AreEqual(PowerKind.Hypercube, partner.Kind);
+            Assert.IsTrue(partner.IsComboPartner);
+            Assert.That(partner.Blasted, Is.Empty);
+
+            Assert.AreEqual(3, result.Waves[1].Count);
+            foreach (BoardModel.Detonation caught in result.Waves[1])
+            {
+                Assert.That(caught.Blasted, Is.Empty, $"The {caught.Kind} at {caught.Cell} had nothing left to hit.");
+            }
+
+            ClearStep step = ClearStep.From(result, new List<MatchGroup>(), cascadeIndex: 0);
+            Assert.AreEqual(62, step.BlastedGems);
+            Assert.AreEqual(64, step.GemsCleared);
+            Assert.AreEqual(15500, step.Points, "The biggest single step in the game, at x1.");
+        }
+
+        [Test]
+        public void ClearBoard_OnABoardOfPowerGems_Ends()
+        {
+            // Every piece a power gem: Flames and Stars in a checkerboard, two cubes in the middle.
+            BoardModel board = Quiet8x8();
+            for (int x = 0; x < 8; x++)
+            {
+                for (int y = 0; y < 8; y++)
+                {
+                    PowerKind power = (x + y) % 2 == 0 ? PowerKind.Flame : PowerKind.Star;
+                    board.SetPieceAt(x, y, new Piece(board.TypeAt(x, y), power));
+                }
+            }
+            board.SetPieceAt(3, 3, Piece.Hypercube);
+            board.SetPieceAt(4, 3, Piece.Hypercube);
+
+            BoardModel.ClearResult result = board.ActivateCombo(Cell(4, 3), Cell(3, 3));
+
+            Assert.AreEqual(64, result.Detonations.Count, "Every piece went off exactly once.");
+            Assert.AreEqual(0, CountNonEmpty(board));
+        }
+
+        [Test]
+        public void Conversion_OnABoardOfPowerGems_Ends()
+        {
+            // Every piece a Star except the cube: the colour's Stars go off, their beams catch
+            // everything else, and that's the end of it.
+            BoardModel board = Quiet8x8();
+            for (int x = 0; x < 8; x++)
+            {
+                for (int y = 0; y < 8; y++)
+                {
+                    board.SetPieceAt(x, y, new Piece(board.TypeAt(x, y), PowerKind.Star));
+                }
+            }
+            board.SetPieceAt(1, 0, Piece.Hypercube);
+
+            BoardModel.ClearResult result = board.ActivateCombo(Cell(1, 0), Cell(0, 0));
+
+            Assert.That(result.Converted, Is.Empty, "Every gem already had a power.");
+            Assert.AreEqual(64, result.Detonations.Count, "Every piece went off exactly once.");
+            Assert.AreEqual(0, CountNonEmpty(board));
+        }
+
+        [Test]
+        public void ComboBlastCells_ForAClearBoard_IsEveryCell()
+        {
+            BoardModel board = Quiet8x8();
+
+            List<Vector2Int> cells = board.ComboBlastCells(PowerCombo.ClearBoard, Cell(0, 7));
+
+            Assert.AreEqual(64, cells.Count);
+            Assert.AreEqual(64, new HashSet<Vector2Int>(cells).Count, "No cell is listed twice.");
+        }
+
+        [Test]
+        public void BlastDelay_ForAClearBoard_IsTheRingTheCellIsIn()
+        {
+            const float beamSpeed = 10f;
+            Vector2Int centre = Cell(3, 3);
+
+            Assert.AreEqual(0.1f, Board.BlastDelay(PowerKind.Hypercube, centre, Cell(4, 4), beamSpeed, PowerCombo.ClearBoard), 0.0001f);
+            Assert.AreEqual(0.3f, Board.BlastDelay(PowerKind.Hypercube, centre, Cell(0, 2), beamSpeed, PowerCombo.ClearBoard), 0.0001f);
+            Assert.AreEqual(0.4f, Board.BlastDelay(PowerKind.Hypercube, centre, Cell(7, 7), beamSpeed, PowerCombo.ClearBoard), 0.0001f);
         }
 
         // ---------------------------------------------------------------- Only swaps combine

@@ -57,3 +57,6 @@ Use these to decide what goes in. A feature should clearly serve at least one an
 - **Power gems combine only when the player swaps them** (2026-10-16, #108). Two power gems
   swapped with each other make a bigger blast; gems that merely land next to each other, or
   are caught in a blast, behave as before. The biggest plays stay something the player did.
+  (2026-10-17, #109) A Hypercube joins in: with a Flame or Star it turns that colour into the
+  partner's power and sets them all off; two Hypercubes clear the board. Both are built, never
+  dealt: a Hypercube needs a line of five.

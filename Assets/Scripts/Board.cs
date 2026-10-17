@@ -62,6 +62,8 @@ namespace Match3
         [SerializeField, Min(0f)] private float zapInterval = 0.05f;
         [Tooltip("Extra pause, in seconds, between one wave of a chain reaction and the next, so the player can follow which gem set off which.")]
         [SerializeField, Min(0f)] private float chainDelay = 0.1f;
+        [Tooltip("Pause, in seconds, after a Hypercube + Flame or Star combo turns a colour's gems into power gems and before the cube goes off, so the player sees them change.")]
+        [SerializeField, Min(0f)] private float conversionDelay = 0.35f;
         [Tooltip("Pause, in seconds, between time running out and the first leftover power gem going off (the Last Hurrah), so the player can read the banner first.")]
         [SerializeField, Min(0f)] private float lastHurrahDelay = 0.6f;
 
@@ -125,6 +127,15 @@ namespace Match3
         /// <see cref="ClearStepResolved"/>.
         /// </summary>
         public event System.Action<PowerKind, Vector2Int> PowerGemCreated;
+
+        /// <summary>
+        /// Fired for each ordinary gem a Hypercube + Flame or Star combo turns into a power gem
+        /// (see <see cref="PowerCombo.Conversion"/>), with the power it now has and its cell.
+        /// They all come together, after the swap and before the cube goes off. Deliberately not
+        /// <see cref="PowerGemCreated"/>: no match made these, so the stats don't count them as
+        /// made (they still count as detonated when they go off).
+        /// </summary>
+        public event System.Action<PowerKind, Vector2Int> PowerGemConverted;
 
         /// <summary>
         /// Fired when a power gem goes off, with which kind, the cell it was in, and its wave
@@ -844,11 +855,14 @@ namespace Match3
             // combo and a Hypercube) are asked about first. They have to be: the gems that changed
             // places may also have landed in a run, and looking for runs first would clear just
             // that run (maybe even leaving a new power gem) instead of setting off the big blast.
+            // The combo comes before the plain Hypercube swap for the same reason: a Hypercube
+            // swapped with a Flame or Star is both, and the combo is the bigger play.
             if (model.IsComboSwap(a, b))
             {
                 // `a` is the cell the player picked up (or selected first), so the gem they moved
                 // now sits in `b`: that's where the combo is centred. Otherwise it plays out just
-                // like the Hypercube's step 0 below (see PlaySwapStep).
+                // like the Hypercube's step 0 below (see PlaySwapStep). That covers the Hypercube
+                // combos too: the model sorts out which gem is the cube.
                 yield return StartCoroutine(PlaySwapStep(model.ActivateCombo(b, a)));
                 groups = model.FindMatchGroups();
                 cascadeIndex = 1;
@@ -876,8 +890,7 @@ namespace Match3
                 groups = model.FindMatchGroups(a, b);
                 if (groups.Count == 0)
                 {
-                    // Not a valid move: put everything back exactly as it was. That includes
-                    // swapping two Hypercubes, which does nothing yet.
+                    // Not a valid move: put everything back exactly as it was.
                     Swap(a, b);
                     SwapRejected?.Invoke();
                     yield return StartCoroutine(AnimateSwap(a, b));
@@ -901,6 +914,13 @@ namespace Match3
         /// </summary>
         private IEnumerator PlaySwapStep(BoardModel.ClearResult result)
         {
+            // A Hypercube + Flame or Star first turns the colour's gems into power gems. The
+            // model has already done it (and set them all off); this catches the screen up.
+            if (result.Converted.Count > 0)
+            {
+                yield return StartCoroutine(ShowConversions(result.Converted));
+            }
+
             // Nothing was matched, so the swapped gems' tokens are still on the board. There's
             // no run to report either (no MatchCleared or ClearStepResolved), but what the
             // blast destroyed is worth points, so the step is still scored.
@@ -908,6 +928,28 @@ namespace Match3
             ClearStepScored?.Invoke(ClearStep.From(result, new List<MatchGroup>(), cascadeIndex: 0));
             CollapseAndRefill();
             yield return StartCoroutine(AnimateFalls());
+        }
+
+        /// <summary>
+        /// Shows the gems a <see cref="PowerCombo.Conversion"/> changed: each token takes on its
+        /// new power at once (and <see cref="PowerGemConverted"/> fires for it), then the board
+        /// waits <see cref="conversionDelay"/> so the player sees what the cube is about to hit.
+        /// </summary>
+        private IEnumerator ShowConversions(IReadOnlyList<BoardModel.Creation> converted)
+        {
+            // The combo has started, so the clock holds from here (PlayWaves keeps it held).
+            IsDetonating = true;
+            foreach (BoardModel.Creation conversion in converted)
+            {
+                // The same call that shows a match's new power gem: the token keeps its colour
+                // and gains the power's overlay.
+                tokens[conversion.Cell.x, conversion.Cell.y].SetPiece(conversion.Piece);
+                PowerGemConverted?.Invoke(conversion.Kind, conversion.Cell);
+            }
+            if (conversionDelay > 0f)
+            {
+                yield return new WaitForSeconds(conversionDelay);
+            }
         }
 
         /// <summary>
@@ -1450,16 +1492,20 @@ namespace Match3
                 bool isCube = detonation.Kind == PowerKind.Hypercube;
                 // The gem's token may be gone by now, which is why the model hands back the
                 // piece it was: that's where the blast's colour comes from. A Hypercube has no
-                // colour of its own, so it flares in the colour it's about to destroy.
+                // colour of its own, so it flares in the colour it's about to destroy (or white,
+                // for two Hypercubes clearing the board, which have no colour to aim at).
                 TokenType colour = isCube ? detonation.Target : detonation.Piece.Colour;
 
                 // One number per blasted gem: when the blast reaches it. A Hypercube zaps its
-                // gems one after another, in the order the model listed them.
+                // gems one after another, in the order the model listed them. Two Hypercubes
+                // clearing the board don't: one zap per gem would take seconds, so their blast
+                // spreads out in rings instead (see BlastDelay).
+                bool zaps = isCube && detonation.Combo != PowerCombo.ClearBoard;
                 var delays = new List<float>(detonation.Blasted.Count);
                 for (int i = 0; i < detonation.Blasted.Count; i++)
                 {
                     Vector2Int cell = detonation.Blasted[i];
-                    float delay = isCube
+                    float delay = zaps
                         ? ZapDelay(i, zapInterval)
                         : BlastDelay(detonation.Kind, detonation.Cell, cell, beamSpeed, detonation.Combo);
                     delays.Add(delay);
@@ -1483,7 +1529,7 @@ namespace Match3
                     // The gem itself goes as its blast starts. A Hypercube outlasts its last
                     // target by one more beat, then goes too.
                     removed.Add(TakeToken(detonation.Cell));
-                    popDelays.Add(isCube ? ZapDelay(detonation.Blasted.Count, zapInterval) : 0f);
+                    popDelays.Add(zaps ? ZapDelay(detonation.Blasted.Count, zapInterval) : 0f);
                 }
 
                 // The pictures (the Flame's burst, the Star's beam, the Hypercube's bolts) and
@@ -1506,7 +1552,9 @@ namespace Match3
         /// <see cref="PowerCombo.BigFlame"/> hits everything at once, and a
         /// <see cref="PowerCombo.StarCross"/> fires a beam along each of its three rows and three
         /// columns, each starting level with the centre, so a cell waits for the nearest beam
-        /// that reaches it.
+        /// that reaches it. A <see cref="PowerCombo.ClearBoard"/> spreads out from the centre in
+        /// square rings at the same speed: a cell waits for its ring, the larger of its two
+        /// distances.
         /// </summary>
         // This is how an effect is sequenced across cells: the whole blast is decided up front,
         // and each cell is just given its own start time. Nothing has to "step" along the row.
@@ -1531,6 +1579,12 @@ namespace Match3
                     distance = Mathf.Min(distance, dy);
                 }
                 return distance / beamSpeed;
+            }
+
+            if (combo == PowerCombo.ClearBoard)
+            {
+                // The 8 cells around the centre are ring 1, the 16 around those ring 2, and so on.
+                return Mathf.Max(dx, dy) / beamSpeed;
             }
 
             if (combo != PowerCombo.None || kind != PowerKind.Star)

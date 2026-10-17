@@ -220,13 +220,14 @@ namespace Match3.Tests
         }
 
         [Test]
-        public void IsHypercubeSwap_TwoHypercubes_IsRejected()
+        public void IsHypercubeSwap_TwoHypercubes_IsFalse_ItsACombo()
         {
             BoardModel board = Grid("**");
 
             Assert.IsFalse(board.IsHypercubeSwap(Cell(0, 0), Cell(1, 0)));
-            // With nothing else on the board, that means there's no move at all.
-            Assert.IsFalse(board.HasValidMove());
+            // Not a plain Hypercube swap, but still a move: see BoardModelComboTests.
+            Assert.IsTrue(board.IsComboSwap(Cell(0, 0), Cell(1, 0)));
+            Assert.IsTrue(board.HasValidMove());
         }
 
         [Test]

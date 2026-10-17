@@ -123,8 +123,10 @@ namespace Match3
             /// </summary>
             public readonly TokenType Target;
             /// <summary>
-            /// For the gem the player moved in a combo swap (see <see cref="ActivateCombo"/>), the
-            /// combo it set off: its <see cref="Blasted"/> is the combined blast. None otherwise.
+            /// For the gem that carries a combo swap's blast (see <see cref="ActivateCombo"/>), the
+            /// combo it set off: its <see cref="Blasted"/> is the combined blast. That's the gem
+            /// the player moved, except in a <see cref="PowerCombo.Conversion"/>, where it's
+            /// always the Hypercube. None otherwise.
             /// </summary>
             public readonly PowerCombo Combo;
             /// <summary>
@@ -184,12 +186,22 @@ namespace Match3
             /// </summary>
             public IReadOnlyList<Detonation> Detonations { get; }
 
+            /// <summary>
+            /// The ordinary gems a <see cref="PowerCombo.Conversion"/> turned into power gems
+            /// before anything went off, each with the piece it became. They weren't made by a
+            /// match, so they aren't in <see cref="Created"/>: they go off (in the second wave)
+            /// without ever counting as made. Empty for every other step.
+            /// </summary>
+            public IReadOnlyList<Creation> Converted { get; }
+
             public ClearResult(IReadOnlyList<Vector2Int> matched, IReadOnlyList<Creation> created,
-                IReadOnlyList<IReadOnlyList<Detonation>> waves)
+                IReadOnlyList<IReadOnlyList<Detonation>> waves, IReadOnlyList<Creation> converted = null)
             {
                 Matched = matched;
                 Created = created;
                 Waves = waves;
+                // `??` means "the left side, unless it's null, then the right side".
+                Converted = converted ?? new List<Creation>();
 
                 var detonations = new List<Detonation>();
                 foreach (IReadOnlyList<Detonation> wave in waves)
@@ -704,7 +716,7 @@ namespace Match3
             Piece pieceA = PieceAt(a);
             Piece pieceB = PieceAt(b);
             // An empty cell can't be swapped, and swapping two of the same colour changes
-            // nothing. (Two Hypercubes are "the same colour" here: neither has one.)
+            // nothing. (Two Hypercubes never get this far: they're a combo.)
             if (pieceA.IsEmpty || pieceB.IsEmpty || pieceA.Colour == pieceB.Colour)
             {
                 return false;
@@ -723,6 +735,9 @@ namespace Match3
         /// <see cref="ActivateHypercube"/>). Two Hypercubes don't count, and nor does an empty
         /// cell. It doesn't matter which way round the cells are given, or whether the swap has
         /// been made yet. Doesn't check that the cells are neighbors.
+        ///
+        /// A Hypercube and a Flame or Star are a Hypercube swap AND a combo swap: the combo wins
+        /// (see <see cref="IsComboSwap"/>), so ask about that first.
         /// </summary>
         public bool IsHypercubeSwap(Vector2Int a, Vector2Int b)
         {
@@ -735,9 +750,10 @@ namespace Match3
         }
 
         /// <summary>
-        /// True if cells <paramref name="a"/> and <paramref name="b"/> each hold a Flame or a
-        /// Star, whatever their colours. Swapping those two is always a valid move: it sets off
-        /// one bigger blast (see <see cref="ActivateCombo"/>). Like
+        /// True if cells <paramref name="a"/> and <paramref name="b"/> each hold a power gem
+        /// (whatever their colours) and the pair makes a combo: see <see cref="ComboFor"/>.
+        /// Swapping those two is always a valid move: it sets off one bigger blast (see
+        /// <see cref="ActivateCombo"/>). Like
         /// <see cref="IsHypercubeSwap"/>, the order of the cells doesn't matter, it can be asked
         /// before or after the swap, and it doesn't check that the cells are neighbors.
         /// </summary>
@@ -748,14 +764,28 @@ namespace Match3
 
         /// <summary>
         /// The combo two power gems of <paramref name="a"/> and <paramref name="b"/> make when
-        /// swapped together: two Flames make a <see cref="PowerCombo.BigFlame"/>, and any pair
-        /// with a Star in it a <see cref="PowerCombo.StarCross"/>. Anything else (an ordinary
-        /// gem, a Hypercube, an empty cell) makes no combo.
+        /// swapped together: two Hypercubes make a <see cref="PowerCombo.ClearBoard"/>, a
+        /// Hypercube and a Flame or Star a <see cref="PowerCombo.Conversion"/>, two Flames a
+        /// <see cref="PowerCombo.BigFlame"/>, and any other pair with a Star in it a
+        /// <see cref="PowerCombo.StarCross"/>. Anything with an ordinary gem or an empty cell in
+        /// it makes no combo.
         /// </summary>
-        // The one place that knows which pairs combine and into what. A Hypercube pair (#109)
-        // would be one more case here.
+        // The one place that knows which pairs combine and into what. The Hypercube cases come
+        // first because a Hypercube is the strongest partner: with one in the pair, the other
+        // gem's kind only decides between "the whole board" and "a whole colour".
         public static PowerCombo ComboFor(PowerKind a, PowerKind b)
         {
+            if (a == PowerKind.Hypercube && b == PowerKind.Hypercube)
+            {
+                return PowerCombo.ClearBoard;
+            }
+            if (a == PowerKind.Hypercube || b == PowerKind.Hypercube)
+            {
+                // The one that isn't the Hypercube.
+                PowerKind other = a == PowerKind.Hypercube ? b : a;
+                return other == PowerKind.Flame || other == PowerKind.Star ? PowerCombo.Conversion : PowerCombo.None;
+            }
+
             bool aCombines = a == PowerKind.Flame || a == PowerKind.Star;
             bool bCombines = b == PowerKind.Flame || b == PowerKind.Star;
             if (!aCombines || !bCombines)
@@ -984,8 +1014,10 @@ namespace Match3
 
         /// <summary>
         /// The cells <paramref name="combo"/> blasts around <paramref name="centre"/>: see
-        /// <see cref="BigFlameBlastCells"/> and <see cref="StarCrossBlastCells"/>. Empty for
-        /// <see cref="PowerCombo.None"/>.
+        /// <see cref="BigFlameBlastCells"/> and <see cref="StarCrossBlastCells"/>, and every
+        /// cell on the board for a <see cref="PowerCombo.ClearBoard"/>. Empty for
+        /// <see cref="PowerCombo.None"/>, and for a <see cref="PowerCombo.Conversion"/>, which
+        /// clears a colour rather than a shape (see <see cref="CellsOfColour"/>).
         /// </summary>
         // The combo counterpart of BlastCells: the one place that knows each combo's shape.
         public List<Vector2Int> ComboBlastCells(PowerCombo combo, Vector2Int centre)
@@ -994,6 +1026,8 @@ namespace Match3
             {
                 case PowerCombo.BigFlame: return BigFlameBlastCells(centre);
                 case PowerCombo.StarCross: return StarCrossBlastCells(centre);
+                // A square big enough to reach every edge from wherever the centre is.
+                case PowerCombo.ClearBoard: return SquareCells(centre, Mathf.Max(Width, Height));
                 default: return new List<Vector2Int>();
             }
         }
@@ -1188,6 +1222,20 @@ namespace Match3
         /// <param name="colour">The colour of the gem it was swapped with.</param>
         public ClearResult ActivateHypercube(Vector2Int cube, TokenType colour)
         {
+            return ActivateHypercube(cube, colour, PowerCombo.None, null);
+        }
+
+        /// <summary>
+        /// <see cref="ActivateHypercube(Vector2Int, TokenType)"/>, with the cube's detonation
+        /// tagged as <paramref name="combo"/> and <paramref name="converted"/> passed through to
+        /// the result: what a <see cref="PowerCombo.Conversion"/> needs once it has changed the
+        /// colour's gems.
+        /// </summary>
+        // Two methods with the same name and different parameters are "overloads": C# picks the
+        // one whose parameters fit the call. The public one stays as simple as it always was.
+        private ClearResult ActivateHypercube(Vector2Int cube, TokenType colour, PowerCombo combo,
+            List<Creation> converted)
+        {
             // Throwing on a call that makes no sense is better than quietly clearing the wrong
             // thing: the mistake shows up where it was made.
             if (PieceAt(cube).Power != PowerKind.Hypercube)
@@ -1202,11 +1250,11 @@ namespace Match3
             // The cube comes off the board here, as a matched gem does in ClearMatches, and
             // becomes a first wave of one. Unlike a cube caught in a blast, its colour is given.
             grid[cube.x, cube.y] = Piece.Empty;
-            var firstWave = new List<PendingGem> { new PendingGem(cube, Piece.Hypercube, colour) };
+            var firstWave = new List<PendingGem> { new PendingGem(cube, Piece.Hypercube, colour, combo) };
 
             // No match, so nothing was matched or made, and no cell needs protecting.
             return new ClearResult(new List<Vector2Int>(), new List<Creation>(),
-                ResolveWaves(firstWave, new HashSet<Vector2Int>()));
+                ResolveWaves(firstWave, new HashSet<Vector2Int>()), converted);
         }
 
         /// <summary>
@@ -1222,6 +1270,13 @@ namespace Match3
         /// which blasts nothing of its own (<see cref="Detonation.IsComboPartner"/>). Neither
         /// gem's own cell is in any <see cref="Detonation.Blasted"/> list, so neither is scored
         /// as a blasted gem. Call <see cref="Collapse"/> afterwards.
+        ///
+        /// Two Hypercubes (<see cref="PowerCombo.ClearBoard"/>) work the same way, with every
+        /// cell of the board as the blast: every other piece is destroyed, and any power gem
+        /// among them goes off in the next wave with nothing left to hit.
+        ///
+        /// A Hypercube and a Flame or Star (<see cref="PowerCombo.Conversion"/>) work
+        /// differently: see <see cref="ActivateConversion"/>.
         /// </summary>
         /// <param name="moved">
         /// Where the gem the player moved is now, after the swap. The blast is centred here.
@@ -1235,7 +1290,14 @@ namespace Match3
             if (combo == PowerCombo.None)
             {
                 throw new System.ArgumentException(
-                    $"Cells ({moved.x},{moved.y}) and ({partner.x},{partner.y}) don't hold a Flame/Star pair.");
+                    $"Cells ({moved.x},{moved.y}) and ({partner.x},{partner.y}) don't hold a pair of power gems that combine.");
+            }
+            if (combo == PowerCombo.Conversion)
+            {
+                // Which gem the player moved makes no difference here: the cube always goes off.
+                return movedGem.Power == PowerKind.Hypercube
+                    ? ActivateConversion(moved, partner)
+                    : ActivateConversion(partner, moved);
             }
 
             // Both gems come off the board before anything blasts, so the blast passes over
@@ -1251,6 +1313,52 @@ namespace Match3
             };
             return new ClearResult(new List<Vector2Int>(), new List<Creation>(),
                 ResolveWaves(firstWave, new HashSet<Vector2Int>()));
+        }
+
+        /// <summary>
+        /// A Hypercube swapped with a Flame or Star (<see cref="PowerCombo.Conversion"/>). Two
+        /// steps, in this order:
+        ///  1. every ordinary gem of the partner's colour becomes a gem of the partner's power
+        ///     (see <see cref="ConvertColour"/>); a Flame or Star of that colour keeps its own;
+        ///  2. the Hypercube goes off on that colour, exactly as <see cref="ActivateHypercube"/>
+        ///     does: the cube is the first wave (tagged with the combo), every gem of the colour,
+        ///     partner included, is a blasted gem, and they all go off in the next wave.
+        /// The result's <see cref="ClearResult.Converted"/> lists the gems step 1 changed.
+        /// </summary>
+        // The whole combo is "change the board, then run something that already exists". Nothing
+        // in ResolveWaves knows about conversions: by the time the cube goes off, the colour's
+        // gems simply ARE Flames (or Stars), and a Flame caught in a blast goes off. That's the
+        // pipeline doing what it always did.
+        //
+        // Does it end, however many gems turn into power gems? Yes, for the reason ResolveWaves
+        // gives: every gem that goes off is taken off the board first, so there can never be
+        // more detonations than cells.
+        private ClearResult ActivateConversion(Vector2Int cube, Vector2Int partner)
+        {
+            Piece partnerGem = PieceAt(partner);
+            List<Creation> converted = ConvertColour(partnerGem.Colour, partnerGem.Power);
+            return ActivateHypercube(cube, partnerGem.Colour, PowerCombo.Conversion, converted);
+        }
+
+        /// <summary>
+        /// Gives every ordinary piece of <paramref name="colour"/> the power
+        /// <paramref name="power"/>, and returns what changed (column by column from the left,
+        /// each bottom to top). A piece that already has a power keeps it and isn't listed.
+        /// </summary>
+        private List<Creation> ConvertColour(TokenType colour, PowerKind power)
+        {
+            var converted = new List<Creation>();
+            foreach (Vector2Int cell in CellsOfColour(colour))
+            {
+                if (grid[cell.x, cell.y].Power != PowerKind.None)
+                {
+                    continue;
+                }
+                var piece = new Piece(colour, power);
+                grid[cell.x, cell.y] = piece;
+                converted.Add(new Creation(cell, piece));
+            }
+            return converted;
         }
 
         /// <summary>
