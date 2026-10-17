@@ -1713,6 +1713,101 @@ namespace Match3.Tests
             yield return WaitUntilIdle();
         }
 
+        // ---------------------------------------------------------------- Buffered swaps
+        //
+        // A swap made while the board resolves is kept by BoardInput and played when the board
+        // settles. These add a BoardInput and record the swap through its test hook (there's no
+        // pointer in a test); the drag maths that would normally produce it is the same as for
+        // any drag, and the keep/replace/cancel rules are covered by the Edit Mode SwapBufferTests.
+        //
+        // Each one starts by making the invalid swap: it locks the board for a few frames, then
+        // puts everything back, so the layout is known again when the buffered swap runs.
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator BufferedSwap_RunsAsSoonAsTheBoardSettles()
+        {
+            BoardInput input = boardObject.AddComponent<BoardInput>();
+            Assert.IsTrue(board.TrySwap(NoMatchA, NoMatchB));
+
+            input.BufferSwapForTests(MatchA, MatchB);
+            Assert.IsTrue(board.IsCellMarked(MatchA) && board.IsCellMarked(MatchB), "Both cells of a buffered swap should be marked.");
+            Assert.AreEqual(new[] { "started" }, swapEvents, "A buffered swap shouldn't start before the board settles.");
+
+            yield return WaitForBufferedSwapToRun(input);
+            yield return WaitUntilIdle();
+
+            Assert.AreEqual(new[] { "started", "rejected", "started" }, swapEvents,
+                "The buffered swap should start (once) after the first swap was put back, with no further input.");
+            // As in MatchingSwap_ClearsTheRunAndLeavesAFullSettledBoard, cascades after the
+            // swap's own run depend on the refills, so only the first run is checked.
+            Assert.That(clearedRuns, Is.Not.Empty, "The buffered swap should have made a match.");
+            Assert.AreEqual(3, clearedRuns[0], "The buffered swap should have cleared its run of 3.");
+            Assert.IsFalse(board.IsCellMarked(MatchA) || board.IsCellMarked(MatchB), "The marks should go once the swap runs.");
+            AssertBoardIsFullAndSettled();
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator BufferedSwap_ThatIsNotAValidMove_SwapsBack()
+        {
+            BoardInput input = boardObject.AddComponent<BoardInput>();
+            Token tokenA = board.GetToken(NoMatchA.x, NoMatchA.y);
+            Token tokenB = board.GetToken(NoMatchB.x, NoMatchB.y);
+            Assert.IsTrue(board.TrySwap(NoMatchA, NoMatchB));
+
+            // The same swap again: still no match once the board has settled.
+            input.BufferSwapForTests(NoMatchA, NoMatchB);
+            yield return WaitForBufferedSwapToRun(input);
+            yield return WaitUntilIdle();
+
+            Assert.AreEqual(new[] { "started", "rejected", "started", "rejected" }, swapEvents,
+                "The buffered swap should run, and be put back like any invalid move (SwapRejected plays the sound).");
+            Assert.AreSame(tokenA, board.GetToken(NoMatchA.x, NoMatchA.y), "Token A should be back in its own cell.");
+            Assert.AreSame(tokenB, board.GetToken(NoMatchB.x, NoMatchB.y), "Token B should be back in its own cell.");
+            AssertBoardIsFullAndSettled();
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator TurningInputOff_DiscardsTheBufferedSwap()
+        {
+            // Pausing, the clock reaching 0:00 and the Last Hurrah all turn BoardInput off
+            // (GameManager.SetInputEnabled), so this one test covers all three.
+            BoardInput input = boardObject.AddComponent<BoardInput>();
+            Assert.IsTrue(board.TrySwap(NoMatchA, NoMatchB));
+            input.BufferSwapForTests(MatchA, MatchB);
+
+            input.enabled = false;
+
+            Assert.IsFalse(input.HasBufferedSwapForTests, "Turning input off should throw the buffered swap away.");
+            Assert.IsFalse(board.IsCellMarked(MatchA) || board.IsCellMarked(MatchB), "Its marks should go with it.");
+
+            yield return WaitUntilIdle();
+            // Input coming back (say, on resume) must not bring the swap back either.
+            input.enabled = true;
+            yield return WaitFrames(3);
+
+            Assert.AreEqual(new[] { "started", "rejected" }, swapEvents, "Nothing should run after the discard.");
+            Assert.That(clearedRuns, Is.Empty);
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator Reshuffle_DiscardsTheBufferedSwap()
+        {
+            BoardInput input = boardObject.AddComponent<BoardInput>();
+            board.LoadLayoutForTests(BuildLayout(DeadLayout));
+            // Every swap on this board is put back, and then the board reshuffles.
+            Assert.IsTrue(board.TrySwap(NoMatchA, NoMatchB));
+            input.BufferSwapForTests(MatchA, MatchB);
+
+            yield return WaitUntilIdle();
+            yield return WaitFrames(3);
+
+            Assert.AreEqual(1, noMovesCount, "The board should have reshuffled.");
+            Assert.IsFalse(input.HasBufferedSwapForTests, "The reshuffle should throw the buffered swap away.");
+            Assert.IsFalse(board.IsCellMarked(MatchA) || board.IsCellMarked(MatchB), "Its marks should go with it.");
+            Assert.AreEqual(new[] { "started", "rejected" }, swapEvents, "Nothing should run after the reshuffle.");
+            Assert.IsFalse(board.IsResolving);
+        }
+
         // ---------------------------------------------------------------- Holding and dragging
         //
         // These drive the Board's hold/drag API directly, the way BoardInput does. The decisions
@@ -1989,6 +2084,30 @@ namespace Match3.Tests
                 }
             }
             return layout;
+        }
+
+        /// <summary>
+        /// Waits until <paramref name="input"/> has played its buffered swap. That happens in its
+        /// Update on the first frame after the board settles, so WaitUntilIdle alone could resume
+        /// the test in the gap just before it.
+        /// </summary>
+        private IEnumerator WaitForBufferedSwapToRun(BoardInput input)
+        {
+            bool timedOut = false;
+            yield return new WaitUntil(
+                () => !input.HasBufferedSwapForTests,
+                System.TimeSpan.FromSeconds(ResolveTimeoutSeconds),
+                () => timedOut = true);
+
+            Assert.IsFalse(timedOut, $"The buffered swap still hadn't run after {ResolveTimeoutSeconds} seconds.");
+        }
+
+        private static IEnumerator WaitFrames(int frames)
+        {
+            for (int i = 0; i < frames; i++)
+            {
+                yield return null;
+            }
         }
 
         /// <summary>
