@@ -5,7 +5,7 @@ namespace Match3
 {
     /// <summary>
     /// A summary of one whole clear step (one pass of the Board's cascade loop, or a swapped
-    /// Hypercube going off): which runs it cleared, how many gems its blasts destroyed, and
+    /// Hypercube or combo going off): which runs it cleared, how many gems its blasts destroyed, and
     /// where it falls in the turn. The <see cref="Board"/> hands one to
     /// <see cref="Board.ClearStepScored"/> once the step's chain reaction has finished, and
     /// that's what the score is worked out from (see <see cref="ScoreRules"/>).
@@ -17,7 +17,7 @@ namespace Match3
         /// <summary>0 for the player's own swap, 1 for the first cascade after it, and so on.</summary>
         public int CascadeIndex { get; }
 
-        /// <summary>The length of each run the step cleared. Empty for a swapped Hypercube.</summary>
+        /// <summary>The length of each run the step cleared. Empty for a swapped Hypercube or combo.</summary>
         public IReadOnlyList<int> RunLengths { get; }
 
         /// <summary>
@@ -28,7 +28,8 @@ namespace Match3
 
         /// <summary>
         /// Every gem that left the board in this step: the matched ones, the blasted ones, and
-        /// any power gem that went off without being either (a swapped Hypercube). A power gem
+        /// any power gem that went off without being either (a swapped Hypercube, or the two gems
+        /// of a combo swap). A power gem
         /// made by a match stays on the board, so it isn't counted.
         /// </summary>
         public int GemsCleared { get; }
@@ -57,8 +58,8 @@ namespace Match3
         /// <summary>
         /// Builds the summary of a step from what the model said it did.
         /// </summary>
-        /// <param name="result">What <see cref="BoardModel.ClearMatches"/> or <see cref="BoardModel.ActivateHypercube"/> returned.</param>
-        /// <param name="groups">The matches that were cleared (none for a Hypercube swap).</param>
+        /// <param name="result">What <see cref="BoardModel.ClearMatches"/>, <see cref="BoardModel.ActivateHypercube"/> or <see cref="BoardModel.ActivateCombo"/> returned.</param>
+        /// <param name="groups">The matches that were cleared (none for a Hypercube or combo swap).</param>
         /// <param name="cascadeIndex">Which step of the turn this is.</param>
         public static ClearStep From(BoardModel.ClearResult result, IReadOnlyList<MatchGroup> groups, int cascadeIndex)
         {
@@ -92,9 +93,9 @@ namespace Match3
 
             // Every gem that went off left the board. Those in later waves were caught in a
             // blast, so they're already in `blasted`; a first-wave gem is usually a matched one,
-            // already in Matched. What's left is a gem that was neither: a swapped Hypercube, or
-            // a power gem that was the anchor of a match making a new one (the old gem went off,
-            // the new one took its cell).
+            // already in Matched. What's left is a gem that was neither: a swapped Hypercube, the
+            // two gems of a combo swap, or a power gem that was the anchor of a match making a new
+            // one (the old gem went off, the new one took its cell).
             var matched = new HashSet<Vector2Int>(result.Matched);
             int wentOffUncounted = 0;
             if (result.Waves.Count > 0)

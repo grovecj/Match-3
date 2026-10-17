@@ -54,3 +54,6 @@ Use these to decide what goes in. A feature should clearly serve at least one an
   asked for a playtest with five types and power gems first; the sixth went in ahead of it,
   on a bot's numbers (`Docs/Scoring.md`). If rounds with six feel starved rather than earned,
   go back to five.
+- **Power gems combine only when the player swaps them** (2026-10-16, #108). Two power gems
+  swapped with each other make a bigger blast; gems that merely land next to each other, or
+  are caught in a blast, behave as before. The biggest plays stay something the player did.

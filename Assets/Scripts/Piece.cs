@@ -24,6 +24,20 @@ namespace Match3
     }
 
     /// <summary>
+    /// The bigger blast two power gems make when the player swaps them with each other (see
+    /// <see cref="BoardModel.ActivateCombo"/>). Which one it is depends only on the pair.
+    /// </summary>
+    public enum PowerCombo
+    {
+        /// <summary>Not a combo: a gem going off on its own.</summary>
+        None,
+        /// <summary>Flame + Flame: the 5x5 around the moved gem.</summary>
+        BigFlame,
+        /// <summary>Any pair with a Star: three whole rows and three whole columns around the moved gem.</summary>
+        StarCross,
+    }
+
+    /// <summary>
     /// What one board cell holds: a colour (which <see cref="TokenType"/> it matches with) plus
     /// an optional <see cref="PowerKind"/>. A cell can also hold nothing: see <see cref="Empty"/>.
     /// </summary>

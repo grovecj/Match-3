@@ -977,6 +977,191 @@ namespace Match3.Tests
             AssertBoardIsFullAndSettled();
         }
 
+        // ---------------------------------------------------------------- Combos
+        //
+        // The rules are covered in Edit Mode (BoardModelComboTests). These check the running
+        // Board: a combo swap is never rejected, it's step 0 at x1, and it scores.
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator ComboSwap_TwoFlames_ClearsThe5x5AndScoresThroughTheScoreKeeper()
+        {
+            // The top-left pair makes no match, but as two Flames it's a combo. The gem moved
+            // from (0,4) lands in (1,4), and the 5x5 around that is x 0..3, y 2..4 on this board:
+            // 12 cells, two of them the combo gems themselves.
+            board.SetPowerForTests(NoMatchA, PowerKind.Flame);
+            board.SetPowerForTests(NoMatchB, PowerKind.Flame);
+
+            var keeperObject = new GameObject("Score Keeper");
+            keeperObject.SetActive(false);
+            ScoreKeeper keeper = keeperObject.AddComponent<ScoreKeeper>();
+            keeper.ConfigureForTests(board);
+            RoundStatsTracker tracker = keeperObject.AddComponent<RoundStatsTracker>();
+            tracker.ConfigureForTests(board);
+            keeperObject.SetActive(true);
+
+            var steps = new List<ClearStep>();
+            board.ClearStepScored += steps.Add;
+            var detonatingWhenWentOff = new List<bool>();
+            board.PowerGemDetonated += (kind, cell, wave) => detonatingWhenWentOff.Add(board.IsDetonating);
+
+            Assert.IsTrue(board.TrySwap(NoMatchA, NoMatchB));
+            yield return WaitUntilIdle();
+
+            Assert.AreEqual(new[] { "started" }, swapEvents, "A combo is a valid move: it mustn't be rejected.");
+            Assert.That(blasts, Is.Not.Empty, "PowerGemBlastStarted never fired.");
+            Assert.AreEqual(PowerCombo.BigFlame, blasts[0].Combo);
+            Assert.AreEqual(NoMatchB, blasts[0].Cell, "The combo is centred where the moved gem landed.");
+            Assert.AreEqual(10, blasts[0].Blasted.Count);
+            Assert.IsTrue(blasts[1].IsComboPartner);
+            Assert.That(blasts[1].Blasted, Is.Empty);
+            Assert.That(detonatingWhenWentOff, Is.All.True, "The clock is held while the combo plays.");
+
+            Assert.AreEqual(0, steps[0].CascadeIndex);
+            Assert.That(steps[0].RunLengths, Is.Empty);
+            Assert.AreEqual(10, steps[0].BlastedGems, "The combo gems aren't counted as blasted.");
+            Assert.AreEqual(10 * ScoreRules.PointsPerBlastedGem, steps[0].Points);
+
+            int expected = 0;
+            foreach (ClearStep step in steps)
+            {
+                expected += step.Points;
+            }
+            Assert.AreEqual(expected, keeper.Total);
+            Assert.That(tracker.Stats.flamesDetonated, Is.GreaterThanOrEqualTo(2), "Each combo gem counts as a Flame going off.");
+
+            AssertBoardIsFullAndSettled();
+            AssertNoMatchesLeft();
+            Object.Destroy(keeperObject);
+            yield return WaitUntilNoBursts();
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator ComboSwap_ThatAlsoMakesARun_IsTheComboOnly()
+        {
+            // MatchA/MatchB line up AAA along the bottom row. As two Flames, the swap is the
+            // combo instead: no run is cleared as the swap's own match.
+            board.SetPowerForTests(MatchA, PowerKind.Flame);
+            board.SetPowerForTests(MatchB, PowerKind.Flame);
+
+            Assert.IsTrue(board.TrySwap(MatchA, MatchB));
+            yield return WaitUntilIdle();
+
+            Assert.AreEqual(new[] { "started" }, swapEvents);
+            Assert.That(blasts, Is.Not.Empty);
+            Assert.AreEqual(PowerCombo.BigFlame, blasts[0].Combo);
+            foreach ((int longestRun, int cascadeIndex) step in clearSteps)
+            {
+                Assert.That(step.cascadeIndex, Is.GreaterThan(0), "Runs after a combo are cascades.");
+            }
+            AssertBoardIsFullAndSettled();
+            yield return WaitUntilNoBursts();
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator ComboSwap_TwoStars_FiresABeamAlongEachRowAndColumn()
+        {
+            // Centred on (1,4), the top row: rows 3 and 4 (row 5 is off the board) and
+            // columns 0, 1 and 2. That's five beams, each with just the two arms it needs.
+            board.SetPowerForTests(NoMatchA, PowerKind.Star);
+            board.SetPowerForTests(NoMatchB, PowerKind.Star);
+
+            int beamsWhenMovedWentOff = -1;
+            int beamsWhenPartnerWentOff = -1;
+            var armCounts = new List<int>();
+            int detonations = 0;
+            board.PowerGemDetonated += (kind, cell, wave) =>
+            {
+                detonations++;
+                if (detonations == 1)
+                {
+                    beamsWhenMovedWentOff = Beams().Length;
+                    foreach (StarBeam beam in Beams())
+                    {
+                        armCounts.Add(beam.transform.childCount);
+                    }
+                }
+                else if (detonations == 2)
+                {
+                    beamsWhenPartnerWentOff = Beams().Length;
+                }
+            };
+
+            Assert.IsTrue(board.TrySwap(NoMatchA, NoMatchB));
+            yield return WaitUntilIdle();
+
+            Assert.AreEqual(5, beamsWhenMovedWentOff, "Two row beams and three column beams.");
+            Assert.That(armCounts, Is.All.EqualTo(2), "A row or column beam only builds its two arms.");
+            Assert.AreEqual(5, beamsWhenPartnerWentOff, "The partner fires no beam of its own.");
+            AssertBoardIsFullAndSettled();
+            yield return WaitUntilNoBursts();
+        }
+
+        [UnityTest, Timeout(TestTimeoutMs)]
+        public IEnumerator ComboSwap_TwoFlames_PlaysABiggerBurst_AndAPooledCopyGoesBackToNormalSize()
+        {
+            // The fixture's effects have no particle prefabs; give them a stand-in Flame burst.
+            var templates = new GameObject("Particle Effect Templates");
+            templates.SetActive(false);
+            ParticleEffect flameTemplate = CreateParticleEffectTemplate(templates.transform);
+            var effects = effectsObject.GetComponent<PowerGemEffects>();
+            effectsObject.SetActive(false);
+            effects.ConfigureForTests(board, null, flameTemplate, null, null);
+            effectsObject.SetActive(true);
+
+            board.SetPowerForTests(NoMatchA, PowerKind.Flame);
+            board.SetPowerForTests(NoMatchB, PowerKind.Flame);
+            float normal = board.CellSize;
+            float big = board.CellSize * PowerGemEffects.BigFlameScale;
+            var scalesWhenMovedWentOff = new List<float>();
+            board.PowerGemDetonated += (kind, cell, wave) =>
+            {
+                if (scalesWhenMovedWentOff.Count == 0)
+                {
+                    foreach (ParticleEffect effect in effectsObject.GetComponentsInChildren<ParticleEffect>())
+                    {
+                        scalesWhenMovedWentOff.Add(effect.transform.localScale.x);
+                    }
+                }
+            };
+
+            Assert.IsTrue(board.TrySwap(NoMatchA, NoMatchB));
+            yield return WaitUntilIdle();
+
+            Assert.AreEqual(1, scalesWhenMovedWentOff.Count, "The moved gem plays one burst.");
+            Assert.AreEqual(big, scalesWhenMovedWentOff[0], 0.0001f, "A BigFlame's burst covers the 5x5.");
+
+            // Wait for both bursts (the combo's and the partner's) to finish and go back to the pool.
+            bool timedOut = false;
+            yield return new WaitUntil(
+                () => effects.PooledCountForTests(flameTemplate) >= 2,
+                System.TimeSpan.FromSeconds(ResolveTimeoutSeconds),
+                () => timedOut = true);
+            Assert.IsFalse(timedOut, "The Flame bursts never went back to their pool.");
+
+            // An ordinary matched Flame reuses a pooled copy, and it must be the normal size.
+            board.LoadLayoutForTests(BuildLayout(Layout));
+            board.SetPowerForTests(new Vector2Int(0, 0), PowerKind.Flame);
+            var scalesOfPlainFlame = new List<float>();
+            board.PowerGemBlastStarted += blast =>
+            {
+                if (scalesOfPlainFlame.Count == 0 && blast.Combo == PowerCombo.None && !blast.IsComboPartner)
+                {
+                    foreach (ParticleEffect effect in effectsObject.GetComponentsInChildren<ParticleEffect>())
+                    {
+                        scalesOfPlainFlame.Add(effect.transform.localScale.x);
+                    }
+                }
+            };
+            Assert.IsTrue(board.TrySwap(MatchA, MatchB));
+            yield return WaitUntilIdle();
+
+            Assert.That(scalesOfPlainFlame, Is.Not.Empty, "The matched Flame should have played a burst.");
+            Assert.That(scalesOfPlainFlame, Is.All.EqualTo(normal).Within(0.0001f));
+
+            Object.Destroy(templates);
+            yield return WaitUntilNoBursts();
+        }
+
         // ---------------------------------------------------------------- Chain reactions
         //
         // The rules are covered in Edit Mode (BoardModelChainTests). This checks the running
@@ -1663,6 +1848,27 @@ namespace Match3.Tests
             main.playOnAwake = false;
             main.stopAction = ParticleSystemStopAction.Destroy;
             return template.GetComponent<Explosion>();
+        }
+
+        /// <summary>
+        /// A stand-in for a power gem effect prefab: a short ParticleSystem that reports when it's
+        /// done (Stop Action: Callback), like the real ones. Made under <paramref name="inactiveParent"/>
+        /// so the template itself never plays.
+        /// </summary>
+        private static ParticleEffect CreateParticleEffectTemplate(Transform inactiveParent)
+        {
+            var template = new GameObject("Particle Effect Template");
+            template.transform.SetParent(inactiveParent);
+            // ParticleEffect's [RequireComponent] adds the ParticleSystem too.
+            ParticleEffect effect = template.AddComponent<ParticleEffect>();
+
+            ParticleSystem.MainModule main = template.GetComponent<ParticleSystem>().main;
+            main.duration = 0.1f;
+            main.loop = false;
+            main.startLifetime = 0.2f;
+            main.playOnAwake = false;
+            main.stopAction = ParticleSystemStopAction.Callback;
+            return effect;
         }
 
         /// <summary>Every burst under the board right now.</summary>
