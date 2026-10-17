@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<!--
+  Match-3's Web template (issue #22). Unity copies this page into every Web build, filling in
+  the triple-curly-brace tags (build file names, product name, etc.) as it goes. Lines that start with
+  a hash sign (if/endif) are Unity's template preprocessor, not HTML. The preprocessor runs
+  before the browser ever sees the page, so it reads those lines even inside a comment like
+  this one: never start a line here with a hash sign unless it's a directive.
+
+  Unlike Unity's built-in templates, this one makes the game fill the whole browser window.
+  The canvas is sized with CSS (100% of the window), and Unity's loader keeps the WebGL drawing
+  buffer matched to the canvas's on-screen size, so resizing the window resizes the game.
+  Inside the game, BoardCamera and the Canvas Scaler then adapt to the new size the same way
+  they do when you resize the Game view in the Editor.
+-->
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Match3</title>
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        /* On phones, 100dvh ("dynamic viewport height") follows the browser's toolbar as it
+           slides in and out, so the game always fills exactly the visible part of the page.
+           Older browsers ignore it and keep the 100% above. */
+        height: 100dvh;
+        /* No scrollbars: the canvas is exactly the size of the window. */
+        overflow: hidden;
+        background: #231F20;
+      }
+      canvas#unity-canvas {
+        /* display: block removes the few pixels of gap an inline canvas leaves below it. */
+        display: block;
+        width: 100%;
+        height: 100%;
+        /* Clicking the canvas focuses it (see tabindex below); hide the browser's focus ring. */
+        outline: none;
+        /* Touches belong to the game: no scrolling, pinch zoom or double-tap zoom, so a quick
+           drag or two taps on a token swap it instead of moving the page. */
+        touch-action: none;
+      }
+      div#loading {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        color: #ddd;
+        font: 16px sans-serif;
+      }
+      div#progress-track {
+        width: 240px;
+        height: 8px;
+        border-radius: 4px;
+        background: #333;
+        overflow: hidden;
+      }
+      div#progress-fill {
+        width: 0%;
+        height: 100%;
+        background: #f5c542;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- tabindex makes the canvas focusable, so it receives keyboard input (Esc/P to pause). -->
+    <canvas id="unity-canvas" tabindex="-1"></canvas>
+    <div id="loading">
+      <div>Loading Match3&hellip;</div>
+      <div id="progress-track"><div id="progress-fill"></div></div>
+    </div>
+
+    <script src="Build/Match3.loader.js"></script>
+    <script>
+      var canvas = document.querySelector("#unity-canvas");
+      var loading = document.querySelector("#loading");
+      var progressFill = document.querySelector("#progress-fill");
+
+      createUnityInstance(canvas, {
+        arguments: [],
+        dataUrl: "Build/Match3.data.unityweb",
+        frameworkUrl: "Build/Match3.framework.js.unityweb",
+        codeUrl: "Build/Match3.wasm.unityweb",
+        streamingAssetsUrl: "StreamingAssets",
+        companyName: "grovecj",
+        productName: "Match3",
+        productVersion: "0.0.187",
+        // On Web, files the game writes to Application.persistentDataPath (like the
+        // leaderboard) live in an in-memory file system that is copied to the browser's
+        // IndexedDB so they survive a reload. This makes Unity copy them as soon as they
+        // change; without it, Unity logs a deprecation warning and uses an older, manual sync.
+        autoSyncPersistentDataPath: true,
+      }, function (progress) {
+        // progress goes from 0 to 1 while the build files download and start up.
+        progressFill.style.width = (100 * progress) + "%";
+      }).then(function (unityInstance) {
+        loading.remove();
+        // Give the game keyboard focus straight away, so Esc/P work without clicking first.
+        canvas.focus();
+      }).catch(function (message) {
+        loading.textContent = "The game failed to load: " + message;
+      });
+    </script>
+  </body>
+</html>
