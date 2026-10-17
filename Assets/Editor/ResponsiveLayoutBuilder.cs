@@ -9,9 +9,9 @@ using static UIBuilder;
 /// <summary>
 /// Editor-only helper that sets up the portrait layout for phones (issue #114): it adds a
 /// <see cref="ResponsiveLayout"/> to the Canvas and wires it to the side panel, the things in
-/// it, the pause overlay, the achievement toast and every modal window, then points the
-/// <see cref="BoardCamera"/> at it. Run it from the menu bar: Match3 > Build Responsive Layout,
-/// then save the scene.
+/// it, the pause overlay, the round summary, the achievement toast and every modal window,
+/// then points the <see cref="BoardCamera"/> at it. Run it from the menu bar: Match3 > Build
+/// Responsive Layout, then save the scene.
 ///
 /// The portrait arrangement itself is in ResponsiveLayout, which moves the objects the scene
 /// already has; nothing new is built, and the scene keeps its landscape layout in the Editor.
@@ -84,6 +84,7 @@ public static class ResponsiveLayoutBuilder
         SetReference(layout, "sidePanel", panel);
         SetReference(layout, "scoreLabel", Find(panel, "ScoreLabel"));
         SetReference(layout, "scoreValue", Find(panel, "ScoreValue"));
+        SetReference(layout, "bestLine", Find(panel, "BestLine"));
         SetReference(layout, "timeLabel", Find(panel, "TimeLabel"));
         SetReference(layout, "timerValue", Find(panel, "TimerValue"));
         SetReference(layout, "roundOverMessage", Find(panel, "RoundOverMessage"));
@@ -91,6 +92,7 @@ public static class ResponsiveLayoutBuilder
         SetArray(layout, "menuButtons", FindAll(panel, MenuButtons));
 
         SetReference(layout, "pauseOverlay", Find(canvas, "PauseOverlay"));
+        SetReference(layout, "roundSummary", Find(canvas, "RoundSummary"));
         SetReference(layout, "achievementToast", Find(canvas, "Achievements/Toast"));
         SetArray(layout, "windows", FindAll(canvas, Windows));
 

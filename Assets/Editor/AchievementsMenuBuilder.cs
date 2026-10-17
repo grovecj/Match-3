@@ -81,6 +81,8 @@ public static class AchievementsMenuBuilder
         var tracker = root.AddComponent<RoundStatsTracker>();
         SetReference(tracker, "board", board);
         SetReference(online, "roundStats", tracker);
+        // The round summary (Match3 > Build Round Summary) reads the same stats.
+        SetReference(gameManager, "roundStats", tracker);
 
         var menu = root.AddComponent<AchievementsMenu>();
         SetReference(menu, "client", client);

@@ -7,7 +7,9 @@ namespace Match3
     /// <summary>
     /// Displays the <see cref="ScoreKeeper"/>'s total in a TextMeshPro text, formatted with
     /// thousands separators (e.g. "12,000"), and the cascade multiplier ("x3") while it's above
-    /// x1. It only displays; it never changes the score.
+    /// x1. Under it, once a round has been finished, the personal best ("Best 84,000"), which
+    /// turns into "New best!" as soon as the score passes it. It only displays; it never
+    /// changes the score or the best.
     /// </summary>
     public class ScoreView : MonoBehaviour
     {
@@ -22,11 +24,27 @@ namespace Match3
         [Tooltip("Colour of the multiplier, so it stands out from the score.")]
         [SerializeField] private Color multiplierColor = new Color(1f, 0.84f, 0.3f);
 
+        [Tooltip("The \"Best 84,000\" line under the score. Optional: without it, the best isn't shown during play. Made by Match3 > Build Round Summary.")]
+        [SerializeField] private TMP_Text bestText;
+
+        [Tooltip("Colour of the best line once the score has passed it (\"New best!\").")]
+        [SerializeField] private Color newBestColor = new Color(1f, 0.84f, 0.3f);
+
+        // The best to beat this round, or null before the first finished round.
+        private int? best;
+        // The best line's colour from the scene, for when it isn't a new best.
+        private Color bestColor = Color.white;
+
         private void Awake()
         {
             if (multiplierText == null && valueText != null)
             {
                 multiplierText = CreateMultiplierText(valueText);
+            }
+            if (bestText != null)
+            {
+                bestColor = bestText.color;
+                ShowBestLine(0);
             }
         }
 
@@ -59,6 +77,36 @@ namespace Match3
             // the culture (German uses "12.000"), so we pin it to the invariant culture to always
             // get "12,000".
             valueText.text = total.ToString("N0", CultureInfo.InvariantCulture);
+            ShowBestLine(total);
+        }
+
+        /// <summary>
+        /// Sets the best this round's score is up against (null for none yet). The
+        /// <see cref="GameManager"/> calls it when a round starts, not when one ends, so a
+        /// round that set a new best keeps saying "New best!" until the next one begins.
+        /// </summary>
+        public void ShowBest(int? newBest)
+        {
+            best = newBest;
+            ShowBestLine(scoreKeeper != null ? scoreKeeper.Total : 0);
+        }
+
+        private void ShowBestLine(int total)
+        {
+            if (bestText == null)
+            {
+                return;
+            }
+            // Nothing to show before the first finished round.
+            bestText.gameObject.SetActive(best.HasValue);
+            if (!best.HasValue)
+            {
+                return;
+            }
+            // The same rule as the round summary, so the two never disagree (a tie isn't a new best).
+            bool beaten = PersonalBest.Beats(total, best);
+            bestText.text = beaten ? "New best!" : "Best " + best.Value.ToString("N0", CultureInfo.InvariantCulture);
+            bestText.color = beaten ? newBestColor : bestColor;
         }
 
         private void ShowMultiplier(int multiplier)

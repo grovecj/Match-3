@@ -1,4 +1,3 @@
-using System.Globalization;
 using Match3.Accounts;
 using Match3.Achievements;
 using TMPro;
@@ -31,7 +30,8 @@ namespace Match3
     ///   Paused     - Esc or P was pressed mid-round, or the game lost focus. Time is frozen, the
     ///                board is blurred, and a "Paused" overlay is shown. Esc, P, or the Resume
     ///                button goes back to where it was: Playing or LastHurrah.
-    ///   RoundOver  - time ran out and the board has settled. The final score and a "Play
+    ///   RoundOver  - time ran out and the board has settled. "Time's up!", the round summary
+    ///                (the score against the personal best, and a few stats) and a "Play
     ///                Again" button are shown.
     /// Clicking the button in Ready or RoundOver starts a new round (-> Playing).
     /// The Settings menu (gear button), the Leaderboard and the Account menu are only available
@@ -71,13 +71,21 @@ namespace Match3
         [SerializeField] private Color timerWarningColor = new Color(1f, 0.3f, 0.3f);
         [Tooltip("The timer's color while the clock is held (power gems going off, or the board reshuffling), so the player sees that it stopped.")]
         [SerializeField] private Color timerHeldColor = new Color(0.45f, 0.85f, 1f);
-        [Tooltip("Shows \"Time's up! Final score: X\" when a round ends, \"Last Hurrah!\" while leftover power gems go off, and \"No more moves!\" while the board reshuffles. Hidden otherwise.")]
+        [Tooltip("Shows \"Time's up!\" when a round ends (with the whole round summary if there's no Round Summary View), \"Last Hurrah!\" while leftover power gems go off, and \"No more moves!\" while the board reshuffles. Hidden otherwise.")]
         [SerializeField] private TMP_Text messageText;
         [Tooltip("How long, in seconds, \"No more moves!\" stays up when the board reshuffles.")]
         [SerializeField, Min(0f)] private float noMovesMessageDuration = 1.5f;
         [Tooltip("The one button used both to start the first round and to play again.")]
         [SerializeField] private Button roundButton;
         [SerializeField] private TMP_Text roundButtonLabel;
+
+        [Header("Round summary")]
+        [Tooltip("Shows the \"Best\" line under the score. Optional, like the two below; all three are wired by Match3 > Build Round Summary.")]
+        [SerializeField] private ScoreView scoreView;
+        [Tooltip("The card over the board with the round's summary. Without it, the summary goes in the message instead.")]
+        [SerializeField] private RoundSummaryView roundSummaryView;
+        [Tooltip("The round's stats, for the summary's stat lines. The same tracker the server's stats come from.")]
+        [SerializeField] private RoundStatsTracker roundStats;
 
         [Header("Pause")]
         [Tooltip("The gray \"Paused\" panel over the board. Hidden unless paused.")]
@@ -114,6 +122,9 @@ namespace Match3
         // Seconds until the "No more moves!" message is hidden again. 0 when it isn't showing.
         private float noMovesMessageTimeLeft;
         private InputAction pauseAction;
+        // This device's best score. Made in Start, since PlayerPrefs can't be read before then
+        // (Unity doesn't allow it in a field initializer or constructor).
+        private PersonalBest personalBest;
 
         private void Start()
         {
@@ -138,6 +149,8 @@ namespace Match3
             // InputSystem_Actions, set under Project Settings > Input System Package). Unity
             // enables it automatically, so we only need to find our action by "Map/Action" name.
             pauseAction = InputSystem.actions.FindAction("Player/Pause", throwIfNotFound: true);
+
+            personalBest = new PersonalBest(new PlayerPrefsPersonalBestStore());
 
             pauseOverlay.SetActive(false);
             EnterReady();
@@ -299,7 +312,17 @@ namespace Match3
         private void StartRound()
         {
             board.Regenerate();
+            // Before the score resets, so the reset shows the line against this round's best.
+            ShowBestUnderScore();
             scoreKeeper.ResetScore();
+            if (roundStats != null)
+            {
+                roundStats.ResetStats();
+            }
+            if (roundSummaryView != null)
+            {
+                roundSummaryView.Hide();
+            }
             clock.Reset(roundDuration);
             ShowTime();
 
@@ -369,6 +392,7 @@ namespace Match3
             clock.Reset(roundDuration);
             ShowTime();
             messageText.gameObject.SetActive(false);
+            ShowBestUnderScore();
             ShowButton("Start Round");
             settingsMenu.SetAvailable(true);
             leaderboardMenu.SetAvailable(true);
@@ -394,9 +418,7 @@ namespace Match3
             SetInputEnabled(false);
             // "Time's up!" takes over the message from here; don't let the countdown hide it.
             noMovesMessageTimeLeft = 0f;
-            string finalScore = scoreKeeper.Total.ToString("N0", CultureInfo.InvariantCulture);
-            messageText.text = $"Time's up!\nFinal score: {finalScore}";
-            messageText.gameObject.SetActive(true);
+            ShowRoundSummary();
             ShowButton("Play Again");
             settingsMenu.SetAvailable(true);
             leaderboardMenu.SetAvailable(true);
@@ -425,6 +447,42 @@ namespace Match3
             messageText.text = "No more moves!\nShuffling...";
             messageText.gameObject.SetActive(true);
             noMovesMessageTimeLeft = noMovesMessageDuration;
+        }
+
+        /// <summary>
+        /// Compares the final score with the personal best, saves it if it's a new one, and
+        /// shows the summary. By now the Last Hurrah is over, so its points are in the score.
+        /// </summary>
+        private void ShowRoundSummary()
+        {
+            int score = scoreKeeper.Total;
+            // Read the best before recording this round, or the round would be compared with itself.
+            int? previousBest = personalBest.Best;
+            personalBest.Record(score);
+
+            // The stats as the server gets them: OfferEntry, just after this, reads the same
+            // tracker on the same frame. Without a tracker, the stat lines are all zeros.
+            RoundStats stats = roundStats != null ? roundStats.Stats : new RoundStats();
+            RoundSummary summary = RoundSummary.Create(score, previousBest, stats);
+
+            if (roundSummaryView != null)
+            {
+                messageText.text = RoundSummary.Headline;
+                roundSummaryView.Show(summary);
+            }
+            else
+            {
+                messageText.text = summary.AllLines();
+            }
+            messageText.gameObject.SetActive(true);
+        }
+
+        private void ShowBestUnderScore()
+        {
+            if (scoreView != null)
+            {
+                scoreView.ShowBest(personalBest.Best);
+            }
         }
 
         // The Achievements menu is the one menu the game can run without, so it's the one

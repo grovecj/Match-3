@@ -27,8 +27,13 @@ namespace Match3
         private const float Gap = 16f;
         private const float TopRowY = 24f;
         private const float TopRowHeight = 90f;
-        private const float MessageY = 114f;
-        private const float MessageHeight = 90f;
+        // The "Best 84,000" line, just under the score (issue #107).
+        private const float BestLineY = 112f;
+        private const float BestLineHeight = 36f;
+        // The message gets what's left above the round button. Two lines ("No more moves!" /
+        // "Shuffling...") are a little taller, so in portrait its text may shrink to fit.
+        private const float MessageY = 150f;
+        private const float MessageHeight = 66f;
         private const float RoundButtonY = 220f;
         private const float ButtonRowY = 366f;
         // 130 units at 1080 across a 390-point-wide phone is ~47 points, above the 44 point
@@ -43,6 +48,8 @@ namespace Match3
         [Header("Panel contents")]
         [SerializeField] private RectTransform scoreLabel;
         [SerializeField] private RectTransform scoreValue;
+        [Tooltip("The \"Best 84,000\" line under the score.")]
+        [SerializeField] private RectTransform bestLine;
         [SerializeField] private RectTransform timeLabel;
         [SerializeField] private RectTransform timerValue;
         [SerializeField] private RectTransform roundOverMessage;
@@ -53,6 +60,8 @@ namespace Match3
         [Header("Placed over the board")]
         [Tooltip("Covers the board while paused, but not the panel.")]
         [SerializeField] private RectTransform pauseOverlay;
+        [Tooltip("The round summary (its card is centered in this), over the board.")]
+        [SerializeField] private RectTransform roundSummary;
         [Tooltip("The achievement toast's card, centered over the board at the top of the safe area.")]
         [SerializeField] private RectTransform achievementToast;
 
@@ -80,17 +89,20 @@ namespace Match3
         private RectTransform[] contents;
         private TMP_Text[] buttonLabels;
         private float[] labelSizes;
+        private TMP_Text messageLabel;
+        private float messageSize;
 
         private void Awake()
         {
-            contents = new RectTransform[6 + menuButtons.Length];
+            contents = new RectTransform[7 + menuButtons.Length];
             contents[0] = scoreLabel;
             contents[1] = scoreValue;
             contents[2] = timeLabel;
             contents[3] = timerValue;
             contents[4] = roundOverMessage;
             contents[5] = roundButton;
-            menuButtons.CopyTo(contents, 6);
+            contents[6] = bestLine;
+            menuButtons.CopyTo(contents, 7);
 
             landscapeContents = new RectSnapshot[contents.Length];
             for (int i = 0; i < contents.Length; i++)
@@ -107,6 +119,8 @@ namespace Match3
                 buttonLabels[i] = menuButtons[i] != null ? menuButtons[i].GetComponentInChildren<TMP_Text>(true) : null;
                 labelSizes[i] = buttonLabels[i] != null ? buttonLabels[i].fontSize : 0f;
             }
+            messageLabel = roundOverMessage != null ? roundOverMessage.GetComponent<TMP_Text>() : null;
+            messageSize = messageLabel != null ? messageLabel.fontSize : 0f;
 
             Refresh();
         }
@@ -174,6 +188,10 @@ namespace Match3
             {
                 PlaceOnScreen(pauseOverlay, current.BoardRect, screenSize);
             }
+            if (roundSummary != null)
+            {
+                PlaceOnScreen(roundSummary, current.BoardRect, screenSize);
+            }
             if (achievementToast != null)
             {
                 // Its anchor sits at the top middle of the board's area, and AchievementToast
@@ -212,11 +230,19 @@ namespace Match3
                 label.fontSizeMax = labelSizes[i];
                 label.fontSize = labelSizes[i];
             }
+            if (messageLabel != null)
+            {
+                messageLabel.enableAutoSizing = portrait;
+                messageLabel.fontSizeMin = MinLabelSize;
+                messageLabel.fontSizeMax = messageSize;
+                messageLabel.fontSize = messageSize;
+            }
         }
 
         /// <summary>
-        /// The portrait panel, top to bottom: "SCORE 12,400  TIME 0:42" in one row, the
-        /// round-over message, a full-width Start Round button, then the menu buttons in a row.
+        /// The portrait panel, top to bottom: "SCORE 12,400  TIME 0:42" in one row, the best
+        /// line under the score, the round-over message, a full-width Start Round button, then
+        /// the menu buttons in a row.
         /// </summary>
         private void ArrangePortraitPanel()
         {
@@ -224,6 +250,7 @@ namespace Match3
             PlaceFromTop(scoreValue, 0.2f, 0.6f, TopRowY, TopRowHeight, 0f, 0f);
             PlaceFromTop(timeLabel, 0.6f, 0.78f, TopRowY, TopRowHeight, 0f, 0f);
             PlaceFromTop(timerValue, 0.78f, 1f, TopRowY, TopRowHeight, 0f, Margin);
+            PlaceFromTop(bestLine, 0.2f, 0.6f, BestLineY, BestLineHeight, 0f, 0f);
             PlaceFromTop(roundOverMessage, 0f, 1f, MessageY, MessageHeight, Margin, Margin);
             PlaceFromTop(roundButton, 0f, 1f, RoundButtonY, ButtonHeight, Margin, Margin);
 
