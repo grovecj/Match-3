@@ -23,6 +23,10 @@
         padding: 0;
         width: 100%;
         height: 100%;
+        /* On phones, 100dvh ("dynamic viewport height") follows the browser's toolbar as it
+           slides in and out, so the game always fills exactly the visible part of the page.
+           Older browsers ignore it and keep the 100% above. */
+        height: 100dvh;
         /* No scrollbars: the canvas is exactly the size of the window. */
         overflow: hidden;
         background: {{{ BACKGROUND_COLOR }}};
@@ -34,6 +38,9 @@
         height: 100%;
         /* Clicking the canvas focuses it (see tabindex below); hide the browser's focus ring. */
         outline: none;
+        /* Touches belong to the game: no scrolling, pinch zoom or double-tap zoom, so a quick
+           drag or two taps on a token swap it instead of moving the page. */
+        touch-action: none;
       }
       div#loading {
         position: fixed;

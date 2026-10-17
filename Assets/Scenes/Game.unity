@@ -7052,6 +7052,7 @@ MonoBehaviour:
   beamSpeed: 16
   zapInterval: 0.05
   chainDelay: 0.1
+  lastHurrahDelay: 0.6
   noMovesDelay: 0.5
   shuffleDuration: 0.4
 --- !u!4 &709381720
@@ -9578,6 +9579,7 @@ GameObject:
   - component: {fileID: 1022133859}
   - component: {fileID: 1022133858}
   - component: {fileID: 1022133857}
+  - component: {fileID: 1022133861}
   m_Layer: 5
   m_Name: Canvas
   m_TagString: Untagged
@@ -9675,6 +9677,40 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0, y: 0}
+--- !u!114 &1022133861
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1022133856}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 61fe7659783748fd9da2b67aa1b37305, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Match3::Match3.ResponsiveLayout
+  canvasScaler: {fileID: 1022133858}
+  sidePanel: {fileID: 428883635}
+  scoreLabel: {fileID: 34864617}
+  scoreValue: {fileID: 580500631}
+  timeLabel: {fileID: 1100000002}
+  timerValue: {fileID: 1100000012}
+  roundOverMessage: {fileID: 1100000022}
+  roundButton: {fileID: 1100000032}
+  menuButtons:
+  - {fileID: 617169022}
+  - {fileID: 1606253424}
+  - {fileID: 2008174167}
+  - {fileID: 296312357}
+  pauseOverlay: {fileID: 1300000012}
+  achievementToast: {fileID: 994410660}
+  windows:
+  - {fileID: 1245815601}
+  - {fileID: 1815655587}
+  - {fileID: 1923494960}
+  - {fileID: 89202457}
+  - {fileID: 828203602}
+  windowMargin: 24
 --- !u!1 &1036630536
 GameObject:
   m_ObjectHideFlags: 0
@@ -17218,7 +17254,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Match3.BoardCamera
   board: {fileID: 709381719}
   padding: 1
-  rightPanel: {fileID: 428883635}
+  layout: {fileID: 1022133861}
   themeManager: {fileID: 1200000003}
 --- !u!114 &1686509901
 MonoBehaviour:

@@ -19,6 +19,9 @@ namespace Match3
     /// The snapshot is a still picture, which is exactly what we want: the board is frozen anyway.
     /// </summary>
     [RequireComponent(typeof(RawImage))]
+    // Runs its LateUpdate after BoardCamera's (order 0) and ScreenShake's (100), so a snapshot
+    // re-taken after the screen changes size shows the camera already re-fitted to it.
+    [DefaultExecutionOrder(200)]
     public class BoardBlur : MonoBehaviour
     {
         [Tooltip("The camera to take the snapshot from. Defaults to the main camera.")]
@@ -28,6 +31,8 @@ namespace Match3
 
         private RawImage image;
         private RenderTexture blurred;
+        // The screen size the current snapshot was taken at.
+        private Vector2Int snapshotSize;
 
         private void Awake()
         {
@@ -44,6 +49,17 @@ namespace Match3
             ReleaseBlurred();
         }
 
+        // If the screen changes size while the snapshot is showing (a phone rotated while
+        // paused, issue #114), the old picture would be stretched to the new shape, so take
+        // a fresh one.
+        private void LateUpdate()
+        {
+            if (image.enabled && blurred != null && snapshotSize != new Vector2Int(Screen.width, Screen.height))
+            {
+                Show();
+            }
+        }
+
         /// <summary>Takes a snapshot of the camera, blurs it, and shows it.</summary>
         public void Show()
         {
@@ -51,6 +67,7 @@ namespace Match3
 
             int width = Screen.width;
             int height = Screen.height;
+            snapshotSize = new Vector2Int(width, height);
 
             // GetTemporary borrows a RenderTexture from a pool Unity keeps, which is cheaper than
             // creating a new one each time. Every GetTemporary needs a matching ReleaseTemporary.

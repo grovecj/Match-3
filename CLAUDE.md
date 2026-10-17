@@ -3,7 +3,7 @@
 Match-3 game (Bejeweled-style) in Unity. Learning project: favor clear, simple,
 well-explained code over polish. Explain Unity concepts when introducing them.
 
-- Unity 6000.5.7f1, 2D URP template, new Input System (`com.unity.inputsystem`). Target: PC.
+- Unity 6000.5.7f1, 2D URP template, new Input System (`com.unity.inputsystem`). Targets: PC, and the web build on desktop and mobile browsers (portrait and landscape).
 - Repo root is the Unity project root. Source art goes in `Art/`, game assets in `Assets/`.
 - Tasks are tracked in GitHub Issues (`gh issue list -R grovecj/Match-3`).
 - Scoring rules are constants in `Assets/Scripts/ScoreRules.cs` and must match the server's
@@ -20,7 +20,9 @@ well-explained code over polish. Explain Unity concepts when introducing them.
   see `Docs/Achievements.md`), and
   `Match3 > Build Explosion Prefab`, which builds the clear-effect particle prefab, and
   `Match3 > Build Power Gem Effects` (run after it: the power gem particle prefabs, plus the
-  PowerGemEffects, ScorePopups, PowerGemSounds and ScreenShake listeners in the scene)) live in
+  PowerGemEffects, ScorePopups, PowerGemSounds and ScreenShake listeners in the scene), and
+  `Match3 > Build Responsive Layout` (the ResponsiveLayout that switches to the portrait layout
+  for phones; run it after the menu builders; see `Docs/WebBuild.md#portrait-layout`)) live in
   `Assets/Editor/`, sharing
   helpers from `UIBuilder.cs`. `Match3 > Build Web` makes the browser build into `Builds/Web`
   (see `Docs/WebBuild.md`).
