@@ -1003,9 +1003,12 @@ namespace Match3.Tests
 
             var converted = new List<Vector2Int>();
             var convertedPowers = new List<PowerKind>();
+            var detonatingWhenConverted = new List<bool>();
             board.PowerGemConverted += (kind, cell) =>
             {
                 converted.Add(cell);
+                // The clock is already held while the player watches the colour change.
+                detonatingWhenConverted.Add(board.IsDetonating);
                 // The token shows its new power as the event fires.
                 convertedPowers.Add(board.GetToken(cell.x, cell.y).Power);
             };
@@ -1035,6 +1038,7 @@ namespace Match3.Tests
             }
             Assert.AreEqual(6, flamesInWaveOne);
             Assert.That(detonatingWhenWentOff, Is.All.True, "The clock is held while the combo plays.");
+            Assert.That(detonatingWhenConverted, Is.All.True, "The clock is held from the conversion on.");
             Assert.AreEqual(0, created, "Converted gems weren't made by a match.");
 
             AssertBoardIsFullAndSettled();

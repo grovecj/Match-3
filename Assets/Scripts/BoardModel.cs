@@ -200,8 +200,9 @@ namespace Match3
                 Matched = matched;
                 Created = created;
                 Waves = waves;
-                // `??` means "the left side, unless it's null, then the right side".
-                Converted = converted ?? new List<Creation>();
+                // `??` means "the left side, unless it's null, then the right side". Every step
+                // that isn't a conversion shares the one empty array instead of making a list.
+                Converted = converted ?? System.Array.Empty<Creation>();
 
                 var detonations = new List<Detonation>();
                 foreach (IReadOnlyList<Detonation> wave in waves)
@@ -1026,8 +1027,9 @@ namespace Match3
             {
                 case PowerCombo.BigFlame: return BigFlameBlastCells(centre);
                 case PowerCombo.StarCross: return StarCrossBlastCells(centre);
-                // A square big enough to reach every edge from wherever the centre is.
-                case PowerCombo.ClearBoard: return SquareCells(centre, Mathf.Max(Width, Height));
+                // A square just big enough to reach every edge from wherever the centre is: no
+                // cell is more than (Width - 1) or (Height - 1) away from any other.
+                case PowerCombo.ClearBoard: return SquareCells(centre, Mathf.Max(Width, Height) - 1);
                 default: return new List<Vector2Int>();
             }
         }
@@ -1279,7 +1281,8 @@ namespace Match3
         /// differently: see <see cref="ActivateConversion"/>.
         /// </summary>
         /// <param name="moved">
-        /// Where the gem the player moved is now, after the swap. The blast is centred here.
+        /// Where the gem the player moved is now, after the swap. The blast is centred here
+        /// (a <see cref="PowerCombo.Conversion"/> has no centre: it clears a colour).
         /// </param>
         /// <param name="partner">Where the gem it was swapped with is now.</param>
         public ClearResult ActivateCombo(Vector2Int moved, Vector2Int partner)
@@ -1336,6 +1339,13 @@ namespace Match3
         private ClearResult ActivateConversion(Vector2Int cube, Vector2Int partner)
         {
             Piece partnerGem = PieceAt(partner);
+            // Checked before anything changes, so a bad call can't leave the colour converted
+            // with no cube going off (ActivateHypercube checks the same, but only after).
+            if (PieceAt(cube).Power != PowerKind.Hypercube || partnerGem.Colour == null)
+            {
+                throw new System.ArgumentException(
+                    $"Cells ({cube.x},{cube.y}) and ({partner.x},{partner.y}) aren't a Hypercube and a coloured power gem.");
+            }
             List<Creation> converted = ConvertColour(partnerGem.Colour, partnerGem.Power);
             return ActivateHypercube(cube, partnerGem.Colour, PowerCombo.Conversion, converted);
         }
