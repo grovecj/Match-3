@@ -101,10 +101,11 @@ being resized. The rules are in `LayoutRules`, which has Edit Mode tests.
 | Canvas Scaler | 1920×1080 reference, matches **height** | 1080×1920 reference, matches **width** |
 | Board | Fitted into the space left of the panel | Full width, above the panel |
 
-- In portrait, the panel is one "SCORE · TIME" row, the round-over message, a full-width
-  Start Round button and a row of Achievements, Account, Leaderboard and Settings buttons
-  (130 units tall: about 47 points on a 390-point-wide phone, above the 44-point minimum tap
-  target). On an iPhone-sized 390×844 screen it takes 22% of the height.
+- In portrait, the panel is one "SCORE · TIME" row, the "Best" line, the round-over message
+  (its text shrinks to fit if it needs two lines), a full-width Start Round button and a row
+  of Achievements, Account, Leaderboard and Settings buttons (130 units tall: about 47 points
+  on a 390-point-wide phone, above the 44-point minimum tap target). On an iPhone-sized 390×844 screen it takes 22% of the height.
+- The round summary card is centered over the board in both layouts.
 - Switching only moves UI. The round, the timer and any swap or cascade carry on untouched.
 - Nothing is placed outside `Screen.safeArea` (notch, rounded corners, home indicator).
   The template leaves `viewport-fit` at its default, so in the browser Safari already keeps the

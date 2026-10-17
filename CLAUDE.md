@@ -21,6 +21,8 @@ well-explained code over polish. Explain Unity concepts when introducing them.
   `Match3 > Build Explosion Prefab`, which builds the clear-effect particle prefab, and
   `Match3 > Build Power Gem Effects` (run after it: the power gem particle prefabs, plus the
   PowerGemEffects, ScorePopups, PowerGemSounds and ScreenShake listeners in the scene), and
+  `Match3 > Build Round Summary` (the "Best" line under the score and the round summary card;
+  run it after the Achievements builder; see `Docs/RoundSummary.md`), and
   `Match3 > Build Responsive Layout` (the ResponsiveLayout that switches to the portrait layout
   for phones; run it after the menu builders; see `Docs/WebBuild.md#portrait-layout`)) live in
   `Assets/Editor/`, sharing
