@@ -334,6 +334,7 @@ namespace Match3.Tests
             Assert.That(stats.longestRun, Is.GreaterThanOrEqualTo(4));
             // Only the T cleared anything, so the chain is however many steps it set off.
             Assert.AreEqual(clearSteps.Count, stats.bestChain);
+            Assert.AreEqual(0, stats.combos, "Neither swap put two power gems together.");
 
             tracker.ResetStats();
             Assert.AreEqual(0, tracker.Stats.swaps, "ResetStats should start the count again.");
@@ -1097,6 +1098,7 @@ namespace Match3.Tests
             }
             Assert.AreEqual(expected, keeper.Total);
             Assert.That(tracker.Stats.flamesDetonated, Is.GreaterThanOrEqualTo(2), "Each combo gem counts as a Flame going off.");
+            Assert.AreEqual(1, tracker.Stats.combos, "One combo swap, however much it set off.");
 
             AssertBoardIsFullAndSettled();
             AssertNoMatchesLeft();
@@ -1575,6 +1577,7 @@ namespace Match3.Tests
             Assert.That(stats.flamesDetonated, Is.GreaterThanOrEqualTo(1));
             Assert.AreEqual(0, stats.swaps);
             Assert.AreEqual(0, stats.mostGemsOneSwap, "No swap cleared these gems.");
+            Assert.AreEqual(0, stats.combos, "Gems going off in the hurrah are never a combo.");
 
             Object.Destroy(keeperObject);
             yield return WaitUntilNoBursts();

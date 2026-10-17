@@ -4,7 +4,7 @@ Each is a plain white shape on a transparent background, so the UI can tint it: 
 achievement is unlocked, white (and dimmed) while it's locked.
 
 The file name is the icon's name. The server names an icon for each achievement ("rounds",
-"score", "match", "chain"), and Match3 > Build Achievements Menu pairs each name with the
+"score", "match", "chain", "flame", "star", "cube", "combo"), and Match3 > Build Achievements Menu pairs each name with the
 sprite of the same name. "trophy" is the stand-in for a name the game has no picture for.
 
 Run from the repo root (needs Pillow: pip install pillow), then run
@@ -93,7 +93,76 @@ def rounds(draw):
     draw.polygon(points(head), fill=WHITE)
 
 
-ICONS = {"trophy": trophy, "score": score, "match": match, "chain": chain, "rounds": rounds}
+def flame(draw):
+    """A Flame gem's fire: a tall tongue of flame with a shorter one each side, hollow at its heart."""
+    # Each tongue is a teardrop: a round bottom, with a triangle from its sides up to the tip.
+    # The three overlap at the bottom into one fire.
+    for left, right, bottom, tip_x, tip_y in ((30, 98, 122, 64, 4), (14, 62, 116, 18, 42), (66, 114, 116, 110, 42)):
+        width = right - left
+        draw.ellipse(s(left, bottom - width, right, bottom), fill=WHITE)
+        middle = bottom - width / 2
+        draw.polygon(points([(left + 1, middle), (tip_x, tip_y), (right - 1, middle)]), fill=WHITE)
+    # A smaller flame cut out of the middle (drawn in transparent), so it reads as fire, not a drop.
+    clear = (255, 255, 255, 0)
+    draw.ellipse(s(48, 86, 80, 114), fill=clear)
+    draw.polygon(points([(49, 100), (64, 62), (79, 100)]), fill=clear)
+
+
+def sparkle(draw, cx, cy, reach, waist):
+    """A four-pointed sparkle centred on (cx, cy): long points up, down, left and right."""
+    corners = []
+    for i in range(8):
+        # Eight corners, alternating between a point and the narrow waist between two points.
+        angle = -math.pi / 2 + i * math.pi / 4
+        radius = reach if i % 2 == 0 else waist
+        corners.append((cx + radius * math.cos(angle), cy + radius * math.sin(angle)))
+    draw.polygon(points(corners), fill=WHITE)
+
+
+def star(draw):
+    """A Star gem's burst: a four-pointed sparkle, its points along the row and column it clears.
+
+    Four points rather than five, so it doesn't look like the "score" star.
+    """
+    sparkle(draw, 64, 64, 58, 14)
+
+
+def cube(draw):
+    """A Hypercube: a cube seen from a corner, its three faces split by thin gaps."""
+    cx, top, half, edge = 64, 10, 50, 56
+    # The six corners of the outline, and the near corner in the middle. Each face is drawn on
+    # its own, pulled in a little, which leaves a thin line between it and the next.
+    mid_y = top + half * 0.58
+    centre = (cx, top + half * 1.16)
+    upper = [(cx, top), (cx + half, mid_y), centre, (cx - half, mid_y)]
+    left = [(cx - half, mid_y), centre, (cx, centre[1] + edge), (cx - half, mid_y + edge)]
+    right = [centre, (cx + half, mid_y), (cx + half, mid_y + edge), (cx, centre[1] + edge)]
+    for face in (upper, left, right):
+        fx = sum(x for x, _ in face) / 4
+        fy = sum(y for _, y in face) / 4
+        shrunk = [(fx + (x - fx) * 0.88, fy + (y - fy) * 0.88) for x, y in face]
+        draw.polygon(points(shrunk), fill=WHITE)
+
+
+def combo(draw):
+    """Two gems swapped together, with a spark where they meet."""
+    for cx in (34, 94):
+        # Each gem is a diamond: a square stood on its corner.
+        draw.polygon(points([(cx, 52), (cx + 28, 84), (cx, 116), (cx - 28, 84)]), fill=WHITE)
+    sparkle(draw, 64, 32, 28, 7)
+
+
+ICONS = {
+    "trophy": trophy,
+    "score": score,
+    "match": match,
+    "chain": chain,
+    "rounds": rounds,
+    "flame": flame,
+    "star": star,
+    "cube": cube,
+    "combo": combo,
+}
 
 
 def main():

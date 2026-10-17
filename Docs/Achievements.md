@@ -29,7 +29,8 @@ AchievementToast <── Unlocked ── AchievementsClient <── ScorePosted 
 1. `RoundStatsTracker` listens to the `Board`'s events, like `ScoreKeeper` does, and keeps a
    `RoundStats`: swaps, matches of 3 / 4 / 5+, the longest match, the best chain (the most
    clears one swap set off, cascades included), power gems made and set off by kind, the most
-   gems one swap cleared, and how the score was built up (see [Scoring.md](Scoring.md)).
+   gems one swap cleared, the combos swapped, and how the score was built up (see
+   [Scoring.md](Scoring.md)).
 2. When the round ends, `OnlineLeaderboardClient` posts the stats with the score.
 3. The server checks that the stats fit together (the matches and blasts, at their
    multipliers, must add up to exactly the score: see [Scoring.md](Scoring.md)),
@@ -70,6 +71,32 @@ The full rules are under "The achievements contract" in the API's README.
 
 How a game *earns* achievements is its own business (here, round stats). Only reading them is
 shared.
+
+## Metrics
+
+The server turns the stats into *metrics*, the numbers an achievement's goal is measured in.
+Most add up over every round; a "best" one is the best single round.
+
+| Metric | From the `RoundStats` field | Kind |
+|---|---|---|
+| `flames-created` / `stars-created` / `hypercubes-created` | `flamesCreated` / `starsCreated` / `hypercubesCreated` | total |
+| `most-gems-one-swap` | `mostGemsOneSwap` | best round |
+| `combos` | `combos` | total |
+
+(The API's README lists the older ones too: rounds, score, runs, chains.)
+
+`combos` counts the player's swaps that put two power gems together (issues #108 and #109):
+the Board raises `ComboSwapped` once for such a swap, and `RoundStatsTracker` counts it. Power
+gems that go off any other way, the Last Hurrah's included, never count.
+
+### Adding a field without breaking older games
+
+`combos` came after scoring version 2 and didn't get a version of its own: it isn't part of the
+score, so nothing about checking the score changes. Instead the server treats it as optional. A
+round without it (from an older build of the game) counts as 0 combos and is still accepted; a
+round with it is checked for plausibility (`0 <= combos <= swaps`, and every combo sets off at
+least two power gems). The server goes out first, so it is already storing and checking
+`combos` when the first game that sends it is released.
 
 ## The pieces in this project
 

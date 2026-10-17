@@ -183,6 +183,14 @@ namespace Match3
         public event System.Action SwapRejected;
 
         /// <summary>
+        /// Fired when the player's swap put two power gems together and set off a combo (see
+        /// <see cref="PowerCombo"/>), once per swap, after <see cref="SwapStarted"/> and before
+        /// the combo's gems go off. Power gems that go off any other way (matched, caught in a
+        /// blast, or in the Last Hurrah) never fire it: only a swap can make a combo.
+        /// </summary>
+        public event System.Action ComboSwapped;
+
+        /// <summary>
         /// Fired when the board has settled with no swap left that would make a match, just
         /// before it reshuffles itself.
         /// </summary>
@@ -863,6 +871,7 @@ namespace Match3
                 // now sits in `b`: that's where the combo is centred. Otherwise it plays out just
                 // like the Hypercube's step 0 below (see PlaySwapStep). That covers the Hypercube
                 // combos too: the model sorts out which gem is the cube.
+                ComboSwapped?.Invoke();
                 yield return StartCoroutine(PlaySwapStep(model.ActivateCombo(b, a)));
                 groups = model.FindMatchGroups();
                 cascadeIndex = 1;

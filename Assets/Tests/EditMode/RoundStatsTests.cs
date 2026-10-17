@@ -219,6 +219,38 @@ namespace Match3.Tests
         }
 
         [Test]
+        public void ComboSwapped_CountsOneComboPerCall()
+        {
+            // The Board sends ComboSwapped once for a combo swap, however many gems it then sets
+            // off; the detonations are counted separately and don't add to the combos.
+            var stats = new RoundStats();
+
+            stats.SwapStarted();
+            stats.ComboSwapped();
+            stats.PowerGemDetonated(PowerKind.Flame);
+            stats.PowerGemDetonated(PowerKind.Flame);
+            stats.SwapStarted();
+            stats.SwapStarted();
+            stats.ComboSwapped();
+
+            Assert.AreEqual(2, stats.combos);
+            Assert.AreEqual(3, stats.swaps);
+        }
+
+        [Test]
+        public void LastHurrah_DoesNotCountAsACombo()
+        {
+            // Power gems going off in the Last Hurrah never come with a ComboSwapped.
+            var stats = new RoundStats();
+
+            stats.LastHurrahStarted();
+            stats.PowerGemDetonated(PowerKind.Hypercube);
+            stats.PowerGemDetonated(PowerKind.Star);
+
+            Assert.That(stats.combos, Is.Zero);
+        }
+
+        [Test]
         public void Reset_GoesBackToZero()
         {
             var stats = new RoundStats();
@@ -227,6 +259,7 @@ namespace Match3.Tests
             stats.StepScored(new ClearStep(1, new[] { 5 }, 3, 8));
             stats.PowerGemCreated(PowerKind.Star);
             stats.PowerGemDetonated(PowerKind.Star);
+            stats.ComboSwapped();
 
             stats.Reset();
 
@@ -238,6 +271,7 @@ namespace Match3.Tests
             Assert.That(stats.basePointsAtMultiplier, Has.All.Zero);
             Assert.That(stats.mostGemsOneSwap, Is.Zero);
             Assert.That(stats.starsCreated + stats.starsDetonated, Is.Zero);
+            Assert.That(stats.combos, Is.Zero);
             Assert.AreEqual(ScoreRules.Version, stats.scoringVersion);
         }
 
@@ -246,12 +280,16 @@ namespace Match3.Tests
         {
             var stats = new RoundStats();
             stats.RunCleared(3);
+            stats.ComboSwapped();
 
             RoundStats copy = stats.Copy();
             stats.RunCleared(3);
+            stats.ComboSwapped();
 
             Assert.That(copy.runs3, Is.EqualTo(1));
             Assert.That(stats.runs3, Is.EqualTo(2));
+            Assert.That(copy.combos, Is.EqualTo(1));
+            Assert.That(stats.combos, Is.EqualTo(2));
         }
 
         [Test]
@@ -274,13 +312,14 @@ namespace Match3.Tests
             stats.RunCleared(4);
             stats.PowerGemCreated(PowerKind.Flame);
             stats.StepScored(new ClearStep(0, new[] { 4 }, 0, 3));
+            stats.ComboSwapped();
 
             // The private per-swap count must not be in it: the server only wants totals.
             Assert.That(JsonUtility.ToJson(stats), Is.EqualTo(
                 "{\"scoringVersion\":2,\"swaps\":1,\"runs3\":0,\"runs4\":1,\"runs5\":0,\"longestRun\":4,\"bestChain\":1," +
                 "\"blastedGems\":0,\"basePointsAtMultiplier\":[2000,0,0,0,0]," +
                 "\"flamesCreated\":1,\"starsCreated\":0,\"hypercubesCreated\":0," +
-                "\"flamesDetonated\":0,\"starsDetonated\":0,\"hypercubesDetonated\":0,\"mostGemsOneSwap\":3}"));
+                "\"flamesDetonated\":0,\"starsDetonated\":0,\"hypercubesDetonated\":0,\"mostGemsOneSwap\":3,\"combos\":1}"));
         }
     }
 }
